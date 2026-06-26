@@ -222,7 +222,7 @@ function speak(text) {
             utterance.lang = 'pt-BR';
         }
 
-        utterance.rate = 0.85; // Velocidade reduzida para maior clareza
+        utterance.rate = 0.7; // Velocidade reduzida para maior clareza
         window.speechSynthesis.speak(utterance);
     }
 }
