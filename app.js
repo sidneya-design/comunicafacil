@@ -1,40 +1,42 @@
 // DADOS ESTÁTICOS COM DEFINIÇÃO DE CORES DE BORDA E FUNDO
-const coreWords = [ 
-    { word: 'eu', styleClass: 'solid-orange' }, { word: 'você', styleClass: 'solid-orange' }, 
-    { word: 'quero', styleClass: 'solid-orange' }, { word: 'gosto', styleClass: 'solid-orange' }, 
+const coreWords = [
+    { word: 'eu', styleClass: 'solid-orange' }, { word: 'você', styleClass: 'solid-orange' },
+    { word: 'quero', styleClass: 'solid-orange' }, { word: 'gosto', styleClass: 'solid-orange' },
     { word: 'não', styleClass: 'solid-orange' }, { word: 'sim', styleClass: 'solid-orange' },
     { word: 'mais', styleClass: 'solid-orange' }, { word: 'acabou', styleClass: 'solid-orange' },
     { word: 'ajudar', styleClass: 'solid-orange' }, { word: 'comer', styleClass: 'solid-orange' },
     { word: 'beber', styleClass: 'solid-orange' }, { word: 'ir', styleClass: 'solid-orange' }
 ];
 
-const quickFires = [ 
-    { word: 'oi', styleClass: 'border-blue' }, { word: 'tchau', styleClass: 'border-blue' }, 
+const quickFires = [
+    { word: 'oi', styleClass: 'border-blue' }, { word: 'tchau', styleClass: 'border-blue' },
     { word: 'por favor', styleClass: 'border-blue' }, { word: 'obrigado', styleClass: 'border-blue' },
     { word: 'desculpa', styleClass: 'border-blue' }, { word: 'certo', styleClass: 'border-green' },
     { word: 'errado', styleClass: 'border-red' }, { word: 'espera', styleClass: 'border-yellow' },
     { word: 'socorro', styleClass: 'border-red' }
 ];
 
-const topics = [ 
-    { folder: 'comida', styleClass: 'border-pink', items: [ { word: 'maçã', styleClass: 'border-orange' }, { word: 'pão', styleClass: 'border-orange' }, { word: 'água', styleClass: 'border-blue' }, { word: 'suco', styleClass: 'border-blue' } ] },
-    { folder: 'brincadeiras', styleClass: 'border-pink', items: [ { word: 'bola', styleClass: 'border-orange' }, { word: 'carrinho', styleClass: 'border-orange' }, { word: 'boneca', styleClass: 'border-orange' } ] }
+const topics = [
+    { folder: 'comida', styleClass: 'border-pink', items: [{ word: 'maçã', styleClass: 'border-orange' }, { word: 'pão', styleClass: 'border-orange' }, { word: 'água', styleClass: 'border-blue' }, { word: 'suco', styleClass: 'border-blue' }] },
+    { folder: 'brincadeiras', styleClass: 'border-pink', items: [{ word: 'bola', styleClass: 'border-orange' }, { word: 'carrinho', styleClass: 'border-orange' }, { word: 'boneca', styleClass: 'border-orange' }] }
 ];
 
 const virtues = [
-    { folder: 'Sabedoria', styleClass: 'border-green', items: [ { word: 'Amor ao Aprendizado', styleClass: 'border-green' }, { word: 'Criatividade', styleClass: 'border-green' }, { word: 'Critério', styleClass: 'border-green' }, { word: 'Curiosidade', styleClass: 'border-green' }, { word: 'Perspectiva', styleClass: 'border-green' } ] },
-    { folder: 'Humanidade', styleClass: 'border-orange', items: [ { word: 'Amor', styleClass: 'border-orange' }, { word: 'Generosidade', styleClass: 'border-orange' }, { word: 'Inteligência Social', styleClass: 'border-orange' } ] },
-    { folder: 'Justiça', styleClass: 'border-yellow', items: [ { word: 'Justiça', styleClass: 'border-yellow' }, { word: 'Liderança', styleClass: 'border-yellow' }, { word: 'Trabalho em Equipe', styleClass: 'border-yellow' } ] },
-    { folder: 'Moderação', styleClass: 'border-blue', items: [ { word: 'Autorregulação', styleClass: 'border-blue' }, { word: 'Humildade', styleClass: 'border-blue' }, { word: 'Perdão', styleClass: 'border-blue' }, { word: 'Prudência', styleClass: 'border-blue' } ] },
-    { folder: 'Coragem', styleClass: 'border-red', items: [ { word: 'Coragem', styleClass: 'border-red' }, { word: 'Integridade', styleClass: 'border-red' }, { word: 'Perseverança', styleClass: 'border-red' }, { word: 'Vitalidade', styleClass: 'border-red' } ] },
-    { folder: 'Transcendência', styleClass: 'border-pink', items: [ { word: 'Apreciação da Beleza', styleClass: 'border-pink' }, { word: 'Esperança', styleClass: 'border-pink' }, { word: 'Espiritualidade', styleClass: 'border-pink' }, { word: 'Gratidão', styleClass: 'border-pink' }, { word: 'Humor', styleClass: 'border-pink' } ] },
-    { folder: 'Fomes', styleClass: 'border-pink', items: [
-        { word: 'Vínculo',    styleClass: 'border-pink', img: 'img/fomes/vinculo.png' },
-        { word: 'Diversão',   styleClass: 'border-pink', img: 'img/fomes/diversao.png' },
-        { word: 'Competência', styleClass: 'border-pink', img: 'img/fomes/competencia.png' },
-        { word: 'Autonomia',  styleClass: 'border-pink', img: 'img/fomes/autonomia.png' },
-        { word: 'Segurança',  styleClass: 'border-pink', img: 'img/fomes/seguranca.png' }
-    ] }
+    { folder: 'Sabedoria', styleClass: 'border-green', items: [{ word: 'Amor ao Aprendizado', styleClass: 'border-green' }, { word: 'Criatividade', styleClass: 'border-green' }, { word: 'Critério', styleClass: 'border-green' }, { word: 'Curiosidade', styleClass: 'border-green' }, { word: 'Perspectiva', styleClass: 'border-green' }] },
+    { folder: 'Humanidade', styleClass: 'border-orange', items: [{ word: 'Amor', styleClass: 'border-orange' }, { word: 'Generosidade', styleClass: 'border-orange' }, { word: 'Inteligência Social', styleClass: 'border-orange' }] },
+    { folder: 'Justiça', styleClass: 'border-yellow', items: [{ word: 'Justiça', styleClass: 'border-yellow' }, { word: 'Liderança', styleClass: 'border-yellow' }, { word: 'Trabalho em Equipe', styleClass: 'border-yellow' }] },
+    { folder: 'Moderação', styleClass: 'border-blue', items: [{ word: 'Autorregulação', styleClass: 'border-blue' }, { word: 'Humildade', styleClass: 'border-blue' }, { word: 'Perdão', styleClass: 'border-blue' }, { word: 'Prudência', styleClass: 'border-blue' }] },
+    { folder: 'Coragem', styleClass: 'border-red', items: [{ word: 'Coragem', styleClass: 'border-red' }, { word: 'Integridade', styleClass: 'border-red' }, { word: 'Perseverança', styleClass: 'border-red' }, { word: 'Vitalidade', styleClass: 'border-red' }] },
+    { folder: 'Transcendência', styleClass: 'border-pink', items: [{ word: 'Apreciação da Beleza', styleClass: 'border-pink' }, { word: 'Esperança', styleClass: 'border-pink' }, { word: 'Espiritualidade', styleClass: 'border-pink' }, { word: 'Gratidão', styleClass: 'border-pink' }, { word: 'Humor', styleClass: 'border-pink' }] },
+    {
+        folder: 'Fomes', styleClass: 'border-pink', items: [
+            { word: 'Vínculo', styleClass: 'border-pink', img: 'img/fomes/vinculo.png' },
+            { word: 'Diversão', styleClass: 'border-pink', img: 'img/fomes/diversao.png' },
+            { word: 'Competência', styleClass: 'border-pink', img: 'img/fomes/competencia.png' },
+            { word: 'Autonomia', styleClass: 'border-pink', img: 'img/fomes/autonomia.png' },
+            { word: 'Segurança', styleClass: 'border-pink', img: 'img/fomes/seguranca.png' }
+        ]
+    }
 ];
 
 const localForcesImages = {
@@ -91,7 +93,7 @@ async function uploadToSupabaseStorage(bucket, path, file) {
 
 let currentMessage = [];
 let currentTypingWord = "";
-let db; 
+let db;
 const messageDisplay = document.getElementById('message-display');
 
 // CACHE DE IMAGENS ARASAAC
@@ -108,7 +110,7 @@ async function fetchArasaacImage(word) {
             arasaacCache[cleanWord] = imageUrl;
             return imageUrl;
         }
-    } catch (e) {}
+    } catch (e) { }
     return null;
 }
 
@@ -136,28 +138,28 @@ function setupNavigation() {
 
 async function renderGrid(containerId, wordsArray) {
     const container = document.getElementById(containerId);
-    if(!container) return;
+    if (!container) return;
     container.innerHTML = '';
-    
+
     for (const item of wordsArray) {
         const btn = document.createElement('button');
         btn.className = `word-btn ${item.styleClass}`;
-        
+
         const imgContainer = document.createElement('div');
         imgContainer.className = 'word-btn-img-container';
         const imgEl = document.createElement('img');
         imgEl.className = 'word-btn-img';
         imgContainer.appendChild(imgEl);
-        
+
         const textEl = document.createElement('div');
         textEl.className = 'word-btn-text';
         textEl.textContent = item.word;
-        
+
         btn.appendChild(imgContainer);
         btn.appendChild(textEl);
-        
+
         btn.addEventListener('click', () => {
-            if(currentTypingWord.length > 0) commitTypingWord();
+            if (currentTypingWord.length > 0) commitTypingWord();
             addToMessage(item.word);
             speak(item.word);
         });
@@ -177,7 +179,7 @@ async function renderGrid(containerId, wordsArray) {
 
 
 function addToMessage(word) { currentMessage.push(word); renderMessage(); }
-function commitTypingWord() { if(currentTypingWord.trim() !== "") { currentMessage.push(currentTypingWord); currentTypingWord = ""; } }
+function commitTypingWord() { if (currentTypingWord.trim() !== "") { currentMessage.push(currentTypingWord); currentTypingWord = ""; } }
 
 function renderMessage() {
     messageDisplay.innerHTML = '';
@@ -206,13 +208,13 @@ function speak(text) {
     if ('speechSynthesis' in window && text) {
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
-        
+
         let ptVoices = availableVoices.filter(v => v.lang.startsWith('pt'));
         if (ptVoices.length > 0) {
             // Tenta achar vozes de alta qualidade (Premium, Enhanced, Google ou específicas como Luciana/Daniel)
-            let bestVoice = ptVoices.find(v => 
-                v.name.includes('Premium') || 
-                v.name.includes('Enhanced') || 
+            let bestVoice = ptVoices.find(v =>
+                v.name.includes('Premium') ||
+                v.name.includes('Enhanced') ||
                 v.name.includes('Google') ||
                 v.name.includes('Luciana')
             );
@@ -247,19 +249,19 @@ const accentMap = {
 
 function initKeyboard() {
     const layout = [
-        ["'",'1','2','3','4','5','6','7','8','9','0','-','=','Backspace'],
-        ['Q','W','E','R','T','Y','U','I','O','P','´','['],
-        ['A','S','D','F','G','H','J','K','L','Ç','~',']','Enter'],
-        ['\\','Z','X','C','V','B','N','M',',','.','/']
+        ["'", '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 'Backspace'],
+        ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '´', '['],
+        ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'Ç', '~', ']', 'Enter'],
+        ['\\', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', ',', '.', '/']
     ];
     const container = document.getElementById('keyboard-grid');
-    if(!container) return;
+    if (!container) return;
     container.innerHTML = '';
     layout.forEach(row => {
         const rowDiv = document.createElement('div'); rowDiv.className = 'keyboard-row';
         row.forEach(key => {
-            const btn = document.createElement('button'); btn.className = 'key-btn'; 
-            
+            const btn = document.createElement('button'); btn.className = 'key-btn';
+
             if (key === 'Backspace') {
                 btn.classList.add('key-func');
                 btn.innerHTML = '<i class="fas fa-backspace"></i>';
@@ -278,13 +280,13 @@ function initKeyboard() {
                 btn.textContent = 'Enter';
                 btn.addEventListener('click', () => {
                     pendingAccent = null;
-                    if(currentTypingWord.length > 0) { commitTypingWord(); renderMessage(); }
+                    if (currentTypingWord.length > 0) { commitTypingWord(); renderMessage(); }
                     const btnSpeak = document.getElementById('btn-speak');
                     if (btnSpeak) btnSpeak.click();
                 });
             } else {
                 btn.textContent = key;
-                btn.addEventListener('click', () => { 
+                btn.addEventListener('click', () => {
                     if (['´', '~', '^', '`'].includes(key)) {
                         pendingAccent = key;
                         return;
@@ -296,8 +298,8 @@ function initKeyboard() {
                         currentTypingWord += pendingAccent;
                     }
                     pendingAccent = null;
-                    currentTypingWord += char; 
-                    renderMessage(); 
+                    currentTypingWord += char;
+                    renderMessage();
                 });
             }
             rowDiv.appendChild(btn);
@@ -306,7 +308,7 @@ function initKeyboard() {
     });
     const spaceRow = document.createElement('div'); spaceRow.className = 'keyboard-row';
     const spaceBtn = document.createElement('button'); spaceBtn.className = 'key-btn key-space'; spaceBtn.textContent = 'Espaço';
-    spaceBtn.addEventListener('click', () => { pendingAccent = null; if(currentTypingWord.length > 0) { commitTypingWord(); renderMessage(); } });
+    spaceBtn.addEventListener('click', () => { pendingAccent = null; if (currentTypingWord.length > 0) { commitTypingWord(); renderMessage(); } });
     spaceRow.appendChild(spaceBtn); container.appendChild(spaceRow);
 }
 
@@ -321,7 +323,7 @@ document.body.appendChild(hiddenInput);
 document.addEventListener('keydown', (e) => {
     const keyboardView = document.getElementById('view-keyboard');
     if (!keyboardView || !keyboardView.classList.contains('active')) return;
-    
+
     if (e.target.tagName === 'INPUT' && e.target !== hiddenInput) return;
     if (e.target.tagName === 'TEXTAREA') return;
 
@@ -359,20 +361,20 @@ hiddenInput.addEventListener('input', (e) => {
 
 // Atualizamos a função de commit para sincronizar com o input oculto
 const originalCommitTypingWord = commitTypingWord;
-commitTypingWord = function() {
-    if(currentTypingWord.trim() !== "") { 
-        currentMessage.push(currentTypingWord); 
-        currentTypingWord = ""; 
+commitTypingWord = function () {
+    if (currentTypingWord.trim() !== "") {
+        currentMessage.push(currentTypingWord);
+        currentTypingWord = "";
         hiddenInput.value = "";
     }
 };
 
 // Sincroniza limpezas e botões do virtual keyboard com o hiddenInput
-document.getElementById('btn-clear').addEventListener('click', () => { 
-    currentMessage = []; 
-    currentTypingWord = ""; 
+document.getElementById('btn-clear').addEventListener('click', () => {
+    currentMessage = [];
+    currentTypingWord = "";
     hiddenInput.value = "";
-    renderMessage(); 
+    renderMessage();
 });
 document.getElementById('btn-backspace').addEventListener('click', () => {
     if (currentTypingWord.length > 0) {
@@ -402,53 +404,123 @@ function initIndexedDB() {
         if (db.objectStoreNames.contains('quick_cards')) db.deleteObjectStore('quick_cards');
         db.createObjectStore('core_cards', { keyPath: 'id', autoIncrement: true });
     };
-    request.onsuccess = (event) => { 
-        db = event.target.result; 
-        loadMediaCards(); 
-        loadExerciseCards();
+    request.onsuccess = (event) => {
+        db = event.target.result;
+        migrateLocalMediaAndExercises().then(() => {
+            loadMediaCards();
+            loadExerciseCards();
+        });
         initCoreCardsDB();
         initVirtuesDB();
         initTopicsDB();
     };
 }
 
-function saveMediaToDB(title, fileBlob, mimeType, colorClass) {
-    db.transaction(['medias'], 'readwrite').objectStore('medias')
-      .add({ title, blob: fileBlob, isVideo: mimeType.startsWith('video'), colorClass })
-      .onsuccess = () => loadMediaCards();
+async function migrateLocalMediaAndExercises() {
+    if (!supabaseClient) return;
+
+    // Migrar Mídias
+    await new Promise((resolve) => {
+        db.transaction(['medias'], 'readwrite').objectStore('medias').getAll().onsuccess = async (e) => {
+            const locais = e.target.result;
+            for (const media of locais) {
+                await saveMediaToDB(media.title, media.blob, media.isVideo ? 'video/mp4' : 'audio/mp3', media.colorClass);
+                // saveMediaToDB already inserts to Supabase, we can then delete local
+                db.transaction(['medias'], 'readwrite').objectStore('medias').delete(media.id);
+            }
+            resolve();
+        };
+    });
+
+    // Migrar Exercícios
+    await new Promise((resolve) => {
+        db.transaction(['exercises'], 'readwrite').objectStore('exercises').getAll().onsuccess = async (e) => {
+            const locais = e.target.result;
+            for (const ex of locais) {
+                currentEditingExerciseId = null; // force insert as new
+                await saveExercisePlaylistToDB(ex.title, ex.items || []);
+                db.transaction(['exercises'], 'readwrite').objectStore('exercises').delete(ex.id);
+            }
+            resolve();
+        };
+    });
 }
 
-function loadMediaCards() {
-    const container = document.getElementById('grid-media');
-    if(!container) return;
-    container.innerHTML = '';
-    db.transaction(['medias'], 'readonly').objectStore('medias').getAll().onsuccess = (e) => {
-        e.target.result.forEach(media => {
-            const btn = document.createElement('button');
-            btn.className = `word-btn border-${media.colorClass}`;
-            
-            const imgContainer = document.createElement('div');
-            imgContainer.className = 'word-btn-img-container';
-            imgContainer.innerHTML = `<i class="fas ${media.isVideo ? 'fa-play-circle' : 'fa-music'} word-btn-icon"></i>`;
-            
-            const textEl = document.createElement('div');
-            textEl.className = 'word-btn-text';
-            textEl.textContent = media.title;
+async function saveMediaToDB(title, fileBlob, mimeType, colorClass) {
+    if (supabaseClient) {
+        try {
+            const isVideo = mimeType.startsWith('video');
+            const url = await uploadToSupabaseStorage('media_uploads', 'medias', fileBlob);
+            await supabaseClient.from('medias').insert([{
+                title, is_video: isVideo, color_class: colorClass, media_url: url
+            }]);
+            loadMediaCards();
+            return;
+        } catch (e) {
+            console.warn('Erro ao salvar media no Supabase, caindo para local:', e);
+        }
+    }
+    db.transaction(['medias'], 'readwrite').objectStore('medias')
+        .add({ title, blob: fileBlob, isVideo: mimeType.startsWith('video'), colorClass })
+        .onsuccess = () => loadMediaCards();
+}
 
-            btn.appendChild(imgContainer);
-            btn.appendChild(textEl);
-            
-            const delBtn = document.createElement('button');
-            delBtn.className = 'delete-media-btn'; delBtn.innerHTML = '<i class="fas fa-trash"></i>';
-            delBtn.onclick = (ev) => {
-                ev.stopPropagation();
-                if(confirm('Apagar?')) db.transaction(['medias'], 'readwrite').objectStore('medias').delete(media.id).onsuccess = () => loadMediaCards();
-            };
-            btn.appendChild(delBtn);
-            btn.addEventListener('click', () => playMedia(media));
-            container.appendChild(btn);
-        });
+let currentMedias = [];
+async function loadMediaCards() {
+    if (supabaseClient) {
+        try {
+            const { data, error } = await supabaseClient.from('medias').select('*');
+            if (!error) {
+                currentMedias = data.map(m => ({
+                    id: m.id, title: m.title, isVideo: m.is_video, colorClass: m.color_class, media_url: m.media_url, fromSupabase: true
+                }));
+            }
+        } catch(e) {}
+    }
+
+    db.transaction(['medias'], 'readonly').objectStore('medias').getAll().onsuccess = (e) => {
+        const localMedias = e.target.result.map(m => ({ ...m, fromSupabase: false }));
+        const allMedias = [...currentMedias, ...localMedias];
+        renderMediaCards(allMedias);
     };
+}
+
+function renderMediaCards(mediasArray) {
+    const container = document.getElementById('grid-media');
+    if (!container) return;
+    container.innerHTML = '';
+    mediasArray.forEach(media => {
+        const btn = document.createElement('button');
+        btn.className = `word-btn border-${media.colorClass}`;
+
+        const imgContainer = document.createElement('div');
+        imgContainer.className = 'word-btn-img-container';
+        imgContainer.innerHTML = `<i class="fas ${media.isVideo ? 'fa-play-circle' : 'fa-music'} word-btn-icon"></i>`;
+
+        const textEl = document.createElement('div');
+        textEl.className = 'word-btn-text';
+        textEl.textContent = media.title;
+
+        btn.appendChild(imgContainer);
+        btn.appendChild(textEl);
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'delete-media-btn'; delBtn.innerHTML = '<i class="fas fa-trash"></i>';
+        delBtn.onclick = async (ev) => {
+            ev.stopPropagation();
+            if (confirm('Apagar?')) {
+                if (media.fromSupabase && supabaseClient) {
+                    await supabaseClient.from('medias').delete().eq('id', media.id);
+                    loadMediaCards();
+                } else {
+                    db.transaction(['medias'], 'readwrite').objectStore('medias').delete(media.id).onsuccess = () => loadMediaCards();
+                }
+            }
+        };
+        btn.appendChild(delBtn);
+        btn.addEventListener('click', () => playMedia(media));
+        container.appendChild(btn);
+    });
 }
 
 // Exercícios (Playlists com Edição)
@@ -456,9 +528,46 @@ let currentEditingExerciseId = null;
 let currentEditingBlobs = {};
 let exerciseBlockCounter = 0;
 
-function saveExercisePlaylistToDB(title, itemsArray) {
+async function saveExercisePlaylistToDB(title, itemsArray) {
+    if (supabaseClient) {
+        try {
+            // Fazer upload de todas as imagens para o Storage (em paralelo)
+            const uploadedItems = await Promise.all(itemsArray.map(async (item) => {
+                let image_url = item.image_url || null;
+                if (item.imageBlob instanceof Blob) {
+                    image_url = await uploadToSupabaseStorage('media_uploads', 'images', item.imageBlob);
+                }
+                return { ...item, image_url };
+            }));
+
+            if (currentEditingExerciseId) {
+                await supabaseClient.from('exercises').update({ title }).eq('id', currentEditingExerciseId);
+                await supabaseClient.from('exercise_items').delete().eq('exercise_id', currentEditingExerciseId);
+                const dbItems = uploadedItems.map(item => ({
+                    exercise_id: currentEditingExerciseId,
+                    word: item.word, color: item.color, size: item.size, uppercase: item.uppercase,
+                    bold: item.bold, link: item.link, image_url: item.image_url
+                }));
+                await supabaseClient.from('exercise_items').insert(dbItems);
+            } else {
+                const { data: exData } = await supabaseClient.from('exercises').insert([{ title }]).select().single();
+                if (exData) {
+                    const dbItems = uploadedItems.map(item => ({
+                        exercise_id: exData.id,
+                        word: item.word, color: item.color, size: item.size, uppercase: item.uppercase,
+                        bold: item.bold, link: item.link, image_url: item.image_url
+                    }));
+                    await supabaseClient.from('exercise_items').insert(dbItems);
+                }
+            }
+            loadExerciseCards();
+            return;
+        } catch (e) {
+            console.warn('Erro ao salvar exercise no Supabase, caindo para local:', e);
+        }
+    }
+
     const store = db.transaction(['exercises'], 'readwrite').objectStore('exercises');
-    
     if (currentEditingExerciseId) {
         store.put({ id: currentEditingExerciseId, title, items: itemsArray }).onsuccess = () => loadExerciseCards();
     } else {
@@ -466,54 +575,88 @@ function saveExercisePlaylistToDB(title, itemsArray) {
     }
 }
 
-function loadExerciseCards() {
-    const container = document.getElementById('grid-exercises');
-    if(!container) return;
-    container.innerHTML = '';
+let currentExercises = [];
+async function loadExerciseCards() {
+    if (supabaseClient) {
+        try {
+            const { data: exData, error: exErr } = await supabaseClient.from('exercises').select('*');
+            if (!exErr) {
+                const { data: itemData } = await supabaseClient.from('exercise_items').select('*');
+                currentExercises = exData.map(ex => {
+                    const items = (itemData || []).filter(item => item.exercise_id === ex.id).map(item => ({
+                        word: item.word, color: item.color, size: item.size, uppercase: item.uppercase,
+                        bold: item.bold, link: item.link, image_url: item.image_url
+                    }));
+                    return { id: ex.id, title: ex.title, items, fromSupabase: true };
+                });
+            }
+        } catch(e) {}
+    }
+
     db.transaction(['exercises'], 'readonly').objectStore('exercises').getAll().onsuccess = (e) => {
-        e.target.result.forEach(ex => {
-            const btn = document.createElement('button');
-            btn.className = `word-btn border-pink`;
-            
-            const imgContainer = document.createElement('div');
-            imgContainer.className = 'word-btn-img-container';
-            
-            if(ex.items && ex.items.length > 0 && ex.items[0].imageBlob) {
-                const objectUrl = URL.createObjectURL(ex.items[0].imageBlob);
-                imgContainer.innerHTML = `<img src="${objectUrl}" class="word-btn-img" />`;
+        const localExercises = e.target.result.map(ex => ({ ...ex, fromSupabase: false }));
+        const allExercises = [...currentExercises, ...localExercises];
+        renderExerciseCards(allExercises);
+    };
+}
+
+function renderExerciseCards(exercisesArray) {
+    const container = document.getElementById('grid-exercises');
+    if (!container) return;
+    container.innerHTML = '';
+    
+    exercisesArray.forEach(ex => {
+        const btn = document.createElement('button');
+        btn.className = `word-btn border-pink`;
+
+        const imgContainer = document.createElement('div');
+        imgContainer.className = 'word-btn-img-container';
+
+        if (ex.items && ex.items.length > 0) {
+            if (ex.items[0].imageBlob instanceof Blob) {
+                imgContainer.innerHTML = `<img src="${URL.createObjectURL(ex.items[0].imageBlob)}" class="word-btn-img" />`;
+            } else if (ex.items[0].image_url) {
+                imgContainer.innerHTML = `<img src="${ex.items[0].image_url}" class="word-btn-img" />`;
             } else {
                 imgContainer.innerHTML = '<i class="fas fa-folder word-btn-icon"></i>';
             }
-            
-            const textEl = document.createElement('div');
-            textEl.className = 'word-btn-text';
-            textEl.textContent = ex.title;
+        } else {
+            imgContainer.innerHTML = '<i class="fas fa-folder word-btn-icon"></i>';
+        }
 
-            btn.appendChild(imgContainer);
-            btn.appendChild(textEl);
-            
-            // Botão Deletar
-            const delBtn = document.createElement('button');
-            delBtn.className = 'delete-media-btn'; delBtn.innerHTML = '<i class="fas fa-trash"></i>';
-            delBtn.onclick = (ev) => {
-                ev.stopPropagation();
-                if(confirm(`Apagar playlist "${ex.title}"?`)) db.transaction(['exercises'], 'readwrite').objectStore('exercises').delete(ex.id).onsuccess = () => loadExerciseCards();
-            };
-            btn.appendChild(delBtn);
+        const textEl = document.createElement('div');
+        textEl.className = 'word-btn-text';
+        textEl.textContent = ex.title;
 
-            // Botão Editar
-            const editBtn = document.createElement('button');
-            editBtn.className = 'edit-media-btn'; editBtn.innerHTML = '<i class="fas fa-pencil-alt"></i>';
-            editBtn.onclick = (ev) => {
-                ev.stopPropagation();
-                openEditExercise(ex);
-            };
-            btn.appendChild(editBtn);
+        btn.appendChild(imgContainer);
+        btn.appendChild(textEl);
 
-            btn.addEventListener('click', () => openPresentationPlaylist(ex));
-            container.appendChild(btn);
-        });
-    };
+        const delBtn = document.createElement('button');
+        delBtn.className = 'delete-media-btn'; delBtn.innerHTML = '<i class="fas fa-trash"></i>';
+        delBtn.onclick = async (ev) => {
+            ev.stopPropagation();
+            if (confirm(`Apagar playlist "${ex.title}"?`)) {
+                if (ex.fromSupabase && supabaseClient) {
+                    await supabaseClient.from('exercises').delete().eq('id', ex.id);
+                    loadExerciseCards();
+                } else {
+                    db.transaction(['exercises'], 'readwrite').objectStore('exercises').delete(ex.id).onsuccess = () => loadExerciseCards();
+                }
+            }
+        };
+        btn.appendChild(delBtn);
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'edit-media-btn'; editBtn.innerHTML = '<i class="fas fa-pencil-alt"></i>';
+        editBtn.onclick = (ev) => {
+            ev.stopPropagation();
+            openEditExercise(ex);
+        };
+        btn.appendChild(editBtn);
+
+        btn.addEventListener('click', () => openPresentationPlaylist(ex));
+        container.appendChild(btn);
+    });
 }
 
 function getEmbedUrl(url) {
@@ -522,7 +665,7 @@ function getEmbedUrl(url) {
     if (!urlToParse.startsWith('http://') && !urlToParse.startsWith('https://')) {
         urlToParse = 'https://' + urlToParse;
     }
-    
+
     if (urlToParse.includes('vimeo.com')) {
         try {
             const parsedUrl = new URL(urlToParse);
@@ -535,7 +678,7 @@ function getEmbedUrl(url) {
                 }
                 return embedStr;
             }
-        } catch(e) {}
+        } catch (e) { }
         return urlToParse;
     }
     if (urlToParse.includes('drive.google.com/file/d/')) {
@@ -545,7 +688,7 @@ function getEmbedUrl(url) {
         try {
             const videoId = new URL(urlToParse).searchParams.get('v');
             return `https://www.youtube.com/embed/${videoId}?autoplay=1`;
-        } catch(e) {}
+        } catch (e) { }
     }
     if (urlToParse.includes('youtu.be/')) {
         const videoId = urlToParse.split('/').pop();
@@ -607,10 +750,10 @@ function createExerciseBlockHtml(blockId, isEdit = false, hasOldImage = false) {
 function addExerciseBlock(isEdit = false, hasOldImage = false) {
     const container = document.getElementById('exercise-items-container');
     const blockId = exerciseBlockCounter++;
-    
+
     const block = document.createElement('div');
     block.innerHTML = createExerciseBlockHtml(blockId, isEdit, hasOldImage);
-    
+
     const removeBtn = block.querySelector('.btn-remove-block');
     if (removeBtn) {
         removeBtn.addEventListener('click', () => {
@@ -618,7 +761,7 @@ function addExerciseBlock(isEdit = false, hasOldImage = false) {
             updateBlockTitles();
         });
     }
-    
+
     container.appendChild(block.firstElementChild);
     updateBlockTitles();
 }
@@ -634,18 +777,18 @@ function openEditExercise(ex) {
     currentEditingExerciseId = ex.id;
     currentEditingBlobs = {};
     exerciseBlockCounter = 0;
-    
+
     document.getElementById('upload-exercise-modal').style.display = 'flex';
     document.getElementById('upload-exercise-modal').querySelector('h2').textContent = "Editar Playlist de Exercícios";
     document.getElementById('exercise-title').value = ex.title;
-    
+
     const container = document.getElementById('exercise-items-container');
     container.innerHTML = '';
-    
+
     ex.items.forEach((item, index) => {
         const hasOldImage = !!item.imageBlob;
         addExerciseBlock(true, hasOldImage);
-        
+
         const blockEl = container.querySelector(`[data-block-id="${index}"]`);
         blockEl.querySelector('.item-word').value = item.word || '';
         blockEl.querySelector('.item-link').value = item.videoLink || '';
@@ -653,7 +796,7 @@ function openEditExercise(ex) {
         blockEl.querySelector('.item-size').value = item.textSize || '100';
         blockEl.querySelector('.item-uppercase').checked = !!item.isUppercase;
         blockEl.querySelector('.item-bold').checked = item.isBold !== undefined ? item.isBold : true;
-        
+
         if (item.imageBlob) {
             currentEditingBlobs[index] = item.imageBlob;
         }
@@ -675,20 +818,20 @@ function setupModals() {
         currentEditingExerciseId = null;
         currentEditingBlobs = {};
         exerciseBlockCounter = 0;
-        
+
         document.getElementById('upload-exercise-modal').style.display = 'flex';
         document.getElementById('upload-exercise-modal').querySelector('h2').textContent = "Nova Playlist de Exercícios";
         document.getElementById('upload-exercise-form').reset();
-        
+
         const container = document.getElementById('exercise-items-container');
         container.innerHTML = '';
-        addExerciseBlock(); 
+        addExerciseBlock();
     });
 
     const closeExerciseUpload = () => { document.getElementById('upload-exercise-modal').style.display = 'none'; document.getElementById('upload-exercise-form').reset(); };
     document.getElementById('btn-close-exercise-upload').addEventListener('click', closeExerciseUpload);
     document.getElementById('btn-cancel-exercise-upload').addEventListener('click', closeExerciseUpload);
-    
+
     document.getElementById('btn-add-exercise-item').addEventListener('click', () => {
         addExerciseBlock(true);
     });
@@ -697,19 +840,19 @@ function setupModals() {
         e.preventDefault();
         const title = document.getElementById('exercise-title').value;
         const blocks = document.querySelectorAll('.exercise-item-block');
-        
-        if(blocks.length === 0) return alert("Adicione pelo menos um vídeo.");
-        
+
+        if (blocks.length === 0) return alert("Adicione pelo menos um vídeo.");
+
         const itemsArray = [];
         blocks.forEach(block => {
             const blockId = block.dataset.blockId;
             const fileInput = block.querySelector('.item-image');
-            
+
             let finalBlob = fileInput.files[0];
             if (!finalBlob && currentEditingBlobs[blockId]) {
                 finalBlob = currentEditingBlobs[blockId];
             }
-            
+
             itemsArray.push({
                 word: block.querySelector('.item-word').value,
                 textColor: block.querySelector('.item-color').value,
@@ -720,7 +863,7 @@ function setupModals() {
                 imageBlob: finalBlob
             });
         });
-        
+
         saveExercisePlaylistToDB(title, itemsArray);
         closeExerciseUpload();
     });
@@ -734,7 +877,7 @@ function setupModals() {
         document.getElementById('presentation-modal').style.display = 'none';
         document.getElementById('presentation-iframe').src = '';
     });
-    
+
     document.getElementById('btn-prev-presentation').addEventListener('click', () => navigatePlaylist(-1));
     document.getElementById('btn-next-presentation').addEventListener('click', () => navigatePlaylist(1));
 }
@@ -763,10 +906,10 @@ function navigatePlaylist(direction) {
 
 function openPresentationPlaylist(ex) {
     if (!ex.items || ex.items.length === 0) return;
-    
+
     currentPlaylistItems = ex.items;
     currentPlaylistIndex = 0;
-    
+
     document.getElementById('presentation-modal').style.display = 'flex';
     renderCurrentPlaylistItem();
 }
@@ -774,7 +917,7 @@ function openPresentationPlaylist(ex) {
 function renderCurrentPlaylistItem() {
     try {
         const item = currentPlaylistItems[currentPlaylistIndex];
-        
+
         document.getElementById('presentation-progress').textContent = `${currentPlaylistIndex + 1} / ${currentPlaylistItems.length}`;
         const wordEl = document.getElementById('presentation-word-text');
         wordEl.textContent = item.word || '';
@@ -782,16 +925,16 @@ function renderCurrentPlaylistItem() {
         wordEl.style.fontSize = (item.textSize || '100') + 'px';
         wordEl.style.textTransform = item.isUppercase ? 'uppercase' : 'none';
         wordEl.style.fontWeight = (item.isBold !== undefined ? item.isBold : true) ? '800' : '400';
-        
+
         const imgEl = document.getElementById('presentation-image');
         if (item.imageBlob && item.imageBlob instanceof Blob) {
             imgEl.src = URL.createObjectURL(item.imageBlob);
         } else {
             imgEl.src = '';
         }
-        
+
         document.getElementById('presentation-iframe').src = getEmbedUrl(item.videoLink);
-        
+
         document.getElementById('btn-prev-presentation').disabled = (currentPlaylistIndex === 0);
         document.getElementById('btn-next-presentation').disabled = (currentPlaylistIndex === currentPlaylistItems.length - 1);
     } catch (e) {
@@ -1037,12 +1180,12 @@ async function loadTopicsAndRender() {
                     }));
                     return { id: cat.id, folder: cat.folder, styleClass: cat.style_class, items };
                 });
-                
+
                 currentTopicsFolders = merged;
                 const tx = db.transaction(['topics'], 'readwrite');
                 const store = tx.objectStore('topics');
                 store.clear().onsuccess = () => merged.forEach(t => store.put(t));
-                
+
                 const wordGrid = document.getElementById('grid-topic-words');
                 if (currentOpenTopicFolderRecord && wordGrid && wordGrid.style.display !== 'none') {
                     const updated = currentTopicsFolders.find(r => r.id === currentOpenTopicFolderRecord.id);
@@ -1163,11 +1306,11 @@ async function renderTopicsFolders() {
         };
         container.appendChild(btn);
     }
-    
+
     if (isAdmin && editModes.topic) {
         const addBtn = document.createElement('button');
-        addBtn.className = 'word-btn border-gray';
-        addBtn.innerHTML = '<div class="word-btn-img-container"><i class="fas fa-plus word-btn-icon" style="color:#888"></i></div><div class="word-btn-text">Nova Pasta</div>';
+        addBtn.className = 'word-btn add-btn';
+        addBtn.innerHTML = '<i class="fas fa-plus"></i><div class="word-btn-text">Nova Pasta</div>';
         addBtn.addEventListener('click', () => openCardEditor('topic', null, null, null));
         container.appendChild(addBtn);
     }
@@ -1191,7 +1334,7 @@ async function renderTopicsWords(record) {
         const imgEl = document.createElement('img');
         imgEl.className = 'word-btn-img';
         imgCont.appendChild(imgEl);
-        
+
         let blobUrl = null;
         if (item.imageBlob instanceof Blob) {
             blobUrl = URL.createObjectURL(item.imageBlob);
@@ -1261,11 +1404,11 @@ async function renderTopicsWords(record) {
         };
         wordGrid.appendChild(btn);
     }
-    
+
     if (isAdmin && editModes.topic) {
         const addBtn = document.createElement('button');
-        addBtn.className = 'word-btn border-gray';
-        addBtn.innerHTML = '<div class="word-btn-img-container"><i class="fas fa-plus word-btn-icon" style="color:#888"></i></div><div class="word-btn-text">Novo Item</div>';
+        addBtn.className = 'word-btn add-btn';
+        addBtn.innerHTML = '<i class="fas fa-plus"></i><div class="word-btn-text">Novo Item</div>';
         addBtn.addEventListener('click', () => openCardEditor('topic', null, null, record));
         wordGrid.appendChild(addBtn);
     }
@@ -1320,14 +1463,14 @@ async function loadVirtuesAndRender() {
                         items
                     };
                 });
-                
+
                 currentVirtueFolders = merged;
                 const tx = db.transaction(['virtues'], 'readwrite');
                 const store = tx.objectStore('virtues');
                 store.clear().onsuccess = () => {
                     merged.forEach(v => store.put(v));
                 };
-                
+
                 const wordGrid = document.getElementById('grid-virtue-words');
                 if (currentOpenFolderRecord && wordGrid && wordGrid.style.display !== 'none') {
                     const updated = currentVirtueFolders.find(r => r.id === currentOpenFolderRecord.id);
@@ -1344,7 +1487,7 @@ async function loadVirtuesAndRender() {
                         .insert([{ folder: v.folder, style_class: v.styleClass }])
                         .select()
                         .single();
-                    
+
                     if (newCat && !seedCatErr) {
                         const itemsData = v.items.map(item => ({
                             virtue_id: newCat.id,
@@ -1459,8 +1602,8 @@ async function renderVirtueFolders() {
         addBtn.addEventListener('click', () => {
             const name = prompt('Nome da nova categoria:');
             if (!name || !name.trim()) return;
-            const colors = ['border-green','border-orange','border-blue','border-red','border-yellow','border-pink'];
-            const styleClass = colors[Math.floor(Math.random()*colors.length)];
+            const colors = ['border-green', 'border-orange', 'border-blue', 'border-red', 'border-yellow', 'border-pink'];
+            const styleClass = colors[Math.floor(Math.random() * colors.length)];
             if (supabaseClient) {
                 supabaseClient.from('virtues').insert([{ folder: name.trim(), style_class: styleClass }]).then(({ error }) => {
                     if (error) alert('Erro ao criar no Supabase: ' + error.message);
@@ -1817,7 +1960,7 @@ function setupCardEditor() {
                 });
                 return;
             }
-            
+
             const record = folderRecord;
             const items = [...(record.items || [])];
             const ex = cardId !== null ? { ...items[cardId] } : {};
