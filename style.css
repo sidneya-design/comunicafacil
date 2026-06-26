@@ -42,6 +42,9 @@ body {
     color: white; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
+.sidebar-spacer { flex-grow: 1; }
+.btn-login { margin-top: auto; margin-bottom: 20px; color: #888; }
+
 /* Main Content */
 .main-content { flex: 1; display: flex; flex-direction: column; padding: 15px; gap: 15px; height: 100vh; }
 
@@ -270,6 +273,8 @@ body {
     .presentation-word { font-size: 60px; }
     .presentation-video { max-height: 250px; }
     .nav-arrow { width: 50px; height: 50px; font-size: 24px; }
+    .sidebar-spacer { display: none; }
+    .btn-login { margin-top: 0; margin-bottom: 0; }
 }
 
 /* ============================================

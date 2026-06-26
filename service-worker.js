@@ -1,4 +1,4 @@
-const CACHE_NAME = 'comunica-pwa-v3';
+const CACHE_NAME = 'comunica-pwa-v4';
 const urlsToCache = [
   './',
   './index.html',
