@@ -75,12 +75,15 @@
 
                 <!-- Tela: Tópicos (Fringe) -->
                 <main class="view-section" id="view-topics">
-                    <div class="grid-container" id="grid-topics-folders"></div>
-                    <div class="topic-content" id="topic-content-area" style="display: none;">
-                        <button class="back-btn" id="btn-topic-back">
-                            <i class="fas fa-arrow-left"></i> Voltar para Tópicos
+                    <div class="section-edit-bar">
+                        <button class="virtue-back-btn" id="btn-topic-back" style="display:none;">
+                            <i class="fas fa-arrow-left"></i> Voltar
                         </button>
-                        <div class="grid-container" id="grid-topic-words"></div>
+                        <button class="edit-mode-btn" id="btn-edit-topics"><i class="fas fa-pen"></i> Editar</button>
+                    </div>
+                    <div class="grid-wrapper">
+                        <div class="grid-container" id="grid-topics-folders"></div>
+                        <div class="grid-container" id="grid-topic-words" style="display:none;"></div>
                     </div>
                 </main>
 

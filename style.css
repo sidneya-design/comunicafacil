@@ -189,6 +189,8 @@ body {
     cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
 }
 .key-space { max-width: 400px; }
+.key-func { background: #d0d0d0; max-width: 140px; font-size: 20px; color: #333; }
+.key-func:active { background: #c0c0c0; }
 .key-btn:active { background: #e0e0e0; transform: translateY(2px);}
 .media-header { display: flex; align-items: center; gap: 20px; padding: 15px; background: white; border-radius: var(--radius); margin-bottom: 15px;}
 .add-media-btn { background: #4CAF50; color: white; border: none; padding: 15px 25px; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 10px; }

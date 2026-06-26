@@ -113,7 +113,6 @@ async function fetchArasaacImage(word) {
 }
 
 function initApp() {
-    renderFolders('grid-topics-folders', 'topic-content-area', 'grid-topic-words', 'btn-topic-back', topics);
     initKeyboard();
     setupNavigation();
     initIndexedDB();
@@ -176,54 +175,6 @@ async function renderGrid(containerId, wordsArray) {
     }
 }
 
-async function renderFolders(folderContainerId, contentAreaId, gridWordsId, backBtnId, dataArray) {
-    const container = document.getElementById(folderContainerId);
-    const contentArea = document.getElementById(contentAreaId);
-    if(!container) return;
-    container.innerHTML = '';
-    
-    for (const folderObj of dataArray) {
-        const btn = document.createElement('button');
-        btn.className = `word-btn ${folderObj.styleClass}`;
-        
-        const imgContainer = document.createElement('div');
-        imgContainer.className = 'word-btn-img-container';
-        const imgEl = document.createElement('img');
-        imgEl.className = 'word-btn-img';
-        imgContainer.appendChild(imgEl);
-        
-        const textEl = document.createElement('div');
-        textEl.className = 'word-btn-text';
-        textEl.textContent = folderObj.folder;
-        
-        btn.appendChild(imgContainer);
-        btn.appendChild(textEl);
-        
-        btn.addEventListener('click', () => {
-            container.style.display = 'none';
-            contentArea.style.display = 'flex';
-            renderGrid(gridWordsId, folderObj.items);
-            speak(folderObj.folder);
-        });
-        container.appendChild(btn);
-
-        const folderKey = folderObj.folder.toLowerCase().trim();
-        const localImgUrl = localForcesImages[folderKey];
-        if (localImgUrl) {
-            imgEl.src = localImgUrl;
-        } else {
-            fetchArasaacImage(folderObj.folder).then(imageUrl => {
-                if (imageUrl) imgEl.src = imageUrl;
-                else imgContainer.innerHTML = '<i class="fas fa-folder word-btn-icon"></i>';
-            });
-        }
-    }
-    
-    document.getElementById(backBtnId).addEventListener('click', () => {
-        contentArea.style.display = 'none';
-        container.style.display = 'grid';
-    });
-}
 
 function addToMessage(word) { currentMessage.push(word); renderMessage(); }
 function commitTypingWord() { if(currentTypingWord.trim() !== "") { currentMessage.push(currentTypingWord); currentTypingWord = ""; } }
@@ -242,11 +193,36 @@ function renderMessage() {
     messageDisplay.scrollTop = messageDisplay.scrollHeight;
 }
 
+let availableVoices = [];
+function loadVoices() {
+    availableVoices = window.speechSynthesis.getVoices();
+}
+if ('speechSynthesis' in window) {
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+}
+
 function speak(text) {
     if ('speechSynthesis' in window && text) {
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'pt-BR'; window.speechSynthesis.speak(utterance);
+        
+        let ptVoices = availableVoices.filter(v => v.lang.startsWith('pt'));
+        if (ptVoices.length > 0) {
+            // Tenta achar vozes de alta qualidade (Premium, Enhanced, Google ou específicas como Luciana/Daniel)
+            let bestVoice = ptVoices.find(v => 
+                v.name.includes('Premium') || 
+                v.name.includes('Enhanced') || 
+                v.name.includes('Google') ||
+                v.name.includes('Luciana')
+            );
+            utterance.voice = bestVoice || ptVoices[0];
+        } else {
+            utterance.lang = 'pt-BR';
+        }
+
+        utterance.rate = 0.85; // Velocidade reduzida para maior clareza
+        window.speechSynthesis.speak(utterance);
     }
 }
 
@@ -261,38 +237,166 @@ document.getElementById('btn-backspace').addEventListener('click', () => {
     renderMessage();
 });
 
+let pendingAccent = null;
+const accentMap = {
+    '´': { 'a': 'á', 'e': 'é', 'i': 'í', 'o': 'ó', 'u': 'ú' },
+    '~': { 'a': 'ã', 'o': 'õ', 'n': 'ñ' },
+    '^': { 'a': 'â', 'e': 'ê', 'o': 'ô' },
+    '`': { 'a': 'à' }
+};
+
 function initKeyboard() {
-    const layout = [ ['Q','W','E','R','T','Y','U','I','O','P'], ['A','S','D','F','G','H','J','K','L'], ['Z','X','C','V','B','N','M'] ];
+    const layout = [
+        ["'",'1','2','3','4','5','6','7','8','9','0','-','=','Backspace'],
+        ['Q','W','E','R','T','Y','U','I','O','P','´','['],
+        ['A','S','D','F','G','H','J','K','L','Ç','~',']','Enter'],
+        ['\\','Z','X','C','V','B','N','M',',','.','/']
+    ];
     const container = document.getElementById('keyboard-grid');
     if(!container) return;
     container.innerHTML = '';
     layout.forEach(row => {
         const rowDiv = document.createElement('div'); rowDiv.className = 'keyboard-row';
         row.forEach(key => {
-            const btn = document.createElement('button'); btn.className = 'key-btn'; btn.textContent = key;
-            btn.addEventListener('click', () => { currentTypingWord += key.toLowerCase(); renderMessage(); });
+            const btn = document.createElement('button'); btn.className = 'key-btn'; 
+            
+            if (key === 'Backspace') {
+                btn.classList.add('key-func');
+                btn.innerHTML = '<i class="fas fa-backspace"></i>';
+                btn.addEventListener('click', () => {
+                    pendingAccent = null;
+                    if (currentTypingWord.length > 0) {
+                        currentTypingWord = currentTypingWord.slice(0, -1);
+                        renderMessage();
+                    } else if (currentMessage.length > 0) {
+                        currentMessage.pop();
+                        renderMessage();
+                    }
+                });
+            } else if (key === 'Enter') {
+                btn.classList.add('key-func');
+                btn.textContent = 'Enter';
+                btn.addEventListener('click', () => {
+                    pendingAccent = null;
+                    if(currentTypingWord.length > 0) { commitTypingWord(); renderMessage(); }
+                    const btnSpeak = document.getElementById('btn-speak');
+                    if (btnSpeak) btnSpeak.click();
+                });
+            } else {
+                btn.textContent = key;
+                btn.addEventListener('click', () => { 
+                    if (['´', '~', '^', '`'].includes(key)) {
+                        pendingAccent = key;
+                        return;
+                    }
+                    let char = key.toLowerCase();
+                    if (pendingAccent && accentMap[pendingAccent] && accentMap[pendingAccent][char]) {
+                        char = accentMap[pendingAccent][char];
+                    } else if (pendingAccent) {
+                        currentTypingWord += pendingAccent;
+                    }
+                    pendingAccent = null;
+                    currentTypingWord += char; 
+                    renderMessage(); 
+                });
+            }
             rowDiv.appendChild(btn);
         });
         container.appendChild(rowDiv);
     });
     const spaceRow = document.createElement('div'); spaceRow.className = 'keyboard-row';
     const spaceBtn = document.createElement('button'); spaceBtn.className = 'key-btn key-space'; spaceBtn.textContent = 'Espaço';
-    spaceBtn.addEventListener('click', () => { if(currentTypingWord.length > 0) { commitTypingWord(); renderMessage(); } });
+    spaceBtn.addEventListener('click', () => { pendingAccent = null; if(currentTypingWord.length > 0) { commitTypingWord(); renderMessage(); } });
     spaceRow.appendChild(spaceBtn); container.appendChild(spaceRow);
 }
+
+const hiddenInput = document.createElement('input');
+hiddenInput.type = 'text';
+hiddenInput.style.position = 'absolute';
+hiddenInput.style.opacity = '0';
+hiddenInput.style.pointerEvents = 'none';
+document.body.appendChild(hiddenInput);
+
+// Suporte a teclado físico nativo (resolve acentuação de SO)
+document.addEventListener('keydown', (e) => {
+    const keyboardView = document.getElementById('view-keyboard');
+    if (!keyboardView || !keyboardView.classList.contains('active')) return;
+    
+    if (e.target.tagName === 'INPUT' && e.target !== hiddenInput) return;
+    if (e.target.tagName === 'TEXTAREA') return;
+
+    if (document.activeElement !== hiddenInput) {
+        hiddenInput.focus();
+    }
+
+    if (e.key === 'Backspace') {
+        if (hiddenInput.value === '' && currentMessage.length > 0) {
+            currentMessage.pop();
+            renderMessage();
+            e.preventDefault();
+        }
+    } else if (e.key === 'Enter') {
+        if (hiddenInput.value.trim().length > 0) {
+            commitTypingWord();
+        }
+        renderMessage();
+        const btnSpeak = document.getElementById('btn-speak');
+        if (btnSpeak) btnSpeak.click();
+        e.preventDefault();
+    } else if (e.key === ' ' || e.key === 'Spacebar') {
+        if (hiddenInput.value.trim().length > 0) {
+            commitTypingWord();
+            renderMessage();
+        }
+        e.preventDefault();
+    }
+});
+
+hiddenInput.addEventListener('input', (e) => {
+    currentTypingWord = hiddenInput.value;
+    renderMessage();
+});
+
+// Atualizamos a função de commit para sincronizar com o input oculto
+const originalCommitTypingWord = commitTypingWord;
+commitTypingWord = function() {
+    if(currentTypingWord.trim() !== "") { 
+        currentMessage.push(currentTypingWord); 
+        currentTypingWord = ""; 
+        hiddenInput.value = "";
+    }
+};
+
+// Sincroniza limpezas e botões do virtual keyboard com o hiddenInput
+document.getElementById('btn-clear').addEventListener('click', () => { 
+    currentMessage = []; 
+    currentTypingWord = ""; 
+    hiddenInput.value = "";
+    renderMessage(); 
+});
+document.getElementById('btn-backspace').addEventListener('click', () => {
+    if (currentTypingWord.length > 0) {
+        currentTypingWord = currentTypingWord.slice(0, -1);
+        hiddenInput.value = currentTypingWord;
+    } else if (currentMessage.length > 0) {
+        currentMessage.pop();
+    }
+    renderMessage();
+});
 
 // ----------------------------------------------------
 // INDEXEDDB PARA MÍDIAS OFFLINE E EXERCÍCIOS
 // ----------------------------------------------------
 
 function initIndexedDB() {
-    const request = indexedDB.open('ComunicaDB', 8);
+    const request = indexedDB.open('ComunicaDB', 10);
     request.onupgradeneeded = (event) => {
         db = event.target.result;
         if (!db.objectStoreNames.contains('medias')) db.createObjectStore('medias', { keyPath: 'id', autoIncrement: true });
         if (db.objectStoreNames.contains('exercises')) db.deleteObjectStore('exercises');
         db.createObjectStore('exercises', { keyPath: 'id', autoIncrement: true });
         if (!db.objectStoreNames.contains('virtues')) db.createObjectStore('virtues', { keyPath: 'id', autoIncrement: true });
+        if (!db.objectStoreNames.contains('topics')) db.createObjectStore('topics', { keyPath: 'id', autoIncrement: true });
         // v8: unifica core_cards + quick_cards em um único store
         if (db.objectStoreNames.contains('core_cards')) db.deleteObjectStore('core_cards');
         if (db.objectStoreNames.contains('quick_cards')) db.deleteObjectStore('quick_cards');
@@ -304,6 +408,7 @@ function initIndexedDB() {
         loadExerciseCards();
         initCoreCardsDB();
         initVirtuesDB();
+        initTopicsDB();
     };
 }
 
@@ -706,16 +811,18 @@ function renderCurrentPlaylistItem() {
 let isAdmin = true; // Em desenvolvimento: todos são admin
 
 // Estado global
-const editModes = { core: false, virtue: false };
+const editModes = { core: false, virtue: false, topic: false };
 let cardEditorState = { section: null, cardId: null, folderRecord: null };
 let currentVirtueFolders = [];
 let currentOpenFolderRecord = null;
+let currentTopicsFolders = [];
+let currentOpenTopicFolderRecord = null;
 
 // ---- Helpers de visibilidade de edição ----
 function showEditBars() {
-    ['btn-edit-core', 'btn-edit-virtues'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.style.display = isAdmin ? '' : 'none';
+    ['btn-edit-core', 'btn-edit-virtues', 'btn-edit-topics'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.parentElement.style.display = 'flex';
     });
 }
 
@@ -894,6 +1001,274 @@ async function renderFlatGrid(cards, containerId, section) {
     }
 
     updateEditBtn(section, 'btn-edit-core');
+}
+
+// ---- TÓPICOS (Fringe) ----
+function initTopicsDB() {
+    db.transaction(['topics'], 'readonly').objectStore('topics').getAll().onsuccess = (e) => {
+        if (e.target.result.length === 0) {
+            const tx = db.transaction(['topics'], 'readwrite');
+            const store = tx.objectStore('topics');
+            topics.forEach(t => store.add({
+                folder: t.folder, styleClass: t.styleClass,
+                items: t.items.map(i => ({ ...i, imageBlob: null, audioBlob: null }))
+            }));
+            tx.oncomplete = loadTopicsAndRender;
+        } else {
+            currentTopicsFolders = e.target.result;
+            renderTopicsFolders();
+        }
+    };
+}
+
+async function loadTopicsAndRender() {
+    if (supabaseClient) {
+        try {
+            const { data: catData, error: catErr } = await supabaseClient.from('topics').select('*');
+            if (catErr) throw catErr;
+
+            if (catData && catData.length > 0) {
+                const { data: itemData, error: itemErr } = await supabaseClient.from('topic_items').select('*');
+                if (itemErr) throw itemErr;
+
+                const merged = catData.map(cat => {
+                    const items = (itemData || []).filter(item => item.topic_id === cat.id).map(item => ({
+                        word: item.word, styleClass: item.style_class, img: item.img, image_url: item.image_url, audio_url: item.audio_url
+                    }));
+                    return { id: cat.id, folder: cat.folder, styleClass: cat.style_class, items };
+                });
+                
+                currentTopicsFolders = merged;
+                const tx = db.transaction(['topics'], 'readwrite');
+                const store = tx.objectStore('topics');
+                store.clear().onsuccess = () => merged.forEach(t => store.put(t));
+                
+                const wordGrid = document.getElementById('grid-topic-words');
+                if (currentOpenTopicFolderRecord && wordGrid && wordGrid.style.display !== 'none') {
+                    const updated = currentTopicsFolders.find(r => r.id === currentOpenTopicFolderRecord.id);
+                    if (updated) { currentOpenTopicFolderRecord = updated; renderTopicsWords(updated); }
+                } else {
+                    renderTopicsFolders();
+                }
+                return;
+            } else if (catData && catData.length === 0) {
+                console.log('Semeando Supabase com tópicos...');
+                for (const t of topics) {
+                    const { data: newCat, error: seedCatErr } = await supabaseClient.from('topics')
+                        .insert([{ folder: t.folder, style_class: t.styleClass }]).select().single();
+                    if (newCat && !seedCatErr) {
+                        const itemsData = t.items.map(item => ({
+                            topic_id: newCat.id, word: item.word, style_class: item.styleClass, img: item.img || null
+                        }));
+                        await supabaseClient.from('topic_items').insert(itemsData);
+                    }
+                }
+                loadTopicsAndRender();
+                return;
+            }
+        } catch (e) {
+            console.warn('Erro ao carregar topics do Supabase:', e);
+        }
+    }
+    db.transaction(['topics'], 'readonly').objectStore('topics').getAll().onsuccess = (e) => {
+        currentTopicsFolders = e.target.result;
+        const wordGrid = document.getElementById('grid-topic-words');
+        if (currentOpenTopicFolderRecord && wordGrid && wordGrid.style.display !== 'none') {
+            const updated = currentTopicsFolders.find(r => r.id === currentOpenTopicFolderRecord.id);
+            if (updated) { currentOpenTopicFolderRecord = updated; renderTopicsWords(updated); }
+        } else {
+            renderTopicsFolders();
+        }
+    };
+}
+
+function saveTopicFolderToDB(record, callback) {
+    const req = db.transaction(['topics'], 'readwrite').objectStore('topics')[record.id ? 'put' : 'add'](record);
+    req.onsuccess = () => { if (callback) callback(); };
+}
+
+function deleteTopicFolderFromDB(id, callback) {
+    db.transaction(['topics'], 'readwrite').objectStore('topics').delete(id).onsuccess = () => { if (callback) callback(); };
+}
+
+async function renderTopicsFolders() {
+    const container = document.getElementById('grid-topics-folders');
+    const wordGrid = document.getElementById('grid-topic-words');
+    const backBtn = document.getElementById('btn-topic-back');
+    if (!container) return;
+    container.innerHTML = '';
+    container.style.display = 'grid';
+    if (wordGrid) wordGrid.style.display = 'none';
+    if (backBtn) backBtn.style.display = 'none';
+
+    for (const record of currentTopicsFolders) {
+        const btn = document.createElement('button');
+        btn.className = `word-btn ${record.styleClass}`;
+
+        const imgCont = document.createElement('div');
+        imgCont.className = 'word-btn-img-container';
+        const imgEl = document.createElement('img');
+        imgEl.className = 'word-btn-img';
+        imgCont.appendChild(imgEl);
+
+        const textEl = document.createElement('div');
+        textEl.className = 'word-btn-text';
+        textEl.textContent = record.folder;
+
+        btn.appendChild(imgCont);
+        btn.appendChild(textEl);
+
+        const folderKey = record.folder.toLowerCase().trim();
+        const localImgUrl = localForcesImages[folderKey];
+        if (localImgUrl) {
+            imgEl.src = localImgUrl;
+        } else {
+            fetchArasaacImage(record.folder).then(url => {
+                if (url) imgEl.src = url;
+                else imgCont.innerHTML = '<i class="fas fa-folder word-btn-icon"></i>';
+            });
+        }
+
+        if (isAdmin && editModes.topic) {
+            const delBtn = document.createElement('button');
+            delBtn.className = 'delete-media-btn';
+            delBtn.innerHTML = '<i class="fas fa-trash"></i>';
+            delBtn.onclick = (ev) => {
+                ev.stopPropagation();
+                if (confirm(`Tem certeza que deseja excluir a pasta "${record.folder}"?`)) {
+                    if (supabaseClient && record.id) {
+                        supabaseClient.from('topics').delete().eq('id', record.id)
+                            .then(({ error }) => {
+                                if (error) console.error(error);
+                                else { deleteTopicFolderFromDB(record.id, loadTopicsAndRender); }
+                            });
+                    } else if (record.id) {
+                        deleteTopicFolderFromDB(record.id, loadTopicsAndRender);
+                    }
+                }
+            };
+            btn.appendChild(delBtn);
+
+            const editBtn = document.createElement('button');
+            editBtn.className = 'edit-media-btn';
+            editBtn.innerHTML = '<i class="fas fa-pencil-alt"></i>';
+            editBtn.onclick = (ev) => { ev.stopPropagation(); openCardEditor('topic', null, null, record); };
+            btn.appendChild(editBtn);
+        }
+
+        btn.onclick = () => {
+            if (!editModes.topic) speak(record.folder);
+            currentOpenTopicFolderRecord = record;
+            renderTopicsWords(record);
+        };
+        container.appendChild(btn);
+    }
+    
+    if (isAdmin && editModes.topic) {
+        const addBtn = document.createElement('button');
+        addBtn.className = 'word-btn border-gray';
+        addBtn.innerHTML = '<div class="word-btn-img-container"><i class="fas fa-plus word-btn-icon" style="color:#888"></i></div><div class="word-btn-text">Nova Pasta</div>';
+        addBtn.addEventListener('click', () => openCardEditor('topic', null, null, null));
+        container.appendChild(addBtn);
+    }
+    updateEditBtn('topic', 'btn-edit-topics');
+}
+
+async function renderTopicsWords(record) {
+    const folderGrid = document.getElementById('grid-topics-folders');
+    const wordGrid = document.getElementById('grid-topic-words');
+    const backBtn = document.getElementById('btn-topic-back');
+    if (folderGrid) folderGrid.style.display = 'none';
+    if (wordGrid) { wordGrid.style.display = 'grid'; wordGrid.innerHTML = ''; }
+    if (backBtn) backBtn.style.display = 'flex';
+
+    for (const [idx, item] of record.items.entries()) {
+        const btn = document.createElement('button');
+        btn.className = `word-btn ${item.styleClass}`;
+
+        const imgCont = document.createElement('div');
+        imgCont.className = 'word-btn-img-container';
+        const imgEl = document.createElement('img');
+        imgEl.className = 'word-btn-img';
+        imgCont.appendChild(imgEl);
+        
+        let blobUrl = null;
+        if (item.imageBlob instanceof Blob) {
+            blobUrl = URL.createObjectURL(item.imageBlob);
+            imgEl.src = blobUrl;
+        } else if (typeof item.image_url === 'string' && item.image_url.trim() !== '') {
+            imgEl.src = item.image_url;
+        } else {
+            const local = item.img || localForcesImages[(item.word || '').toLowerCase().trim()];
+            if (local) { imgEl.src = local; }
+            else {
+                fetchArasaacImage(item.word).then(url => {
+                    if (url) imgEl.src = url;
+                    else imgCont.innerHTML = '<i class="fas fa-comment-dots word-btn-icon"></i>';
+                });
+            }
+        }
+
+        const textEl = document.createElement('div');
+        textEl.className = 'word-btn-text';
+        textEl.textContent = item.word;
+
+        btn.appendChild(imgCont);
+        btn.appendChild(textEl);
+
+        if (isAdmin && editModes.topic) {
+            const delBtn = document.createElement('button');
+            delBtn.className = 'delete-media-btn';
+            delBtn.innerHTML = '<i class="fas fa-trash"></i>';
+            delBtn.onclick = (ev) => {
+                ev.stopPropagation();
+                if (confirm(`Excluir o item "${item.word}"?`)) {
+                    if (supabaseClient && record.id) {
+                        const itemsToUpdate = record.items.filter((_, i) => i !== idx);
+                        supabaseClient.from('topic_items').delete().eq('topic_id', record.id).eq('word', item.word)
+                            .then(({ error }) => {
+                                if (!error) { record.items = itemsToUpdate; saveTopicFolderToDB(record, loadTopicsAndRender); }
+                            });
+                    } else {
+                        record.items.splice(idx, 1);
+                        saveTopicFolderToDB(record, loadTopicsAndRender);
+                    }
+                }
+            };
+            btn.appendChild(delBtn);
+
+            const editBtn = document.createElement('button');
+            editBtn.className = 'edit-media-btn';
+            editBtn.innerHTML = '<i class="fas fa-pencil-alt"></i>';
+            editBtn.onclick = (ev) => { ev.stopPropagation(); openCardEditor('topic', idx, item, record); };
+            btn.appendChild(editBtn);
+        }
+
+        btn.onclick = () => {
+            if (!editModes.topic) {
+                if (currentTypingWord.length > 0) commitTypingWord();
+                addToMessage(item.word);
+                if (item.audioBlob) {
+                    const audio = new Audio(URL.createObjectURL(item.audioBlob));
+                    audio.play();
+                } else if (item.audio_url) {
+                    const audio = new Audio(item.audio_url);
+                    audio.play();
+                } else {
+                    speak(item.word);
+                }
+            }
+        };
+        wordGrid.appendChild(btn);
+    }
+    
+    if (isAdmin && editModes.topic) {
+        const addBtn = document.createElement('button');
+        addBtn.className = 'word-btn border-gray';
+        addBtn.innerHTML = '<div class="word-btn-img-container"><i class="fas fa-plus word-btn-icon" style="color:#888"></i></div><div class="word-btn-text">Novo Item</div>';
+        addBtn.addEventListener('click', () => openCardEditor('topic', null, null, record));
+        wordGrid.appendChild(addBtn);
+    }
 }
 
 // ---- FOMES E FORÇAS (Virtues) ----
@@ -1204,7 +1579,7 @@ function openCardEditor(section, cardId, card, folderRecord) {
     cardEditorState = { section, cardId, folderRecord };
     document.getElementById('card-editor-modal').style.display = 'flex';
 
-    const titles = { core: 'Card Essencial', virtue: 'Card de Fomes e Forças' };
+    const titles = { core: 'Card Essencial', virtue: 'Card de Fomes e Forças', topic: 'Tópico' };
     document.getElementById('card-editor-title').textContent = card ? `Editar ${titles[section]}` : `Novo ${titles[section]}`;
     document.getElementById('card-editor-word').value = card ? card.word : '';
 
@@ -1256,6 +1631,25 @@ function setupCardEditor() {
         if (backBtn) backBtn.style.display = 'none';
         currentOpenFolderRecord = null;
         renderVirtueFolders();
+    });
+
+    // Toggle de modo edição — Tópicos
+    document.getElementById('btn-edit-topics').addEventListener('click', () => {
+        editModes.topic = !editModes.topic;
+        if (currentOpenTopicFolderRecord) renderTopicsWords(currentOpenTopicFolderRecord);
+        else renderTopicsFolders();
+    });
+
+    // Botão Voltar — Tópicos
+    document.getElementById('btn-topic-back').addEventListener('click', () => {
+        const wordGrid = document.getElementById('grid-topic-words');
+        const folderGrid = document.getElementById('grid-topics-folders');
+        const backBtn = document.getElementById('btn-topic-back');
+        if (wordGrid) wordGrid.style.display = 'none';
+        if (folderGrid) folderGrid.style.display = 'grid';
+        if (backBtn) backBtn.style.display = 'none';
+        currentOpenTopicFolderRecord = null;
+        renderTopicsFolders();
     });
 
     // Modal compartilhado — fechar
@@ -1403,6 +1797,86 @@ function setupCardEditor() {
             record.items = items;
             saveVirtueFolderToDB(record, () => {
                 loadVirtuesAndRender();
+                closeCardEditor();
+            });
+        } else if (section === 'topic') {
+            if (folderRecord === null) {
+                if (supabaseClient) {
+                    try {
+                        await supabaseClient.from('topics').insert([{ folder: word, style_class: styleClass }]);
+                        loadTopicsAndRender();
+                        closeCardEditor();
+                        return;
+                    } catch (err) {
+                        alert('Erro ao salvar no Supabase, tentando localmente: ' + err.message);
+                    }
+                }
+                saveTopicFolderToDB({ folder: word, styleClass, items: [] }, () => {
+                    loadTopicsAndRender();
+                    closeCardEditor();
+                });
+                return;
+            }
+            
+            const record = folderRecord;
+            const items = [...(record.items || [])];
+            const ex = cardId !== null ? { ...items[cardId] } : {};
+
+            if (supabaseClient) {
+                try {
+                    let image_url = ex.image_url || null;
+                    let audio_url = ex.audio_url || null;
+                    if (imageFile) {
+                        image_url = await uploadToSupabaseStorage('media_uploads', 'images', imageFile);
+                    }
+                    if (audioFile) {
+                        audio_url = await uploadToSupabaseStorage('media_uploads', 'audios', audioFile);
+                    }
+
+                    if (cardId !== null) {
+                        // Editar item existente
+                        const { data: itemRec } = await supabaseClient
+                            .from('topic_items')
+                            .select('id')
+                            .eq('topic_id', record.id)
+                            .eq('word', ex.word)
+                            .single();
+                        if (itemRec) {
+                            await supabaseClient.from('topic_items').update({
+                                word,
+                                style_class: styleClass,
+                                image_url,
+                                audio_url
+                            }).eq('id', itemRec.id);
+                        }
+                    } else {
+                        // Adicionar novo item
+                        await supabaseClient.from('topic_items').insert([{
+                            topic_id: record.id,
+                            word,
+                            style_class: styleClass,
+                            image_url,
+                            audio_url
+                        }]);
+                    }
+                    loadTopicsAndRender();
+                    closeCardEditor();
+                    return;
+                } catch (err) {
+                    alert('Erro ao salvar no Supabase, tentando localmente: ' + err.message);
+                }
+            }
+
+            const newItem = {
+                word, styleClass,
+                img: ex.img || null,
+                imageBlob: imageFile || ex.imageBlob || null,
+                audioBlob: audioFile || ex.audioBlob || null,
+            };
+            if (cardId !== null) items[cardId] = newItem; else items.push(newItem);
+            record.items = items;
+            saveTopicFolderToDB(record, () => {
+                loadTopicsAndRender();
                 closeCardEditor();
             });
         }
