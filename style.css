@@ -269,3 +269,92 @@ body {
     .presentation-video { max-height: 250px; }
     .nav-arrow { width: 50px; height: 50px; font-size: 24px; }
 }
+
+/* ============================================
+   SISTEMA DE PERSONALIZAÇÃO DE CARDS
+   ============================================ */
+
+/* Barra de edição no topo de cada seção */
+.section-edit-bar {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 6px 12px;
+    gap: 10px;
+    background: var(--panel-bg);
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+    min-height: 44px;
+}
+
+/* Wrapper que faz o grid preencher o espaço restante */
+.grid-wrapper {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
+}
+.grid-wrapper .grid-container {
+    height: 100%;
+}
+
+/* Botão de modo edição */
+.edit-mode-btn {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    padding: 7px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+    font-family: 'Outfit', sans-serif;
+    white-space: nowrap;
+}
+.edit-mode-btn:hover { transform: scale(1.04); opacity: 0.9; }
+.edit-mode-btn.active {
+    background: linear-gradient(135deg, #43e97b, #38f9d7);
+    color: #1a1a2e;
+}
+
+/* Botão Voltar nas Fomes e Forças */
+.virtue-back-btn {
+    background: white;
+    border: 2px solid #ccc;
+    color: #333;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'Outfit', sans-serif;
+    transition: all 0.15s;
+}
+.virtue-back-btn:hover { border-color: #999; }
+
+/* Indicador de áudio personalizado no card */
+.audio-indicator {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    background: linear-gradient(135deg, #43e97b, #38f9d7);
+    color: #1a1a2e;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    pointer-events: none;
+    z-index: 2;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+

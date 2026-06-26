@@ -98,14 +98,12 @@ async function fetchArasaacImage(word) {
 }
 
 function initApp() {
-    renderGrid('grid-core', coreWords);
-    renderGrid('grid-quick', quickFires);
     renderFolders('grid-topics-folders', 'topic-content-area', 'grid-topic-words', 'btn-topic-back', topics);
-    renderFolders('grid-virtues-folders', 'virtue-content-area', 'grid-virtue-words', 'btn-virtue-back', virtues);
     initKeyboard();
     setupNavigation();
     initIndexedDB();
     setupModals();
+    setupCardEditor();
 }
 
 function setupNavigation() {
@@ -272,17 +270,24 @@ function initKeyboard() {
 // ----------------------------------------------------
 
 function initIndexedDB() {
-    const request = indexedDB.open('ComunicaDB', 5);
+    const request = indexedDB.open('ComunicaDB', 8);
     request.onupgradeneeded = (event) => {
         db = event.target.result;
         if (!db.objectStoreNames.contains('medias')) db.createObjectStore('medias', { keyPath: 'id', autoIncrement: true });
         if (db.objectStoreNames.contains('exercises')) db.deleteObjectStore('exercises');
         db.createObjectStore('exercises', { keyPath: 'id', autoIncrement: true });
+        if (!db.objectStoreNames.contains('virtues')) db.createObjectStore('virtues', { keyPath: 'id', autoIncrement: true });
+        // v8: unifica core_cards + quick_cards em um único store
+        if (db.objectStoreNames.contains('core_cards')) db.deleteObjectStore('core_cards');
+        if (db.objectStoreNames.contains('quick_cards')) db.deleteObjectStore('quick_cards');
+        db.createObjectStore('core_cards', { keyPath: 'id', autoIncrement: true });
     };
     request.onsuccess = (event) => { 
         db = event.target.result; 
         loadMediaCards(); 
         loadExerciseCards();
+        initCoreCardsDB();
+        initVirtuesDB();
     };
 }
 
@@ -674,4 +679,476 @@ function renderCurrentPlaylistItem() {
     }
 }
 
+// =============================================
+// SISTEMA DE PERSONALIZAÇÃO DE CARDS
+// =============================================
+// 🔐 ADMIN: Controle de acesso
+// Quando autenticação for implementada (Netlify Identity),
+// substitua esta linha pela verificação do token JWT:
+//   const user = netlifyIdentity.currentUser();
+//   let isAdmin = user?.app_metadata?.roles?.includes('admin') ?? false;
+let isAdmin = true; // Em desenvolvimento: todos são admin
+
+// Estado global
+const editModes = { core: false, virtue: false };
+let cardEditorState = { section: null, cardId: null, folderRecord: null };
+let currentVirtueFolders = [];
+let currentOpenFolderRecord = null;
+
+// ---- Helpers de visibilidade de edição ----
+function showEditBars() {
+    ['btn-edit-core', 'btn-edit-virtues'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = isAdmin ? '' : 'none';
+    });
+}
+
+function updateEditBtn(section, btnId) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    if (editModes[section]) {
+        btn.classList.add('active');
+        btn.innerHTML = '<i class="fas fa-check"></i> Concluir';
+    } else {
+        btn.classList.remove('active');
+        btn.innerHTML = '<i class="fas fa-pen"></i> Editar';
+    }
+}
+
+// ---- ESSENCIAIS (Core Cards — inclui Rápidas) ----
+function initCoreCardsDB() {
+    db.transaction(['core_cards'], 'readonly').objectStore('core_cards').getAll().onsuccess = (e) => {
+        if (e.target.result.length === 0) {
+            const tx = db.transaction(['core_cards'], 'readwrite');
+            const store = tx.objectStore('core_cards');
+            // Semeia coreWords seguido de quickFires, mantendo estilo de cada um
+            [...coreWords, ...quickFires].forEach((w, i) =>
+                store.add({ ...w, imageBlob: null, audioBlob: null, order: i })
+            );
+            tx.oncomplete = loadCoreAndRender;
+        } else {
+            loadCoreAndRender();
+        }
+    };
+}
+
+function loadCoreAndRender() {
+    db.transaction(['core_cards'], 'readonly').objectStore('core_cards').getAll().onsuccess = (e) => {
+        renderFlatGrid(e.target.result.sort((a, b) => a.order - b.order), 'grid-core', 'core');
+    };
+}
+
+// ---- GRID FLAT (Essenciais) ----
+async function renderFlatGrid(cards, containerId, section) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '';
+
+    for (const card of cards) {
+        const btn = document.createElement('button');
+        btn.className = `word-btn ${card.styleClass}`;
+
+        if (card.audioBlob instanceof Blob) {
+            const ind = document.createElement('div');
+            ind.className = 'audio-indicator';
+            ind.innerHTML = '<i class="fas fa-volume-up"></i>';
+            btn.appendChild(ind);
+        }
+
+        const imgCont = document.createElement('div');
+        imgCont.className = 'word-btn-img-container';
+        const imgEl = document.createElement('img');
+        imgEl.className = 'word-btn-img';
+        imgCont.appendChild(imgEl);
+
+        const textEl = document.createElement('div');
+        textEl.className = 'word-btn-text';
+        textEl.textContent = card.word;
+
+        btn.appendChild(imgCont);
+        btn.appendChild(textEl);
+
+        if (isAdmin && editModes[section]) {
+            const delBtn = document.createElement('button');
+            delBtn.className = 'delete-media-btn';
+            delBtn.innerHTML = '<i class="fas fa-trash"></i>';
+            delBtn.onclick = (ev) => {
+                ev.stopPropagation();
+                if (confirm(`Apagar "${card.word}"?`)) {
+                    db.transaction(['core_cards'], 'readwrite').objectStore('core_cards').delete(card.id).onsuccess = () => {
+                        loadCoreAndRender();
+                    };
+                }
+            };
+            btn.appendChild(delBtn);
+
+            const editBtn = document.createElement('button');
+            editBtn.className = 'edit-media-btn';
+            editBtn.innerHTML = '<i class="fas fa-pencil-alt"></i>';
+            editBtn.onclick = (ev) => { ev.stopPropagation(); openCardEditor(section, card.id, card, null); };
+            btn.appendChild(editBtn);
+        }
+
+        btn.addEventListener('click', () => {
+            if (editModes[section]) return;
+            if (currentTypingWord.length > 0) commitTypingWord();
+            addToMessage(card.word);
+            if (card.audioBlob instanceof Blob) new Audio(URL.createObjectURL(card.audioBlob)).play();
+            else speak(card.word);
+        });
+
+        container.appendChild(btn);
+
+        // Imagem
+        if (card.imageBlob instanceof Blob) {
+            imgEl.src = URL.createObjectURL(card.imageBlob);
+        } else {
+            const wordKey = (card.word || '').toLowerCase().trim();
+            const local = card.img || localForcesImages[wordKey];
+            if (local) { imgEl.src = local; }
+            else {
+                fetchArasaacImage(card.word).then(url => {
+                    if (url) imgEl.src = url;
+                    else imgCont.innerHTML = '<i class="fas fa-comment-dots word-btn-icon"></i>';
+                });
+            }
+        }
+    }
+
+    // Botão + Novo Card (admin)
+    if (isAdmin && editModes[section]) {
+        const addBtn = document.createElement('button');
+        addBtn.className = 'word-btn border-gray';
+        addBtn.innerHTML = '<div class="word-btn-img-container"><i class="fas fa-plus word-btn-icon" style="color:#888"></i></div><div class="word-btn-text">Novo Card</div>';
+        addBtn.addEventListener('click', () => openCardEditor(section, null, null, null));
+        container.appendChild(addBtn);
+    }
+
+    updateEditBtn(section, 'btn-edit-core');
+}
+
+// ---- FOMES E FORÇAS (Virtues) ----
+function initVirtuesDB() {
+    db.transaction(['virtues'], 'readonly').objectStore('virtues').getAll().onsuccess = (e) => {
+        if (e.target.result.length === 0) {
+            const tx = db.transaction(['virtues'], 'readwrite');
+            const store = tx.objectStore('virtues');
+            virtues.forEach(v => store.add({
+                folder: v.folder, styleClass: v.styleClass,
+                items: v.items.map(i => ({ ...i, imageBlob: null, audioBlob: null }))
+            }));
+            tx.oncomplete = loadVirtuesAndRender;
+        } else {
+            currentVirtueFolders = e.target.result;
+            renderVirtueFolders();
+        }
+    };
+}
+
+function loadVirtuesAndRender() {
+    db.transaction(['virtues'], 'readonly').objectStore('virtues').getAll().onsuccess = (e) => {
+        currentVirtueFolders = e.target.result;
+        const wordGrid = document.getElementById('grid-virtue-words');
+        if (currentOpenFolderRecord && wordGrid && wordGrid.style.display !== 'none') {
+            const updated = currentVirtueFolders.find(r => r.id === currentOpenFolderRecord.id);
+            if (updated) { currentOpenFolderRecord = updated; renderVirtueWords(updated); }
+        } else {
+            renderVirtueFolders();
+        }
+    };
+}
+
+function saveVirtueFolderToDB(record, callback) {
+    const req = db.transaction(['virtues'], 'readwrite').objectStore('virtues')[record.id ? 'put' : 'add'](record);
+    req.onsuccess = () => { if (callback) callback(); };
+}
+
+function deleteVirtueFolderFromDB(id, callback) {
+    db.transaction(['virtues'], 'readwrite').objectStore('virtues').delete(id).onsuccess = () => { if (callback) callback(); };
+}
+
+async function renderVirtueFolders() {
+    const container = document.getElementById('grid-virtues-folders');
+    const wordGrid = document.getElementById('grid-virtue-words');
+    const backBtn = document.getElementById('btn-virtue-back');
+    if (!container) return;
+    container.innerHTML = '';
+    container.style.display = 'grid';
+    if (wordGrid) wordGrid.style.display = 'none';
+    if (backBtn) backBtn.style.display = 'none';
+
+    for (const record of currentVirtueFolders) {
+        const btn = document.createElement('button');
+        btn.className = `word-btn ${record.styleClass}`;
+
+        const imgCont = document.createElement('div');
+        imgCont.className = 'word-btn-img-container';
+        const imgEl = document.createElement('img');
+        imgEl.className = 'word-btn-img';
+        imgCont.appendChild(imgEl);
+
+        const textEl = document.createElement('div');
+        textEl.className = 'word-btn-text';
+        textEl.textContent = record.folder;
+
+        btn.appendChild(imgCont);
+        btn.appendChild(textEl);
+
+        if (isAdmin && editModes.virtue) {
+            const delBtn = document.createElement('button');
+            delBtn.className = 'delete-media-btn';
+            delBtn.innerHTML = '<i class="fas fa-trash"></i>';
+            delBtn.onclick = (ev) => {
+                ev.stopPropagation();
+                if (confirm(`Apagar categoria "${record.folder}"?`)) deleteVirtueFolderFromDB(record.id, loadVirtuesAndRender);
+            };
+            btn.appendChild(delBtn);
+        }
+
+        btn.addEventListener('click', () => {
+            currentOpenFolderRecord = record;
+            container.style.display = 'none';
+            if (wordGrid) wordGrid.style.display = 'grid';
+            if (backBtn) backBtn.style.display = '';
+            renderVirtueWords(record);
+            if (!editModes.virtue) speak(record.folder);
+        });
+        container.appendChild(btn);
+
+        const folderKey = record.folder.toLowerCase().trim();
+        const local = localForcesImages[folderKey];
+        if (local) { imgEl.src = local; }
+        else {
+            fetchArasaacImage(record.folder).then(url => {
+                if (url) imgEl.src = url;
+                else imgCont.innerHTML = '<i class="fas fa-folder word-btn-icon"></i>';
+            });
+        }
+    }
+
+    if (isAdmin && editModes.virtue) {
+        const addBtn = document.createElement('button');
+        addBtn.className = 'word-btn border-gray';
+        addBtn.innerHTML = '<div class="word-btn-img-container"><i class="fas fa-plus word-btn-icon" style="color:#888"></i></div><div class="word-btn-text">Nova Categoria</div>';
+        addBtn.addEventListener('click', () => {
+            const name = prompt('Nome da nova categoria:');
+            if (!name || !name.trim()) return;
+            const colors = ['border-green','border-orange','border-blue','border-red','border-yellow','border-pink'];
+            saveVirtueFolderToDB({ folder: name.trim(), styleClass: colors[Math.floor(Math.random()*colors.length)], items: [] }, loadVirtuesAndRender);
+        });
+        container.appendChild(addBtn);
+    }
+
+    updateEditBtn('virtue', 'btn-edit-virtues');
+}
+
+async function renderVirtueWords(record) {
+    const container = document.getElementById('grid-virtue-words');
+    if (!container) return;
+    container.innerHTML = '';
+    const items = record.items || [];
+
+    for (let idx = 0; idx < items.length; idx++) {
+        const item = items[idx];
+        const btn = document.createElement('button');
+        btn.className = `word-btn ${item.styleClass}`;
+
+        if (item.audioBlob instanceof Blob) {
+            const ind = document.createElement('div');
+            ind.className = 'audio-indicator';
+            ind.innerHTML = '<i class="fas fa-volume-up"></i>';
+            btn.appendChild(ind);
+        }
+
+        const imgCont = document.createElement('div');
+        imgCont.className = 'word-btn-img-container';
+        const imgEl = document.createElement('img');
+        imgEl.className = 'word-btn-img';
+        imgCont.appendChild(imgEl);
+
+        const textEl = document.createElement('div');
+        textEl.className = 'word-btn-text';
+        textEl.textContent = item.word;
+
+        btn.appendChild(imgCont);
+        btn.appendChild(textEl);
+
+        if (isAdmin && editModes.virtue) {
+            const delBtn = document.createElement('button');
+            delBtn.className = 'delete-media-btn';
+            delBtn.innerHTML = '<i class="fas fa-trash"></i>';
+            delBtn.onclick = (ev) => {
+                ev.stopPropagation();
+                if (confirm(`Apagar "${item.word}"?`)) {
+                    const updated = { ...record, items: record.items.filter((_, i) => i !== idx) };
+                    currentOpenFolderRecord = updated;
+                    saveVirtueFolderToDB(updated, loadVirtuesAndRender);
+                }
+            };
+            btn.appendChild(delBtn);
+
+            const editBtn = document.createElement('button');
+            editBtn.className = 'edit-media-btn';
+            editBtn.innerHTML = '<i class="fas fa-pencil-alt"></i>';
+            editBtn.onclick = (ev) => { ev.stopPropagation(); openCardEditor('virtue', idx, item, record); };
+            btn.appendChild(editBtn);
+        }
+
+        btn.addEventListener('click', () => {
+            if (editModes.virtue) return;
+            if (currentTypingWord.length > 0) commitTypingWord();
+            addToMessage(item.word);
+            if (item.audioBlob instanceof Blob) new Audio(URL.createObjectURL(item.audioBlob)).play();
+            else speak(item.word);
+        });
+
+        container.appendChild(btn);
+
+        // Imagem
+        if (item.imageBlob instanceof Blob) {
+            imgEl.src = URL.createObjectURL(item.imageBlob);
+        } else {
+            const local = item.img || localForcesImages[(item.word || '').toLowerCase().trim()];
+            if (local) { imgEl.src = local; }
+            else {
+                fetchArasaacImage(item.word).then(url => {
+                    if (url) imgEl.src = url;
+                    else imgCont.innerHTML = '<i class="fas fa-comment-dots word-btn-icon"></i>';
+                });
+            }
+        }
+    }
+
+    if (isAdmin && editModes.virtue) {
+        const addBtn = document.createElement('button');
+        addBtn.className = 'word-btn border-gray';
+        addBtn.innerHTML = '<div class="word-btn-img-container"><i class="fas fa-plus word-btn-icon" style="color:#888"></i></div><div class="word-btn-text">Novo Card</div>';
+        addBtn.addEventListener('click', () => openCardEditor('virtue', null, null, record));
+        container.appendChild(addBtn);
+    }
+
+    updateEditBtn('virtue', 'btn-edit-virtues');
+}
+
+// ---- MODAL COMPARTILHADO DE EDIÇÃO ----
+function openCardEditor(section, cardId, card, folderRecord) {
+    cardEditorState = { section, cardId, folderRecord };
+    document.getElementById('card-editor-modal').style.display = 'flex';
+
+    const titles = { core: 'Card Essencial', virtue: 'Card de Fomes e Forças' };
+    document.getElementById('card-editor-title').textContent = card ? `Editar ${titles[section]}` : `Novo ${titles[section]}`;
+    document.getElementById('card-editor-word').value = card ? card.word : '';
+
+    const defaultColor = section === 'core' ? 'solid-orange' : (folderRecord ? folderRecord.styleClass : 'border-pink');
+    document.getElementById('card-editor-color').value = card ? card.styleClass : defaultColor;
+    document.getElementById('card-editor-image').value = '';
+    document.getElementById('card-editor-audio').value = '';
+
+    const imgPreview = document.getElementById('card-editor-img-preview');
+    if (card && card.imageBlob instanceof Blob) { imgPreview.src = URL.createObjectURL(card.imageBlob); imgPreview.style.display = 'block'; }
+    else if (card && card.img) { imgPreview.src = card.img; imgPreview.style.display = 'block'; }
+    else { imgPreview.style.display = 'none'; }
+
+    document.getElementById('card-editor-audio-indicator').style.display = (card && card.audioBlob instanceof Blob) ? 'flex' : 'none';
+}
+
+function closeCardEditor() {
+    document.getElementById('card-editor-modal').style.display = 'none';
+    cardEditorState = { section: null, cardId: null, folderRecord: null };
+}
+
+// ---- SETUP GERAL ----
+function setupCardEditor() {
+    // Ocultar botões de edição se não for admin
+    showEditBars();
+
+    // Toggle de modo edição — Essenciais
+    document.getElementById('btn-edit-core').addEventListener('click', () => {
+        editModes.core = !editModes.core;
+        loadCoreAndRender();
+    });
+
+    // Toggle de modo edição — Fomes e Forças
+    document.getElementById('btn-edit-virtues').addEventListener('click', () => {
+        editModes.virtue = !editModes.virtue;
+        if (currentOpenFolderRecord) renderVirtueWords(currentOpenFolderRecord);
+        else renderVirtueFolders();
+    });
+
+    // Botão Voltar — Fomes e Forças
+    document.getElementById('btn-virtue-back').addEventListener('click', () => {
+        const wordGrid = document.getElementById('grid-virtue-words');
+        const folderGrid = document.getElementById('grid-virtues-folders');
+        const backBtn = document.getElementById('btn-virtue-back');
+        if (wordGrid) wordGrid.style.display = 'none';
+        if (folderGrid) folderGrid.style.display = 'grid';
+        if (backBtn) backBtn.style.display = 'none';
+        currentOpenFolderRecord = null;
+        renderVirtueFolders();
+    });
+
+    // Modal compartilhado — fechar
+    document.getElementById('btn-close-card-editor').addEventListener('click', closeCardEditor);
+    document.getElementById('btn-cancel-card-editor').addEventListener('click', closeCardEditor);
+
+    // Modal compartilhado — salvar
+    document.getElementById('card-editor-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const word = document.getElementById('card-editor-word').value.trim();
+        const styleClass = document.getElementById('card-editor-color').value;
+        const imageFile = document.getElementById('card-editor-image').files[0] || null;
+        const audioFile = document.getElementById('card-editor-audio').files[0] || null;
+        const { section, cardId, folderRecord } = cardEditorState;
+
+        if (section === 'core') {
+            const storeKey = 'core_cards';
+            const reload = loadCoreAndRender;
+            if (cardId !== null) {
+                // Editar existente — preservar blobs não alterados
+                db.transaction([storeKey], 'readonly').objectStore(storeKey).get(cardId).onsuccess = (ev) => {
+                    const ex = ev.target.result || {};
+                    db.transaction([storeKey], 'readwrite').objectStore(storeKey).put({
+                        id: cardId, word, styleClass,
+                        img: ex.img || null,
+                        imageBlob: imageFile || ex.imageBlob || null,
+                        audioBlob: audioFile || ex.audioBlob || null,
+                        order: ex.order || 0
+                    }).onsuccess = () => {
+                        reload();
+                        closeCardEditor();
+                    };
+                };
+            } else {
+                // Novo card
+                db.transaction([storeKey], 'readwrite').objectStore(storeKey).add({
+                    word, styleClass, img: null,
+                    imageBlob: imageFile || null,
+                    audioBlob: audioFile || null,
+                    order: Date.now()
+                }).onsuccess = () => {
+                    reload();
+                    closeCardEditor();
+                };
+            }
+        } else if (section === 'virtue') {
+            const record = folderRecord;
+            const items = [...(record.items || [])];
+            const ex = cardId !== null ? { ...items[cardId] } : {};
+            const newItem = {
+                word, styleClass,
+                img: ex.img || null,
+                imageBlob: imageFile || ex.imageBlob || null,
+                audioBlob: audioFile || ex.audioBlob || null,
+            };
+            if (cardId !== null) items[cardId] = newItem; else items.push(newItem);
+            record.items = items;
+            saveVirtueFolderToDB(record, () => {
+                loadVirtuesAndRender();
+                closeCardEditor();
+            });
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', initApp);
+
