@@ -245,7 +245,6 @@ document.getElementById('btn-clear').addEventListener('click', () => {
         const nativeInput = document.getElementById('native-keyboard-input');
         if (nativeInput) {
             nativeInput.value = '';
-            nativeInput.focus();
         }
     }
     currentMessage = []; currentTypingWord = ""; renderMessage(); 
@@ -256,7 +255,6 @@ document.getElementById('btn-backspace').addEventListener('click', () => {
         const nativeInput = document.getElementById('native-keyboard-input');
         if (nativeInput && nativeInput.value.length > 0) {
             nativeInput.value = nativeInput.value.slice(0, -1);
-            nativeInput.focus();
             return;
         }
     }
