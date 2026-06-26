@@ -76,9 +76,9 @@ const localForcesImages = {
     'fomes-segurança': 'img/fomes/seguranca.png'
 };
 // CONFIGURAÇÃO SUPABASE
-const supabaseUrl = 'https://rrubmvykindvilptjhma.supabaseClient.co';
+const supabaseUrl = 'https://rrubmvykindvilptjhma.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJydWJtdnlraW5kdmlscHRqaG1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0ODE2OTksImV4cCI6MjA5ODA1NzY5OX0.4eKcRhUReuaKaaq4ftIOWe6vvB9qxL4Sjiii-3QX5eM';
-const supabaseClient = window.supabaseClient ? window.supabaseClient.createClient(supabaseUrl, supabaseKey) : null;
+const supabaseClient = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
 
 async function uploadToSupabaseStorage(bucket, path, file) {
     if (!supabaseClient || !file) return null;
@@ -947,11 +947,37 @@ function renderCurrentPlaylistItem() {
 // SISTEMA DE PERSONALIZAÇÃO DE CARDS
 // =============================================
 // 🔐 ADMIN: Controle de acesso
-// Quando autenticação for implementada (Netlify Identity),
-// substitua esta linha pela verificação do token JWT:
-//   const user = netlifyIdentity.currentUser();
-//   let isAdmin = user?.app_metadata?.roles?.includes('admin') ?? false;
-let isAdmin = true; // Em desenvolvimento: todos são admin
+let isAdmin = false; // Bloqueado por padrão (Apenas fala)
+
+// Verificar sessão no carregamento
+if (supabaseClient) {
+    supabaseClient.auth.getSession().then(({ data }) => {
+        if (data?.session) {
+            isAdmin = true;
+            document.getElementById('text-login-logout').textContent = 'Sair';
+            document.getElementById('btn-login-logout').querySelector('i').className = 'fas fa-unlock';
+            
+            // Re-render grids to show edit buttons if admin
+            loadCoreCards();
+            if (typeof initVirtuesDB === 'function') initVirtuesDB(); // or loadVirtueCards()
+            if (typeof initTopicsDB === 'function') initTopicsDB(); // or loadTopicsCards()
+            loadMediaCards();
+            loadExerciseCards();
+        }
+        showEditBars();
+    });
+}
+
+document.getElementById('btn-login-logout')?.addEventListener('click', async () => {
+    if (isAdmin) {
+        if(confirm("Deseja sair do modo Administrador?")) {
+            if (supabaseClient) await supabaseClient.auth.signOut();
+            window.location.reload();
+        }
+    } else {
+        window.location.href = 'login.html';
+    }
+});
 
 // Estado global
 const editModes = { core: false, virtue: false, topic: false };
@@ -965,7 +991,7 @@ let currentOpenTopicFolderRecord = null;
 function showEditBars() {
     ['btn-edit-core', 'btn-edit-virtues', 'btn-edit-topics'].forEach(id => {
         const btn = document.getElementById(id);
-        if (btn) btn.parentElement.style.display = 'flex';
+        if (btn) btn.parentElement.style.display = isAdmin ? 'flex' : 'none';
     });
 }
 
