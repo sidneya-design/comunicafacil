@@ -449,7 +449,7 @@ async function saveExercisePlaylistToDB(title, itemsArray) {
                 const dbItems = uploadedItems.map(item => ({
                     exercise_id: currentEditingExerciseId,
                     word: item.word, color: item.color, size: item.size, uppercase: item.uppercase,
-                    bold: item.bold, link: item.link || '', image_url: item.image_url
+                    bold: item.bold, link: item.videoLink || item.link || '', image_url: item.image_url
                 }));
                 await supabaseClient.from('exercise_items').insert(dbItems);
             } else {
@@ -458,7 +458,7 @@ async function saveExercisePlaylistToDB(title, itemsArray) {
                     const dbItems = uploadedItems.map(item => ({
                         exercise_id: exData.id,
                         word: item.word, color: item.color, size: item.size, uppercase: item.uppercase,
-                        bold: item.bold, link: item.link || '', image_url: item.image_url
+                        bold: item.bold, link: item.videoLink || item.link || '', image_url: item.image_url
                     }));
                     await supabaseClient.from('exercise_items').insert(dbItems);
                 }
@@ -488,7 +488,7 @@ async function loadExerciseCards() {
                 currentExercises = exData.map(ex => {
                     const items = (itemData || []).filter(item => item.exercise_id === ex.id).map(item => ({
                         word: item.word, color: item.color, size: item.size, uppercase: item.uppercase,
-                        bold: item.bold, link: item.link, image_url: item.image_url
+                        bold: item.bold, videoLink: item.link, image_url: item.image_url
                     }));
                     return { id: ex.id, title: ex.title, items, fromSupabase: true };
                 });
