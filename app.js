@@ -949,32 +949,49 @@ function renderCurrentPlaylistItem() {
 // 🔐 ADMIN: Controle de acesso
 let isAdmin = false; // Bloqueado por padrão (Apenas fala)
 
+// LISTA DE E-MAILS ADMINISTRADORES
+// Coloque aqui o seu e-mail do Supabase para ter acesso total de edição.
+// Qualquer outro e-mail que fizer login será apenas um "Usuário Normal" (só pode falar).
+const adminEmails = [
+    'sidney.a@geniantis.com', // Exemplo: Substitua pelo seu e-mail
+    'admin@admin.com'
+];
+
 // Verificar sessão no carregamento
 if (supabaseClient) {
     supabaseClient.auth.getSession().then(({ data }) => {
-        if (data?.session) {
+        if (!data?.session) {
+            // Ninguém pode acessar sem login! Redireciona para o login.
+            window.location.href = 'login.html';
+            return;
+        }
+
+        // Se chegou aqui, a pessoa fez login. 
+        // Vamos verificar se o e-mail dela está na lista de administradores
+        const userEmail = data.session.user.email;
+        if (adminEmails.includes(userEmail)) {
             isAdmin = true;
-            document.getElementById('text-login-logout').textContent = 'Sair';
+            document.getElementById('text-login-logout').textContent = 'Sair (Admin)';
             document.getElementById('btn-login-logout').querySelector('i').className = 'fas fa-unlock';
             
             // Re-render grids to show edit buttons if admin
             loadCoreCards();
-            if (typeof initVirtuesDB === 'function') initVirtuesDB(); // or loadVirtueCards()
-            if (typeof initTopicsDB === 'function') initTopicsDB(); // or loadTopicsCards()
+            if (typeof initVirtuesDB === 'function') initVirtuesDB();
+            if (typeof initTopicsDB === 'function') initTopicsDB();
             loadMediaCards();
             loadExerciseCards();
+        } else {
+            isAdmin = false;
+            document.getElementById('text-login-logout').textContent = 'Sair';
+            document.getElementById('btn-login-logout').querySelector('i').className = 'fas fa-user';
         }
         showEditBars();
     });
 }
 
 document.getElementById('btn-login-logout')?.addEventListener('click', async () => {
-    if (isAdmin) {
-        if(confirm("Deseja sair do modo Administrador?")) {
-            if (supabaseClient) await supabaseClient.auth.signOut();
-            window.location.reload();
-        }
-    } else {
+    if (confirm("Deseja sair do aplicativo?")) {
+        if (supabaseClient) await supabaseClient.auth.signOut();
         window.location.href = 'login.html';
     }
 });
