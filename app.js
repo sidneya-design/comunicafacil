@@ -73,6 +73,21 @@ const localForcesImages = {
     'fomes-autonomia': 'img/fomes/autonomia.png',
     'fomes-segurança': 'img/fomes/seguranca.png'
 };
+// CONFIGURAÇÃO SUPABASE
+const supabaseUrl = 'https://rrubmvykindvilptjhma.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJydWJtdnlraW5kdmlscHRqaG1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0ODE2OTksImV4cCI6MjA5ODA1NzY5OX0.4eKcRhUReuaKaaq4ftIOWe6vvB9qxL4Sjiii-3QX5eM';
+const supabase = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
+
+async function uploadToSupabaseStorage(bucket, path, file) {
+    if (!supabase || !file) return null;
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
+    const filePath = `${path}/${fileName}`;
+    const { data, error } = await supabase.storage.from(bucket).upload(filePath, file);
+    if (error) throw error;
+    const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
+    return publicUrlData?.publicUrl || null;
+}
 
 let currentMessage = [];
 let currentTypingWord = "";
@@ -732,7 +747,37 @@ function initCoreCardsDB() {
     };
 }
 
-function loadCoreAndRender() {
+async function loadCoreAndRender() {
+    if (supabase) {
+        try {
+            const { data, error } = await supabase
+                .from('core_cards')
+                .select('*')
+                .order('order', { ascending: true });
+            if (data && !error) {
+                const tx = db.transaction(['core_cards'], 'readwrite');
+                const store = tx.objectStore('core_cards');
+                store.clear().onsuccess = () => {
+                    data.forEach(card => {
+                        store.put({
+                            id: card.id,
+                            word: card.word,
+                            styleClass: card.style_class,
+                            img: card.img,
+                            image_url: card.image_url,
+                            audio_url: card.audio_url,
+                            order: card.order
+                        });
+                    });
+                };
+                renderFlatGrid(data.map(d => ({ ...d, styleClass: d.style_class })), 'grid-core', 'core');
+                return;
+            }
+        } catch (e) {
+            console.warn('Erro ao conectar no Supabase (core):', e);
+        }
+    }
+
     db.transaction(['core_cards'], 'readonly').objectStore('core_cards').getAll().onsuccess = (e) => {
         renderFlatGrid(e.target.result.sort((a, b) => a.order - b.order), 'grid-core', 'core');
     };
@@ -748,7 +793,7 @@ async function renderFlatGrid(cards, containerId, section) {
         const btn = document.createElement('button');
         btn.className = `word-btn ${card.styleClass}`;
 
-        if (card.audioBlob instanceof Blob) {
+        if (card.audioBlob instanceof Blob || (typeof card.audio_url === 'string' && card.audio_url.trim() !== '')) {
             const ind = document.createElement('div');
             ind.className = 'audio-indicator';
             ind.innerHTML = '<i class="fas fa-volume-up"></i>';
@@ -775,6 +820,13 @@ async function renderFlatGrid(cards, containerId, section) {
             delBtn.onclick = (ev) => {
                 ev.stopPropagation();
                 if (confirm(`Apagar "${card.word}"?`)) {
+                    if (supabase) {
+                        supabase.from('core_cards').delete().eq('id', card.id).then(({ error }) => {
+                            if (error) alert('Erro ao deletar no Supabase: ' + error.message);
+                            loadCoreAndRender();
+                        });
+                        return;
+                    }
                     db.transaction(['core_cards'], 'readwrite').objectStore('core_cards').delete(card.id).onsuccess = () => {
                         loadCoreAndRender();
                     };
@@ -794,6 +846,7 @@ async function renderFlatGrid(cards, containerId, section) {
             if (currentTypingWord.length > 0) commitTypingWord();
             addToMessage(card.word);
             if (card.audioBlob instanceof Blob) new Audio(URL.createObjectURL(card.audioBlob)).play();
+            else if (typeof card.audio_url === 'string' && card.audio_url.trim() !== '') new Audio(card.audio_url).play();
             else speak(card.word);
         });
 
@@ -802,6 +855,8 @@ async function renderFlatGrid(cards, containerId, section) {
         // Imagem
         if (card.imageBlob instanceof Blob) {
             imgEl.src = URL.createObjectURL(card.imageBlob);
+        } else if (typeof card.image_url === 'string' && card.image_url.trim() !== '') {
+            imgEl.src = card.image_url;
         } else {
             const wordKey = (card.word || '').toLowerCase().trim();
             const local = card.img || localForcesImages[wordKey];
@@ -845,7 +900,56 @@ function initVirtuesDB() {
     };
 }
 
-function loadVirtuesAndRender() {
+async function loadVirtuesAndRender() {
+    if (supabase) {
+        try {
+            const { data: catData, error: catErr } = await supabase
+                .from('virtues')
+                .select('*');
+            const { data: itemData, error: itemErr } = await supabase
+                .from('virtue_items')
+                .select('*');
+            
+            if (catData && itemData && !catErr && !itemErr) {
+                const merged = catData.map(cat => {
+                    const items = itemData
+                        .filter(item => item.virtue_id === cat.id)
+                        .map(item => ({
+                            word: item.word,
+                            styleClass: item.style_class,
+                            img: item.img,
+                            image_url: item.image_url,
+                            audio_url: item.audio_url
+                        }));
+                    return {
+                        id: cat.id,
+                        folder: cat.folder,
+                        styleClass: cat.style_class,
+                        items
+                    };
+                });
+                
+                currentVirtueFolders = merged;
+                const tx = db.transaction(['virtues'], 'readwrite');
+                const store = tx.objectStore('virtues');
+                store.clear().onsuccess = () => {
+                    merged.forEach(v => store.put(v));
+                };
+                
+                const wordGrid = document.getElementById('grid-virtue-words');
+                if (currentOpenFolderRecord && wordGrid && wordGrid.style.display !== 'none') {
+                    const updated = currentVirtueFolders.find(r => r.id === currentOpenFolderRecord.id);
+                    if (updated) { currentOpenFolderRecord = updated; renderVirtueWords(updated); }
+                } else {
+                    renderVirtueFolders();
+                }
+                return;
+            }
+        } catch (e) {
+            console.warn('Erro ao carregar virtues do Supabase:', e);
+        }
+    }
+
     db.transaction(['virtues'], 'readonly').objectStore('virtues').getAll().onsuccess = (e) => {
         currentVirtueFolders = e.target.result;
         const wordGrid = document.getElementById('grid-virtue-words');
@@ -900,7 +1004,16 @@ async function renderVirtueFolders() {
             delBtn.innerHTML = '<i class="fas fa-trash"></i>';
             delBtn.onclick = (ev) => {
                 ev.stopPropagation();
-                if (confirm(`Apagar categoria "${record.folder}"?`)) deleteVirtueFolderFromDB(record.id, loadVirtuesAndRender);
+                if (confirm(`Apagar categoria "${record.folder}"?`)) {
+                    if (supabase) {
+                        supabase.from('virtues').delete().eq('id', record.id).then(({ error }) => {
+                            if (error) alert('Erro ao deletar no Supabase: ' + error.message);
+                            loadVirtuesAndRender();
+                        });
+                        return;
+                    }
+                    deleteVirtueFolderFromDB(record.id, loadVirtuesAndRender);
+                }
             };
             btn.appendChild(delBtn);
         }
@@ -934,7 +1047,15 @@ async function renderVirtueFolders() {
             const name = prompt('Nome da nova categoria:');
             if (!name || !name.trim()) return;
             const colors = ['border-green','border-orange','border-blue','border-red','border-yellow','border-pink'];
-            saveVirtueFolderToDB({ folder: name.trim(), styleClass: colors[Math.floor(Math.random()*colors.length)], items: [] }, loadVirtuesAndRender);
+            const styleClass = colors[Math.floor(Math.random()*colors.length)];
+            if (supabase) {
+                supabase.from('virtues').insert([{ folder: name.trim(), style_class: styleClass }]).then(({ error }) => {
+                    if (error) alert('Erro ao criar no Supabase: ' + error.message);
+                    loadVirtuesAndRender();
+                });
+                return;
+            }
+            saveVirtueFolderToDB({ folder: name.trim(), styleClass, items: [] }, loadVirtuesAndRender);
         });
         container.appendChild(addBtn);
     }
@@ -953,7 +1074,7 @@ async function renderVirtueWords(record) {
         const btn = document.createElement('button');
         btn.className = `word-btn ${item.styleClass}`;
 
-        if (item.audioBlob instanceof Blob) {
+        if (item.audioBlob instanceof Blob || (typeof item.audio_url === 'string' && item.audio_url.trim() !== '')) {
             const ind = document.createElement('div');
             ind.className = 'audio-indicator';
             ind.innerHTML = '<i class="fas fa-volume-up"></i>';
@@ -980,6 +1101,13 @@ async function renderVirtueWords(record) {
             delBtn.onclick = (ev) => {
                 ev.stopPropagation();
                 if (confirm(`Apagar "${item.word}"?`)) {
+                    if (supabase) {
+                        supabase.from('virtue_items').delete().eq('virtue_id', record.id).eq('word', item.word).then(({ error }) => {
+                            if (error) alert('Erro ao deletar no Supabase: ' + error.message);
+                            loadVirtuesAndRender();
+                        });
+                        return;
+                    }
                     const updated = { ...record, items: record.items.filter((_, i) => i !== idx) };
                     currentOpenFolderRecord = updated;
                     saveVirtueFolderToDB(updated, loadVirtuesAndRender);
@@ -999,6 +1127,7 @@ async function renderVirtueWords(record) {
             if (currentTypingWord.length > 0) commitTypingWord();
             addToMessage(item.word);
             if (item.audioBlob instanceof Blob) new Audio(URL.createObjectURL(item.audioBlob)).play();
+            else if (typeof item.audio_url === 'string' && item.audio_url.trim() !== '') new Audio(item.audio_url).play();
             else speak(item.word);
         });
 
@@ -1007,6 +1136,8 @@ async function renderVirtueWords(record) {
         // Imagem
         if (item.imageBlob instanceof Blob) {
             imgEl.src = URL.createObjectURL(item.imageBlob);
+        } else if (typeof item.image_url === 'string' && item.image_url.trim() !== '') {
+            imgEl.src = item.image_url;
         } else {
             const local = item.img || localForcesImages[(item.word || '').toLowerCase().trim()];
             if (local) { imgEl.src = local; }
@@ -1046,10 +1177,12 @@ function openCardEditor(section, cardId, card, folderRecord) {
 
     const imgPreview = document.getElementById('card-editor-img-preview');
     if (card && card.imageBlob instanceof Blob) { imgPreview.src = URL.createObjectURL(card.imageBlob); imgPreview.style.display = 'block'; }
+    else if (card && card.image_url) { imgPreview.src = card.image_url; imgPreview.style.display = 'block'; }
     else if (card && card.img) { imgPreview.src = card.img; imgPreview.style.display = 'block'; }
     else { imgPreview.style.display = 'none'; }
 
-    document.getElementById('card-editor-audio-indicator').style.display = (card && card.audioBlob instanceof Blob) ? 'flex' : 'none';
+    const hasAudio = card && (card.audioBlob instanceof Blob || card.audio_url);
+    document.getElementById('card-editor-audio-indicator').style.display = hasAudio ? 'flex' : 'none';
 }
 
 function closeCardEditor() {
@@ -1092,7 +1225,7 @@ function setupCardEditor() {
     document.getElementById('btn-cancel-card-editor').addEventListener('click', closeCardEditor);
 
     // Modal compartilhado — salvar
-    document.getElementById('card-editor-form').addEventListener('submit', (e) => {
+    document.getElementById('card-editor-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const word = document.getElementById('card-editor-word').value.trim();
         const styleClass = document.getElementById('card-editor-color').value;
@@ -1103,6 +1236,48 @@ function setupCardEditor() {
         if (section === 'core') {
             const storeKey = 'core_cards';
             const reload = loadCoreAndRender;
+
+            if (supabase) {
+                try {
+                    let image_url = null;
+                    let audio_url = null;
+                    if (cardId !== null) {
+                        const { data: ex } = await supabase
+                            .from('core_cards')
+                            .select('image_url, audio_url')
+                            .eq('id', cardId)
+                            .single();
+                        if (ex) {
+                            image_url = ex.image_url;
+                            audio_url = ex.audio_url;
+                        }
+                    }
+                    if (imageFile) {
+                        image_url = await uploadToSupabaseStorage('media_uploads', 'images', imageFile);
+                    }
+                    if (audioFile) {
+                        audio_url = await uploadToSupabaseStorage('media_uploads', 'audios', audioFile);
+                    }
+                    const recordData = {
+                        word,
+                        style_class: styleClass,
+                        image_url,
+                        audio_url,
+                        order: cardId !== null ? undefined : Date.now()
+                    };
+                    if (cardId !== null) {
+                        await supabase.from('core_cards').update(recordData).eq('id', cardId);
+                    } else {
+                        await supabase.from('core_cards').insert([recordData]);
+                    }
+                    reload();
+                    closeCardEditor();
+                    return;
+                } catch (err) {
+                    alert('Erro ao salvar no Supabase, tentando localmente: ' + err.message);
+                }
+            }
+
             if (cardId !== null) {
                 // Editar existente — preservar blobs não alterados
                 db.transaction([storeKey], 'readonly').objectStore(storeKey).get(cardId).onsuccess = (ev) => {
@@ -1134,6 +1309,52 @@ function setupCardEditor() {
             const record = folderRecord;
             const items = [...(record.items || [])];
             const ex = cardId !== null ? { ...items[cardId] } : {};
+
+            if (supabase) {
+                try {
+                    let image_url = ex.image_url || null;
+                    let audio_url = ex.audio_url || null;
+                    if (imageFile) {
+                        image_url = await uploadToSupabaseStorage('media_uploads', 'images', imageFile);
+                    }
+                    if (audioFile) {
+                        audio_url = await uploadToSupabaseStorage('media_uploads', 'audios', audioFile);
+                    }
+
+                    if (cardId !== null) {
+                        // Editar item existente
+                        const { data: itemRec } = await supabase
+                            .from('virtue_items')
+                            .select('id')
+                            .eq('virtue_id', record.id)
+                            .eq('word', ex.word)
+                            .single();
+                        if (itemRec) {
+                            await supabase.from('virtue_items').update({
+                                word,
+                                style_class: styleClass,
+                                image_url,
+                                audio_url
+                            }).eq('id', itemRec.id);
+                        }
+                    } else {
+                        // Adicionar novo item
+                        await supabase.from('virtue_items').insert([{
+                            virtue_id: record.id,
+                            word,
+                            style_class: styleClass,
+                            image_url,
+                            audio_url
+                        }]);
+                    }
+                    loadVirtuesAndRender();
+                    closeCardEditor();
+                    return;
+                } catch (err) {
+                    alert('Erro ao salvar no Supabase, tentando localmente: ' + err.message);
+                }
+            }
+
             const newItem = {
                 word, styleClass,
                 img: ex.img || null,
