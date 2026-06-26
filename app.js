@@ -119,25 +119,6 @@ function initApp() {
     initIndexedDB();
     setupModals();
     setupCardEditor();
-    
-    // Configurar Teclado Nativo
-    const btnNativeSpeak = document.getElementById('btn-native-speak');
-    const btnNativeClear = document.getElementById('btn-native-clear');
-    const nativeInput = document.getElementById('native-keyboard-input');
-    
-    if (btnNativeSpeak && nativeInput) {
-        btnNativeSpeak.addEventListener('click', () => {
-            const text = nativeInput.value.trim();
-            if (text) speakText(text);
-        });
-    }
-    
-    if (btnNativeClear && nativeInput) {
-        btnNativeClear.addEventListener('click', () => {
-            nativeInput.value = '';
-            nativeInput.focus();
-        });
-    }
 }
 
 function setupNavigation() {
@@ -247,11 +228,38 @@ function speak(text) {
 }
 
 document.getElementById('btn-speak').addEventListener('click', () => {
+    const keyboardView = document.getElementById('view-keyboard');
+    if (keyboardView && keyboardView.classList.contains('active')) {
+        const nativeInput = document.getElementById('native-keyboard-input');
+        if (nativeInput && nativeInput.value.trim()) {
+            speak(nativeInput.value.trim());
+            return;
+        }
+    }
     commitTypingWord(); renderMessage();
     if (currentMessage.length > 0) speak(currentMessage.join(' '));
 });
-document.getElementById('btn-clear').addEventListener('click', () => { currentMessage = []; currentTypingWord = ""; renderMessage(); });
+document.getElementById('btn-clear').addEventListener('click', () => { 
+    const keyboardView = document.getElementById('view-keyboard');
+    if (keyboardView && keyboardView.classList.contains('active')) {
+        const nativeInput = document.getElementById('native-keyboard-input');
+        if (nativeInput) {
+            nativeInput.value = '';
+            nativeInput.focus();
+        }
+    }
+    currentMessage = []; currentTypingWord = ""; renderMessage(); 
+});
 document.getElementById('btn-backspace').addEventListener('click', () => {
+    const keyboardView = document.getElementById('view-keyboard');
+    if (keyboardView && keyboardView.classList.contains('active')) {
+        const nativeInput = document.getElementById('native-keyboard-input');
+        if (nativeInput && nativeInput.value.length > 0) {
+            nativeInput.value = nativeInput.value.slice(0, -1);
+            nativeInput.focus();
+            return;
+        }
+    }
     if (currentTypingWord.length > 0) currentTypingWord = currentTypingWord.slice(0, -1);
     else if (currentMessage.length > 0) currentMessage.pop();
     renderMessage();
