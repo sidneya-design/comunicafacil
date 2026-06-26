@@ -832,6 +832,8 @@ function renderCurrentPlaylistItem() {
         const imgEl = document.getElementById('presentation-image');
         if (item.imageBlob && item.imageBlob instanceof Blob) {
             imgEl.src = URL.createObjectURL(item.imageBlob);
+        } else if (item.image_url) {
+            imgEl.src = item.image_url;
         } else {
             imgEl.src = '';
         }
