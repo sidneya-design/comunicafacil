@@ -74,18 +74,18 @@ const localForcesImages = {
     'fomes-segurança': 'img/fomes/seguranca.png'
 };
 // CONFIGURAÇÃO SUPABASE
-const supabaseUrl = 'https://rrubmvykindvilptjhma.supabase.co';
+const supabaseUrl = 'https://rrubmvykindvilptjhma.supabaseClient.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJydWJtdnlraW5kdmlscHRqaG1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0ODE2OTksImV4cCI6MjA5ODA1NzY5OX0.4eKcRhUReuaKaaq4ftIOWe6vvB9qxL4Sjiii-3QX5eM';
-const supabase = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
+const supabaseClient = window.supabaseClient ? window.supabaseClient.createClient(supabaseUrl, supabaseKey) : null;
 
 async function uploadToSupabaseStorage(bucket, path, file) {
-    if (!supabase || !file) return null;
+    if (!supabaseClient || !file) return null;
     const fileExt = file.name.split('.').pop();
     const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
     const filePath = `${path}/${fileName}`;
-    const { data, error } = await supabase.storage.from(bucket).upload(filePath, file);
+    const { data, error } = await supabaseClient.storage.from(bucket).upload(filePath, file);
     if (error) throw error;
-    const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
+    const { data: publicUrlData } = supabaseClient.storage.from(bucket).getPublicUrl(filePath);
     return publicUrlData?.publicUrl || null;
 }
 
@@ -212,9 +212,10 @@ async function renderFolders(folderContainerId, contentAreaId, gridWordsId, back
         if (localImgUrl) {
             imgEl.src = localImgUrl;
         } else {
-            const imageUrl = await fetchArasaacImage(folderObj.folder);
-            if (imageUrl) imgEl.src = imageUrl;
-            else imgContainer.innerHTML = '<i class="fas fa-folder word-btn-icon"></i>';
+            fetchArasaacImage(folderObj.folder).then(imageUrl => {
+                if (imageUrl) imgEl.src = imageUrl;
+                else imgContainer.innerHTML = '<i class="fas fa-folder word-btn-icon"></i>';
+            });
         }
     }
     
@@ -748,13 +749,14 @@ function initCoreCardsDB() {
 }
 
 async function loadCoreAndRender() {
-    if (supabase) {
+    if (supabaseClient) {
         try {
-            const { data, error } = await supabase
+            const { data, error } = await supabaseClient
                 .from('core_cards')
                 .select('*')
                 .order('order', { ascending: true });
-            if (data && !error) {
+            if (error) throw error;
+            if (data && data.length > 0) {
                 const tx = db.transaction(['core_cards'], 'readwrite');
                 const store = tx.objectStore('core_cards');
                 store.clear().onsuccess = () => {
@@ -772,6 +774,18 @@ async function loadCoreAndRender() {
                 };
                 renderFlatGrid(data.map(d => ({ ...d, styleClass: d.style_class })), 'grid-core', 'core');
                 return;
+            } else if (data && data.length === 0) {
+                console.log('Semeando Supabase com cards essenciais...');
+                const seedData = [...coreWords, ...quickFires].map((w, i) => ({
+                    word: w.word,
+                    style_class: w.styleClass,
+                    order: i
+                }));
+                const { error: seedErr } = await supabaseClient.from('core_cards').insert(seedData);
+                if (!seedErr) {
+                    loadCoreAndRender();
+                    return;
+                }
             }
         } catch (e) {
             console.warn('Erro ao conectar no Supabase (core):', e);
@@ -820,8 +834,8 @@ async function renderFlatGrid(cards, containerId, section) {
             delBtn.onclick = (ev) => {
                 ev.stopPropagation();
                 if (confirm(`Apagar "${card.word}"?`)) {
-                    if (supabase) {
-                        supabase.from('core_cards').delete().eq('id', card.id).then(({ error }) => {
+                    if (supabaseClient) {
+                        supabaseClient.from('core_cards').delete().eq('id', card.id).then(({ error }) => {
                             if (error) alert('Erro ao deletar no Supabase: ' + error.message);
                             loadCoreAndRender();
                         });
@@ -901,18 +915,21 @@ function initVirtuesDB() {
 }
 
 async function loadVirtuesAndRender() {
-    if (supabase) {
+    if (supabaseClient) {
         try {
-            const { data: catData, error: catErr } = await supabase
+            const { data: catData, error: catErr } = await supabaseClient
                 .from('virtues')
                 .select('*');
-            const { data: itemData, error: itemErr } = await supabase
-                .from('virtue_items')
-                .select('*');
-            
-            if (catData && itemData && !catErr && !itemErr) {
+            if (catErr) throw catErr;
+
+            if (catData && catData.length > 0) {
+                const { data: itemData, error: itemErr } = await supabaseClient
+                    .from('virtue_items')
+                    .select('*');
+                if (itemErr) throw itemErr;
+
                 const merged = catData.map(cat => {
-                    const items = itemData
+                    const items = (itemData || [])
                         .filter(item => item.virtue_id === cat.id)
                         .map(item => ({
                             word: item.word,
@@ -943,6 +960,27 @@ async function loadVirtuesAndRender() {
                 } else {
                     renderVirtueFolders();
                 }
+                return;
+            } else if (catData && catData.length === 0) {
+                console.log('Semeando Supabase com categorias de fomes e forças...');
+                for (const v of virtues) {
+                    const { data: newCat, error: seedCatErr } = await supabaseClient
+                        .from('virtues')
+                        .insert([{ folder: v.folder, style_class: v.styleClass }])
+                        .select()
+                        .single();
+                    
+                    if (newCat && !seedCatErr) {
+                        const itemsData = v.items.map(item => ({
+                            virtue_id: newCat.id,
+                            word: item.word,
+                            style_class: item.styleClass,
+                            img: item.img || null
+                        }));
+                        await supabaseClient.from('virtue_items').insert(itemsData);
+                    }
+                }
+                loadVirtuesAndRender();
                 return;
             }
         } catch (e) {
@@ -1005,8 +1043,8 @@ async function renderVirtueFolders() {
             delBtn.onclick = (ev) => {
                 ev.stopPropagation();
                 if (confirm(`Apagar categoria "${record.folder}"?`)) {
-                    if (supabase) {
-                        supabase.from('virtues').delete().eq('id', record.id).then(({ error }) => {
+                    if (supabaseClient) {
+                        supabaseClient.from('virtues').delete().eq('id', record.id).then(({ error }) => {
                             if (error) alert('Erro ao deletar no Supabase: ' + error.message);
                             loadVirtuesAndRender();
                         });
@@ -1048,8 +1086,8 @@ async function renderVirtueFolders() {
             if (!name || !name.trim()) return;
             const colors = ['border-green','border-orange','border-blue','border-red','border-yellow','border-pink'];
             const styleClass = colors[Math.floor(Math.random()*colors.length)];
-            if (supabase) {
-                supabase.from('virtues').insert([{ folder: name.trim(), style_class: styleClass }]).then(({ error }) => {
+            if (supabaseClient) {
+                supabaseClient.from('virtues').insert([{ folder: name.trim(), style_class: styleClass }]).then(({ error }) => {
                     if (error) alert('Erro ao criar no Supabase: ' + error.message);
                     loadVirtuesAndRender();
                 });
@@ -1101,8 +1139,8 @@ async function renderVirtueWords(record) {
             delBtn.onclick = (ev) => {
                 ev.stopPropagation();
                 if (confirm(`Apagar "${item.word}"?`)) {
-                    if (supabase) {
-                        supabase.from('virtue_items').delete().eq('virtue_id', record.id).eq('word', item.word).then(({ error }) => {
+                    if (supabaseClient) {
+                        supabaseClient.from('virtue_items').delete().eq('virtue_id', record.id).eq('word', item.word).then(({ error }) => {
                             if (error) alert('Erro ao deletar no Supabase: ' + error.message);
                             loadVirtuesAndRender();
                         });
@@ -1237,12 +1275,12 @@ function setupCardEditor() {
             const storeKey = 'core_cards';
             const reload = loadCoreAndRender;
 
-            if (supabase) {
+            if (supabaseClient) {
                 try {
                     let image_url = null;
                     let audio_url = null;
                     if (cardId !== null) {
-                        const { data: ex } = await supabase
+                        const { data: ex } = await supabaseClient
                             .from('core_cards')
                             .select('image_url, audio_url')
                             .eq('id', cardId)
@@ -1266,9 +1304,9 @@ function setupCardEditor() {
                         order: cardId !== null ? undefined : Date.now()
                     };
                     if (cardId !== null) {
-                        await supabase.from('core_cards').update(recordData).eq('id', cardId);
+                        await supabaseClient.from('core_cards').update(recordData).eq('id', cardId);
                     } else {
-                        await supabase.from('core_cards').insert([recordData]);
+                        await supabaseClient.from('core_cards').insert([recordData]);
                     }
                     reload();
                     closeCardEditor();
@@ -1310,7 +1348,7 @@ function setupCardEditor() {
             const items = [...(record.items || [])];
             const ex = cardId !== null ? { ...items[cardId] } : {};
 
-            if (supabase) {
+            if (supabaseClient) {
                 try {
                     let image_url = ex.image_url || null;
                     let audio_url = ex.audio_url || null;
@@ -1323,14 +1361,14 @@ function setupCardEditor() {
 
                     if (cardId !== null) {
                         // Editar item existente
-                        const { data: itemRec } = await supabase
+                        const { data: itemRec } = await supabaseClient
                             .from('virtue_items')
                             .select('id')
                             .eq('virtue_id', record.id)
                             .eq('word', ex.word)
                             .single();
                         if (itemRec) {
-                            await supabase.from('virtue_items').update({
+                            await supabaseClient.from('virtue_items').update({
                                 word,
                                 style_class: styleClass,
                                 image_url,
@@ -1339,7 +1377,7 @@ function setupCardEditor() {
                         }
                     } else {
                         // Adicionar novo item
-                        await supabase.from('virtue_items').insert([{
+                        await supabaseClient.from('virtue_items').insert([{
                             virtue_id: record.id,
                             word,
                             style_class: styleClass,
@@ -1371,5 +1409,9 @@ function setupCardEditor() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', initApp);
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initApp);
+} else {
+    initApp();
+}
 
