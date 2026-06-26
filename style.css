@@ -182,20 +182,18 @@ body {
     border-radius: var(--radius); font-size: 18px; font-weight: bold; cursor: pointer;
     display: flex; align-items: center; gap: 10px; align-self: flex-start;
 }
-.keyboard-container {
-    display: flex; flex-direction: column; gap: 10px; padding: 20px;
+.native-keyboard-container {
+    display: flex; flex-direction: column; gap: 20px; padding: 20px;
     background: white; border-radius: var(--radius); height: 100%; justify-content: center; align-items: center;
 }
-.keyboard-row { display: flex; gap: 10px; justify-content: center; width: 100%;}
-.key-btn {
-    background: #f0f0f0; border: 2px solid #ddd; border-radius: 8px; color: #111;
-    font-size: 24px; font-weight: bold; padding: 20px 0; flex: 1; max-width: 80px;
-    cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+#native-keyboard-input {
+    width: 100%; max-width: 800px; padding: 20px; font-size: 24px; border: 2px solid #ccc;
+    border-radius: 12px; font-family: inherit; resize: none; flex: 1;
 }
-.key-space { max-width: 400px; }
-.key-func { background: #d0d0d0; max-width: 140px; font-size: 20px; color: #333; }
-.key-func:active { background: #c0c0c0; }
-.key-btn:active { background: #e0e0e0; transform: translateY(2px);}
+.native-keyboard-actions {
+    display: flex; gap: 20px; width: 100%; max-width: 800px; justify-content: center;
+}
+.native-keyboard-actions .action-btn { width: 200px; height: 60px; font-size: 24px; border-radius: 12px;}
 .media-header { display: flex; align-items: center; gap: 20px; padding: 15px; background: white; border-radius: var(--radius); margin-bottom: 15px;}
 .add-media-btn { background: #4CAF50; color: white; border: none; padding: 15px 25px; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 10px; }
 
