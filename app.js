@@ -115,11 +115,29 @@ async function fetchArasaacImage(word) {
 }
 
 function initApp() {
-    initKeyboard();
     setupNavigation();
     initIndexedDB();
     setupModals();
     setupCardEditor();
+    
+    // Configurar Teclado Nativo
+    const btnNativeSpeak = document.getElementById('btn-native-speak');
+    const btnNativeClear = document.getElementById('btn-native-clear');
+    const nativeInput = document.getElementById('native-keyboard-input');
+    
+    if (btnNativeSpeak && nativeInput) {
+        btnNativeSpeak.addEventListener('click', () => {
+            const text = nativeInput.value.trim();
+            if (text) speakText(text);
+        });
+    }
+    
+    if (btnNativeClear && nativeInput) {
+        btnNativeClear.addEventListener('click', () => {
+            nativeInput.value = '';
+            nativeInput.focus();
+        });
+    }
 }
 
 function setupNavigation() {
@@ -853,7 +871,7 @@ if (supabaseClient) {
                 document.getElementById('btn-login-logout').querySelector('i').className = 'fas fa-unlock';
                 
                 // Re-render grids to show edit buttons if admin
-                loadCoreCards();
+                loadCoreAndRender();
                 if (typeof initVirtuesDB === 'function') initVirtuesDB();
                 if (typeof initTopicsDB === 'function') initTopicsDB();
                 loadMediaCards();
