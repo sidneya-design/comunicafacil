@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Galeria de Imagens de Forças</title>
+    <style>
+        body { font-family: sans-serif; background: #fafafa; padding: 20px; }
+        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+        .card { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 10px; text-align: center; }
+        .card img { max-width: 100%; height: 150px; object-fit: contain; }
+        .name { font-weight: bold; margin-top: 10px; font-size: 14px; color: #333; }
+    </style>
+</head>
+<body>
+    <h1>Galeria de Imagens das Forças</h1>
+    <div class="gallery" id="gallery"></div>
+
+    <script>
+        const images = [
+            'amor-ao-aprendizado.png', 'amor.png', 'apreciacao-da-beleza.png', 'autonomia.png',
+            'autorregulacao.png', 'competencia.png', 'coragem.png', 'criatividade.png',
+            'criterio.png', 'curiosidade.png', 'esperanca.png', 'espiritualidade.png',
+            'generosidade.png', 'gratidao.png', 'humildade.png', 'humor.png',
+            'integridade.png', 'inteligencia-social.png', 'justica.png', 'lideranca.png',
+            'perdao.png', 'perseveranca.png', 'perspectiva.png', 'prudencia.png',
+            'trabalho-em-equipe.png', 'vinculo.png', 'vitalidade.png'
+        ];
+        const container = document.getElementById('gallery');
+        images.forEach(img => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `
+                <img src="img/forcas/${img}" alt="${img}">
+                <div class="name">${img}</div>
+            `;
+            container.appendChild(card);
+        });
+    </script>
+</body>
+</html>
