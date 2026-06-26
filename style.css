@@ -234,25 +234,27 @@ body {
 .next-arrow { right: 20px; }
 
 .presentation-layout {
-    display: flex; width: 85%; height: 80%; max-width: 1400px;
-    gap: 40px; align-items: center;
+    display: flex; width: 85%; height: calc(100vh - 100px); max-width: 1400px;
+    gap: 40px; align-items: stretch;
 }
 .presentation-left {
     flex: 1; display: flex; flex-direction: column; justify-content: space-between; height: 100%; padding: 40px 0;
 }
 #presentation-word-text {
-    font-size: 100px; font-weight: 800; color: #333; margin-bottom: 20px;
+    font-size: 80px; font-weight: 800; color: #333; margin-bottom: 20px;
     letter-spacing: -2px;
 }
 .presentation-video {
-    width: 100%; aspect-ratio: 16/9; min-height: 350px; border-radius: 20px; border: 1px solid #ddd;
+    width: 100%; aspect-ratio: 16/9; min-height: 0; max-height: 55%; border-radius: 20px; border: 1px solid #ddd;
     box-shadow: 0 10px 30px rgba(0,0,0,0.1); background: #f5f5f5;
 }
 .presentation-right {
-    flex: 1; display: flex; justify-content: center; align-items: center; height: 100%; overflow: hidden;
+    flex: 1; display: flex; justify-content: center; align-items: center;
+    height: 100%; overflow: hidden;
 }
 .presentation-image {
-    max-width: 100%; max-height: 75vh; width: auto; height: auto; object-fit: contain; border-radius: 20px;
+    max-width: 100%; max-height: 100%; width: auto; height: auto;
+    object-fit: contain; border-radius: 20px; display: block;
 }
 
 @keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
