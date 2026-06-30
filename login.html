@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Login - Comunica PWA</title>
+    <title>Login - Comunica Fácil</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -196,6 +196,46 @@
             transform: translateY(0);
         }
 
+        .forgot-password {
+            text-align: right;
+            margin-bottom: 18px;
+            font-size: 14px;
+        }
+
+        .forgot-password a {
+            color: #d1d5db;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .forgot-password a:hover {
+            color: #ffffff;
+        }
+
+        .status-alert {
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid #22c55e;
+            color: #e0f2fe;
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-alert.error {
+            background: rgba(255, 74, 74, 0.15);
+            border-color: var(--error-color);
+            color: #fff;
+        }
+
+        .status-alert i {
+            color: inherit;
+            font-size: 16px;
+        }
+
         /* Alerta de erro */
         .error-alert {
             background: rgba(255, 74, 74, 0.15);
@@ -246,7 +286,7 @@
     <div class="login-card">
         <div class="login-header">
             <div class="logo-icon"><i class="fas fa-border-all"></i></div>
-            <h1>Comunica PWA</h1>
+            <h1>Comunica Fácil</h1>
             <p>Faça login para acessar o painel</p>
         </div>
 
@@ -272,6 +312,20 @@
                 </div>
             </div>
 
+            <p class="forgot-password">
+                <a href="#" id="forgot-password-link">Esqueci minha senha</a>
+            </p>
+
+            <button type="button" class="btn-submit" id="btn-reset-password" style="display:none;">
+                <span>Redefinir senha</span>
+                <div class="spinner" id="reset-spinner"></div>
+            </button>
+
+            <div id="status-box" class="status-alert">
+                <i class="fas fa-info-circle"></i>
+                <span id="status-message"></span>
+            </div>
+
             <button type="submit" class="btn-submit" id="btn-login-submit">
                 <span>Entrar</span>
                 <div class="spinner" id="login-spinner"></div>
@@ -290,6 +344,23 @@
         const spinner = document.getElementById('login-spinner');
         const errorBox = document.getElementById('error-box');
         const errorMsg = document.getElementById('error-message');
+        const statusBox = document.getElementById('status-box');
+        const statusMsg = document.getElementById('status-message');
+        const forgotLink = document.getElementById('forgot-password-link');
+        const resetBtn = document.getElementById('btn-reset-password');
+        const resetSpinner = document.getElementById('reset-spinner');
+
+        function clearAlerts() {
+            errorBox.style.display = 'none';
+            statusBox.style.display = 'none';
+            statusBox.classList.remove('error');
+        }
+
+        function showStatus(message, isError = false) {
+            statusMsg.textContent = message;
+            statusBox.classList.toggle('error', isError);
+            statusBox.style.display = 'flex';
+        }
 
         // Redireciona se já estiver logado
         async function checkSession() {
@@ -300,9 +371,41 @@
         }
         checkSession();
 
+        forgotLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            clearAlerts();
+            showStatus('Digite seu e-mail e clique em Redefinir senha para receber o link de recuperação.', false);
+            resetBtn.style.display = 'flex';
+        });
+
+        resetBtn.addEventListener('click', async () => {
+            clearAlerts();
+            const email = document.getElementById('email').value.trim();
+
+            if (!email) {
+                showStatus('Digite o e-mail associado à sua conta.', true);
+                return;
+            }
+
+            resetSpinner.style.display = 'block';
+            resetBtn.disabled = true;
+
+            try {
+                const { error } = await supabaseClient.auth.resetPasswordForEmail(email);
+                if (error) throw error;
+                showStatus('E-mail de redefinição enviado. Verifique sua caixa de entrada.', false);
+            } catch (err) {
+                console.error(err);
+                showStatus(err.message || 'Não foi possível enviar o e-mail. Tente novamente.', true);
+            } finally {
+                resetSpinner.style.display = 'none';
+                resetBtn.disabled = false;
+            }
+        });
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            errorBox.style.display = 'none';
+            clearAlerts();
             spinner.style.display = 'block';
             submitBtn.disabled = true;
 
@@ -324,6 +427,7 @@
                 console.error(err);
                 errorMsg.textContent = err.message || 'Falha na autenticação. Verifique suas credenciais.';
                 errorBox.style.display = 'flex';
+            } finally {
                 spinner.style.display = 'none';
                 submitBtn.disabled = false;
             }

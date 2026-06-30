@@ -153,7 +153,23 @@ body {
 .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .close-modal-btn { background: transparent; border: none; color: #777; font-size: 24px; cursor: pointer; }
 .form-group { margin-bottom: 20px; display: flex; flex-direction: column; gap: 8px; }
-.form-group label { font-size: 14px; color: #333; font-weight: bold; }
+..form-group label { font-size: 14px; color: #333; font-weight: bold; }
+.media-source-switch {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+.media-source-switch label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #333;
+    cursor: pointer;
+}
+.media-source-switch input[type="radio"] {
+    accent-color: #2196F3;
+}
 .form-group input, .form-group select {
     background: #fff; border: 1px solid #ccc; color: #111; padding: 12px;
     border-radius: 4px; font-family: inherit; font-size: 16px; width: 100%; outline: none; user-select: auto;

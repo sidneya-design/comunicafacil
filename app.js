@@ -349,14 +349,17 @@ async function migrateLocalMediaAndExercises() {
     });
 }
 
-async function saveMediaToDB(title, fileBlob, mimeType, colorClass) {
+async function saveMediaToDB(title, fileBlob, mimeType, colorClass, mediaUrl) {
+    const isLink = !!mediaUrl;
+    const isVideo = isLink ? true : mimeType.startsWith('video');
     if (supabaseClient) {
         try {
-            const isVideo = mimeType.startsWith('video');
-            const url = await uploadToSupabaseStorage('media_uploads', 'medias', fileBlob);
-            await supabaseClient.from('medias').insert([{
-                title, is_video: isVideo, color_class: colorClass, media_url: url
-            }]);
+            if (isLink) {
+                await supabaseClient.from('medias').insert([{ title, is_video: isVideo, color_class: colorClass, media_url: mediaUrl }]);
+            } else {
+                const url = await uploadToSupabaseStorage('media_uploads', 'medias', fileBlob);
+                await supabaseClient.from('medias').insert([{ title, is_video: isVideo, color_class: colorClass, media_url: url }]);
+            }
             loadMediaCards();
             return;
         } catch (e) {
@@ -364,7 +367,7 @@ async function saveMediaToDB(title, fileBlob, mimeType, colorClass) {
         }
     }
     db.transaction(['medias'], 'readwrite').objectStore('medias')
-        .add({ title, blob: fileBlob, isVideo: mimeType.startsWith('video'), colorClass })
+        .add({ title, blob: fileBlob, isVideo, colorClass, media_url: mediaUrl })
         .onsuccess = () => loadMediaCards();
 }
 
@@ -711,9 +714,52 @@ function setupModals() {
     const closeUpload = () => { document.getElementById('upload-modal').style.display = 'none'; document.getElementById('upload-form').reset(); };
     document.getElementById('btn-close-upload').addEventListener('click', closeUpload);
     document.getElementById('btn-cancel-upload').addEventListener('click', closeUpload);
+
+    const mediaSourceRadios = document.querySelectorAll('input[name="media-source"]');
+    const mediaFileGroup = document.getElementById('media-file-group');
+    const mediaLinkGroup = document.getElementById('media-link-group');
+
+    mediaSourceRadios.forEach((radio) => {
+        radio.addEventListener('change', () => {
+            const source = document.querySelector('input[name="media-source"]:checked').value;
+            if (source === 'link') {
+                mediaFileGroup.style.display = 'none';
+                mediaLinkGroup.style.display = 'block';
+            } else {
+                mediaFileGroup.style.display = 'block';
+                mediaLinkGroup.style.display = 'none';
+            }
+        });
+    });
+
     document.getElementById('upload-form').addEventListener('submit', (e) => {
         e.preventDefault();
-        saveMediaToDB(document.getElementById('media-title').value, document.getElementById('media-file').files[0], document.getElementById('media-file').files[0].type, document.getElementById('media-color').value.split('-')[1]);
+
+        const title = document.getElementById('media-title').value.trim();
+        const color = document.getElementById('media-color').value.split('-')[1];
+        const source = document.querySelector('input[name="media-source"]:checked').value;
+
+        if (!title) {
+            alert('Por favor informe um título para a mídia.');
+            return;
+        }
+
+        if (source === 'link') {
+            const link = document.getElementById('media-link').value.trim();
+            if (!link) {
+                alert('Informe o link do YouTube, Vimeo ou Google Drive.');
+                return;
+            }
+            saveMediaToDB(title, null, '', color, link);
+        } else {
+            const file = document.getElementById('media-file').files[0];
+            if (!file) {
+                alert('Selecione um arquivo de áudio ou vídeo.');
+                return;
+            }
+            saveMediaToDB(title, file, file.type, color, null);
+        }
+
         closeUpload();
     });
 
@@ -788,13 +834,22 @@ function setupModals() {
 function playMedia(media) {
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     if (currentAudio) currentAudio.pause();
+
+    if (media.media_url && !media.blob) {
+        window.open(media.media_url, '_blank');
+        return;
+    }
+
     const fileUrl = URL.createObjectURL(media.blob);
     if (media.isVideo) {
         document.getElementById('video-modal-title').textContent = media.title;
         document.getElementById('video-modal').style.display = 'flex';
         document.getElementById('video-player').src = fileUrl;
         document.getElementById('video-player').play();
-    } else { currentAudio = new Audio(fileUrl); currentAudio.play(); }
+    } else {
+        currentAudio = new Audio(fileUrl);
+        currentAudio.play();
+    }
 }
 
 function navigatePlaylist(direction) {

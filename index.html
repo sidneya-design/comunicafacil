@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Comunica PWA</title>
+    <title>Comunica Fácil</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#e0e0e0">
     <link rel="stylesheet" href="style.css">
@@ -154,8 +154,19 @@
                     <input type="text" id="media-title" required>
                 </div>
                 <div class="form-group">
+                    <label>Fonte da Mídia</label>
+                    <div class="media-source-switch">
+                        <label><input type="radio" name="media-source" value="file" checked> Arquivo</label>
+                        <label><input type="radio" name="media-source" value="link"> Link</label>
+                    </div>
+                </div>
+                <div class="form-group" id="media-file-group">
                     <label for="media-file">Arquivo (Áudio ou Vídeo)</label>
-                    <input type="file" id="media-file" accept="audio/*,video/*" required>
+                    <input type="file" id="media-file" accept="audio/*,video/*">
+                </div>
+                <div class="form-group" id="media-link-group" style="display:none;">
+                    <label for="media-link">Link do YouTube / Vimeo / Drive</label>
+                    <input type="url" id="media-link" placeholder="https://" autocomplete="off">
                 </div>
                 <div class="form-group">
                     <label for="media-color">Cor da Borda</label>
@@ -171,7 +182,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn-secondary" id="btn-cancel-upload">Cancelar</button>
-                    <button type="submit" class="btn-primary">Salvar Offline</button>
+                    <button type="submit" class="btn-primary">Salvar Mídia</button>
                 </div>
             </form>
         </div>

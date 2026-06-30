@@ -1,4 +1,4 @@
-# 🎉 Comunica PWA - Agora com Forças de Caráter e Aba de Exercícios!
+# 🎉 Comunica Fácil - Agora com Forças de Caráter e Aba de Exercícios!
 
 O aplicativo agora conta com o vocabulário avançado das Virtudes e Forças de Caráter (VIA) e também com uma nova aba exclusiva para seus Flashcards (Exercícios de Articulação)!
 
