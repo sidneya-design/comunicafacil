@@ -112,6 +112,7 @@
         .login-header p {
             color: var(--text-secondary);
             font-size: 15px;
+            line-height: 1.5;
         }
 
         /* Formulário */
@@ -287,7 +288,7 @@
         <div class="login-header">
             <div class="logo-icon"><i class="fas fa-border-all"></i></div>
             <h1>Comunica Fácil</h1>
-            <p>Faça login para acessar o painel</p>
+            <p>Ferramenta visual de apoio para treinos de linguagem</p>
         </div>
 
         <div id="error-box" class="error-alert">
@@ -349,6 +350,16 @@
         const forgotLink = document.getElementById('forgot-password-link');
         const resetBtn = document.getElementById('btn-reset-password');
         const resetSpinner = document.getElementById('reset-spinner');
+        const passwordLabel = document.querySelector('label[for="password"]');
+        const passwordInput = document.getElementById('password');
+        const loginBtnText = submitBtn.querySelector('span');
+
+        const queryParams = new URLSearchParams(window.location.search);
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+        const isRecoveryLink = queryParams.get('reset') === '1'
+            || hashParams.get('type') === 'recovery'
+            || hashParams.has('access_token');
+        let recoveryMode = false;
 
         function clearAlerts() {
             errorBox.style.display = 'none';
@@ -362,8 +373,24 @@
             statusBox.style.display = 'flex';
         }
 
+        function enterRecoveryMode() {
+            recoveryMode = true;
+            clearAlerts();
+            passwordLabel.textContent = 'Nova senha';
+            passwordInput.placeholder = 'Digite sua nova senha';
+            loginBtnText.textContent = 'Salvar nova senha';
+            forgotLink.parentElement.style.display = 'none';
+            resetBtn.style.display = 'none';
+            showStatus('Defina uma nova senha para concluir a recuperação.', false);
+        }
+
         // Redireciona se já estiver logado
         async function checkSession() {
+            if (isRecoveryLink) {
+                enterRecoveryMode();
+                return;
+            }
+
             const { data } = await supabaseClient.auth.getSession();
             if (data?.session) {
                 window.location.href = 'index.html';
@@ -371,14 +398,13 @@
         }
         checkSession();
 
-        forgotLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            clearAlerts();
-            showStatus('Digite seu e-mail e clique em Redefinir senha para receber o link de recuperação.', false);
-            resetBtn.style.display = 'flex';
+        supabaseClient.auth.onAuthStateChange((event) => {
+            if (event === 'PASSWORD_RECOVERY') {
+                enterRecoveryMode();
+            }
         });
 
-        resetBtn.addEventListener('click', async () => {
+        async function sendPasswordReset() {
             clearAlerts();
             const email = document.getElementById('email').value.trim();
 
@@ -391,7 +417,10 @@
             resetBtn.disabled = true;
 
             try {
-                const { error } = await supabaseClient.auth.resetPasswordForEmail(email);
+                const redirectTo = `${window.location.origin}/login.html?reset=1`;
+                const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+                    redirectTo
+                });
                 if (error) throw error;
                 showStatus('E-mail de redefinição enviado. Verifique sua caixa de entrada.', false);
             } catch (err) {
@@ -401,7 +430,16 @@
                 resetSpinner.style.display = 'none';
                 resetBtn.disabled = false;
             }
+        }
+
+        forgotLink.addEventListener('click', async (e) => {
+            e.preventDefault();
+            resetBtn.style.display = 'flex';
+            showStatus('Enviando o link de recuperação para o e-mail informado.', false);
+            await sendPasswordReset();
         });
+
+        resetBtn.addEventListener('click', sendPasswordReset);
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -413,6 +451,17 @@
             const password = document.getElementById('password').value;
 
             try {
+                if (recoveryMode) {
+                    const { error } = await supabaseClient.auth.updateUser({ password });
+                    if (error) throw error;
+
+                    showStatus('Senha atualizada com sucesso. Redirecionando...', false);
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 900);
+                    return;
+                }
+
                 const { data, error } = await supabaseClient.auth.signInWithPassword({
                     email,
                     password
