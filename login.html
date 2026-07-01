@@ -9,14 +9,14 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
-            --bg-gradient: linear-gradient(135deg, #1e1e30 0%, #0f0f1b 100%);
-            --card-bg: rgba(255, 255, 255, 0.05);
-            --card-border: rgba(255, 255, 255, 0.1);
-            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --text-color: #ffffff;
-            --text-secondary: #a0a0c0;
-            --input-bg: rgba(0, 0, 0, 0.2);
-            --error-color: #ff4a4a;
+            --bg-gradient: linear-gradient(185deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+            --card-bg: rgba(255, 255, 255, 0.55);
+            --card-border: rgba(255, 255, 255, 0.7);
+            --primary-gradient: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+            --text-color: #0f172a;
+            --text-secondary: #475569;
+            --input-bg: rgba(255, 255, 255, 0.7);
+            --error-color: #ef4444;
         }
 
         * {
@@ -44,20 +44,22 @@
             border-radius: 50%;
             filter: blur(80px);
             z-index: 1;
-            opacity: 0.3;
+            opacity: 0.5;
         }
+
         .orb-1 {
-            width: 300px;
-            height: 300px;
-            background: #667eea;
+            width: 350px;
+            height: 350px;
+            background: radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, rgba(6, 182, 212, 0.05) 100%);
             top: -50px;
             left: -50px;
             animation: float 8s ease-in-out infinite alternate;
         }
+
         .orb-2 {
-            width: 400px;
-            height: 400px;
-            background: #764ba2;
+            width: 450px;
+            height: 450px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, rgba(99, 102, 241, 0.05) 100%);
             bottom: -100px;
             right: -100px;
             animation: float 10s ease-in-out infinite alternate-reverse;
@@ -68,17 +70,17 @@
             100% { transform: translateY(30px) scale(1.1); }
         }
 
-        /* Container do Card de Login */
+        /* Container do Card de Login (Glassmorphism Claro) */
         .login-card {
             background: var(--card-bg);
             border: 1px solid var(--card-border);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
+            backdrop-filter: blur(25px) saturate(180%);
+            -webkit-backdrop-filter: blur(25px) saturate(180%);
             width: 100%;
             max-width: 420px;
             padding: 40px;
             border-radius: 24px;
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 20px 40px rgba(15, 23, 42, 0.06);
             z-index: 10;
             position: relative;
             animation: fadeIn 0.6s ease-out;
@@ -92,14 +94,19 @@
         .login-header {
             text-align: center;
             margin-bottom: 35px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
-        .logo-icon {
-            font-size: 40px;
-            background: var(--primary-gradient);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 12px;
+        /* Logotipo imagem */
+        .login-logo-img {
+            width: 80px;
+            height: auto;
+            border-radius: 18px;
+            margin-bottom: 16px;
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.15);
+            display: inline-block;
         }
 
         .login-header h1 {
@@ -107,12 +114,14 @@
             font-weight: 700;
             margin-bottom: 8px;
             letter-spacing: -0.5px;
+            color: #0f172a;
         }
 
         .login-header p {
             color: var(--text-secondary);
             font-size: 15px;
             line-height: 1.5;
+            font-weight: 500;
         }
 
         /* Formulário */
@@ -138,7 +147,7 @@
             left: 16px;
             top: 50%;
             transform: translateY(-50%);
-            color: var(--text-secondary);
+            color: #64748b;
             font-size: 18px;
             transition: color 0.3s;
         }
@@ -147,25 +156,25 @@
             width: 100%;
             padding: 14px 16px 14px 48px;
             background: var(--input-bg);
-            border: 1px solid var(--card-border);
+            border: 1px solid rgba(148, 163, 184, 0.2);
             border-radius: 12px;
-            color: #fff;
+            color: #0f172a;
             font-size: 16px;
             outline: none;
             transition: all 0.3s;
         }
 
         .input-wrapper input::placeholder {
-            color: rgba(255, 255, 255, 0.3);
+            color: #94a3b8;
         }
 
         .input-wrapper input:focus {
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+            border-color: #10b981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
         }
 
         .input-wrapper input:focus + i {
-            color: #667eea;
+            color: #10b981;
         }
 
         /* Botão */
@@ -180,7 +189,7 @@
             font-weight: 700;
             cursor: pointer;
             transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.2);
             margin-top: 10px;
             display: flex;
             align-items: center;
@@ -190,7 +199,7 @@
 
         .btn-submit:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 12px 25px rgba(16, 185, 129, 0.35);
         }
 
         .btn-submit:active {
@@ -204,19 +213,22 @@
         }
 
         .forgot-password a {
-            color: #d1d5db;
+            color: #475569;
             text-decoration: none;
+            font-weight: 600;
             transition: color 0.2s;
         }
 
         .forgot-password a:hover {
-            color: #ffffff;
+            color: #0f172a;
+            text-decoration: underline;
         }
 
+        /* Alertas no fundo claro */
         .status-alert {
-            background: rgba(16, 185, 129, 0.12);
-            border: 1px solid #22c55e;
-            color: #e0f2fe;
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid #10b981;
+            color: #065f46;
             padding: 12px;
             border-radius: 10px;
             font-size: 14px;
@@ -227,9 +239,9 @@
         }
 
         .status-alert.error {
-            background: rgba(255, 74, 74, 0.15);
-            border-color: var(--error-color);
-            color: #fff;
+            background: rgba(239, 68, 68, 0.08);
+            border-color: #ef4444;
+            color: #991b1b;
         }
 
         .status-alert i {
@@ -239,9 +251,9 @@
 
         /* Alerta de erro */
         .error-alert {
-            background: rgba(255, 74, 74, 0.15);
-            border: 1px solid var(--error-color);
-            color: #fff;
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid #ef4444;
+            color: #991b1b;
             padding: 12px;
             border-radius: 10px;
             font-size: 14px;
@@ -259,7 +271,7 @@
         }
 
         .error-alert i {
-            color: var(--error-color);
+            color: #ef4444;
             font-size: 16px;
         }
 
@@ -286,7 +298,7 @@
 
     <div class="login-card">
         <div class="login-header">
-            <div class="logo-icon"><i class="fas fa-border-all"></i></div>
+            <img src="img/icones/icone2.png" alt="Comunica Fácil" class="login-logo-img">
             <h1>Comunica Fácil</h1>
             <p>Ferramenta visual de apoio para treinos de linguagem</p>
         </div>
