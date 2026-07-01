@@ -913,8 +913,8 @@ let isAdmin = false; // Bloqueado por padrão (Apenas fala)
 if (supabaseClient) {
     supabaseClient.auth.getSession().then(async ({ data }) => {
         if (!data?.session) {
-            // Ninguém pode acessar sem login! Redireciona para a landing page.
-            window.location.href = 'landing.html';
+            // Ninguém pode acessar sem login! Redireciona para a landing page (index.html).
+            window.location.href = 'index.html';
             return;
         }
 
@@ -955,7 +955,7 @@ if (supabaseClient) {
 document.getElementById('btn-login-logout')?.addEventListener('click', async () => {
     if (confirm("Deseja sair do aplicativo?")) {
         if (supabaseClient) await supabaseClient.auth.signOut();
-        window.location.href = 'landing.html';
+        window.location.href = 'index.html';
     }
 });
 

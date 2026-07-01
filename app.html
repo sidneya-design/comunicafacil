@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Comunica Fácil</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#e0e0e0">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+    <div class="app-layout">
+        <!-- Barra Lateral (Sidebar) -->
+        <nav class="sidebar">
+            <button class="nav-btn active" data-view="view-core">
+                <i class="fas fa-border-all"></i>
+                <span>Essenciais</span>
+            </button>
+
+            <button class="nav-btn" data-view="view-topics">
+                <i class="fas fa-folder-open"></i>
+                <span>Tópicos</span>
+            </button>
+            <button class="nav-btn" data-view="view-virtues">
+                <i class="fas fa-star"></i>
+                <span>Fomes e Forças</span>
+            </button>
+            <button class="nav-btn" data-view="view-keyboard">
+                <i class="fas fa-keyboard"></i>
+                <span>Teclado</span>
+            </button>
+            <button class="nav-btn" data-view="view-media">
+                <i class="fas fa-play-circle"></i>
+                <span>Mídias</span>
+            </button>
+            <button class="nav-btn" data-view="view-exercises">
+                <i class="fas fa-dumbbell"></i>
+                <span>Exercícios</span>
+            </button>
+            
+            <div class="sidebar-spacer"></div>
+            
+            <button class="nav-btn btn-login" id="btn-login-logout">
+                <i class="fas fa-lock"></i>
+                <span id="text-login-logout">Admin</span>
+            </button>
+        </nav>
+
+        <div class="main-content">
+            <!-- Barra de Mensagem (Fixa no topo) -->
+            <header class="message-bar">
+                <div class="message-display" id="message-display"></div>
+                <div class="message-actions">
+                    <button id="btn-backspace" class="action-btn backspace-btn" title="Apagar última palavra">
+                        <i class="fas fa-delete-left"></i>
+                    </button>
+                    <button id="btn-speak" class="action-btn speak-btn" title="Falar frase completa">
+                        <i class="fas fa-volume-up"></i>
+                    </button>
+                    <button id="btn-clear" class="action-btn clear-btn" title="Apagar tudo">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Container de Telas (Views) -->
+            <div class="views-container">
+                <!-- Tela: Palavras Essenciais -->
+                <main class="view-section active" id="view-core">
+                    <div class="section-edit-bar">
+                        <button class="edit-mode-btn" id="btn-edit-core"><i class="fas fa-pen"></i> Editar</button>
+                    </div>
+                    <div class="grid-wrapper">
+                        <div class="grid-container" id="grid-core"></div>
+                    </div>
+                </main>
+
+
+                <!-- Tela: Tópicos (Fringe) -->
+                <main class="view-section" id="view-topics">
+                    <div class="section-edit-bar">
+                        <button class="virtue-back-btn" id="btn-topic-back" style="display:none;">
+                            <i class="fas fa-arrow-left"></i> Voltar
+                        </button>
+                        <button class="edit-mode-btn" id="btn-edit-topics"><i class="fas fa-pen"></i> Editar</button>
+                    </div>
+                    <div class="grid-wrapper">
+                        <div class="grid-container" id="grid-topics-folders"></div>
+                        <div class="grid-container" id="grid-topic-words" style="display:none;"></div>
+                    </div>
+                </main>
+
+                <!-- Tela: Fomes e Forças -->
+                <main class="view-section" id="view-virtues">
+                    <div class="section-edit-bar">
+                        <button class="virtue-back-btn" id="btn-virtue-back" style="display:none;">
+                            <i class="fas fa-arrow-left"></i> Voltar
+                        </button>
+                        <button class="edit-mode-btn" id="btn-edit-virtues"><i class="fas fa-pen"></i> Editar</button>
+                    </div>
+                    <div class="grid-wrapper">
+                        <div class="grid-container" id="grid-virtues-folders"></div>
+                        <div class="grid-container" id="grid-virtue-words" style="display:none;"></div>
+                    </div>
+                </main>
+
+                <!-- Tela: Teclado -->
+                <main class="view-section" id="view-keyboard">
+                    <div class="native-keyboard-container">
+                        <textarea id="native-keyboard-input" placeholder="Toque aqui para digitar com o teclado do seu aparelho..." rows="4"></textarea>
+                    </div>
+                </main>
+
+                <!-- Tela: Mídias Simples -->
+                <main class="view-section" id="view-media">
+                    <div class="media-header">
+                        <button class="add-media-btn" id="btn-open-upload">
+                            <i class="fas fa-plus-circle"></i> Adicionar Mídia
+                        </button>
+                        <p class="media-hint">Adicione seus próprios vídeos ou áudios aqui.</p>
+                    </div>
+                    <div class="grid-container" id="grid-media"></div>
+                </main>
+
+                <!-- Tela: Exercícios (Flashcards) -->
+                <main class="view-section" id="view-exercises">
+                    <div class="media-header">
+                        <button class="add-media-btn" id="btn-open-exercise-upload"
+                            style="background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%);">
+                            <i class="fas fa-plus-circle"></i> Nova Playlist
+                        </button>
+                        <p class="media-hint">Cards com múltiplos vídeos de aprendizado.</p>
+                    </div>
+                    <div class="grid-container" id="grid-exercises"></div>
+                </main>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Upload de Mídia Simples -->
+    <div class="modal-overlay" id="upload-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Nova Mídia</h2>
+                <button class="close-modal-btn" id="btn-close-upload"><i class="fas fa-times"></i></button>
+            </div>
+            <form id="upload-form">
+                <div class="form-group">
+                    <label for="media-title">Título</label>
+                    <input type="text" id="media-title" required>
+                </div>
+                <div class="form-group">
+                    <label>Fonte da Mídia</label>
+                    <div class="media-source-switch">
+                        <label><input type="radio" name="media-source" value="file" checked> Arquivo</label>
+                        <label><input type="radio" name="media-source" value="link"> Link</label>
+                    </div>
+                </div>
+                <div class="form-group" id="media-file-group">
+                    <label for="media-file">Arquivo (Áudio ou Vídeo)</label>
+                    <input type="file" id="media-file" accept="audio/*,video/*">
+                </div>
+                <div class="form-group" id="media-link-group" style="display:none;">
+                    <label for="media-link">Link do YouTube / Vimeo / Drive</label>
+                    <input type="url" id="media-link" placeholder="https://" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="media-color">Cor da Borda</label>
+                    <select id="media-color">
+                        <option value="color-orange">Laranja</option>
+                        <option value="color-blue">Azul</option>
+                        <option value="color-green">Verde</option>
+                        <option value="color-red">Vermelho</option>
+                        <option value="color-yellow">Amarelo</option>
+                        <option value="color-pink">Rosa</option>
+                        <option value="color-gray">Cinza</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-cancel-upload">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar Mídia</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de Upload de Exercício (Playlist com múltiplos vídeos) -->
+    <div class="modal-overlay" id="upload-exercise-modal">
+        <div class="modal-content" style="max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h2>Nova Playlist de Exercícios</h2>
+                <button class="close-modal-btn" id="btn-close-exercise-upload"><i class="fas fa-times"></i></button>
+            </div>
+            <form id="upload-exercise-form">
+                <div class="form-group">
+                    <label for="exercise-title">Nome da Categoria (Ex: Sons do P)</label>
+                    <input type="text" id="exercise-title" required placeholder="Ex: Categoria Alimentos">
+                </div>
+
+                <div id="exercise-items-container">
+                    <!-- Primeiro item de vídeo obrigatório -->
+                    <div class="exercise-item-block">
+                        <div style="display: flex; justify-content: space-between;">
+                            <h4>Vídeo 1</h4>
+                        </div>
+                        <div class="form-group">
+                            <label>Palavra Escrita</label>
+                            <input type="text" class="item-word" required placeholder="Ex: PÓ">
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                            <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                <label>Cor do Texto</label>
+                                <input type="color" class="item-color" value="#333333"
+                                    style="width: 100%; height: 40px; cursor: pointer; border: 1px solid #ddd; border-radius: 8px;">
+                            </div>
+                            <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                <label>Tamanho (px)</label>
+                                <input type="number" class="item-size" value="100" min="20" max="300"
+                                    style="width: 100%; height: 40px; box-sizing: border-box; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px;">
+                            </div>
+                        </div>
+                        <div
+                            style="display: flex; gap: 20px; margin-bottom: 15px; align-items: center; justify-content: flex-start; padding-left: 5px;">
+                            <label
+                                style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; cursor: pointer;">
+                                <input type="checkbox" class="item-uppercase"
+                                    style="width: 18px; height: 18px; cursor: pointer;"> Caixa Alta
+                            </label>
+                            <label
+                                style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; cursor: pointer;">
+                                <input type="checkbox" class="item-bold"
+                                    style="width: 18px; height: 18px; cursor: pointer;" checked> Negrito
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>Link do Vídeo (Vimeo, Drive, YouTube, Figma)</label>
+                            <input type="url" class="item-link" placeholder="Cole o link aqui..." required>
+                        </div>
+                        <div class="form-group">
+                            <label>Imagem (Objeto)</label>
+                            <input type="file" class="item-image" accept="image/*" required>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="button" class="btn-secondary" id="btn-add-exercise-item"
+                    style="margin-bottom: 20px; width: 100%;">
+                    <i class="fas fa-plus"></i> Adicionar outro vídeo a esta playlist
+                </button>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-cancel-exercise-upload">Cancelar</button>
+                    <button type="submit" class="btn-primary"
+                        style="background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%);">Salvar Playlist</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de Reprodução de Vídeo Simples -->
+    <div class="modal-overlay" id="video-modal">
+        <div class="modal-content video-modal-content">
+            <div class="modal-header">
+                <h2 id="video-modal-title">Vídeo</h2>
+                <button class="close-modal-btn" id="btn-close-video"><i class="fas fa-times"></i></button>
+            </div>
+            <video id="video-player" controls autoplay></video>
+        </div>
+    </div>
+
+    <!-- Tela de Apresentação (Exercícios - Fundo Branco com setas) -->
+    <div class="presentation-modal" id="presentation-modal">
+        <div class="presentation-top-bar">
+            <span class="presentation-progress" id="presentation-progress">1 / 1</span>
+            <button class="presentation-close-btn" id="btn-close-presentation"><i class="fas fa-times"></i>
+                Fechar</button>
+        </div>
+
+        <button class="nav-arrow prev-arrow" id="btn-prev-presentation"><i class="fas fa-chevron-left"></i></button>
+        <button class="nav-arrow next-arrow" id="btn-next-presentation"><i class="fas fa-chevron-right"></i></button>
+
+        <div class="presentation-layout">
+            <div class="presentation-left">
+                <h1 class="presentation-word" id="presentation-word-text">PÁ</h1>
+                <iframe class="presentation-video" id="presentation-iframe" frameborder="0" allowfullscreen
+                    allow="autoplay; fullscreen"></iframe>
+            </div>
+            <div class="presentation-right">
+                <img class="presentation-image" id="presentation-image" src="" alt="Objeto">
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Modal Compartilhado de Edição de Card -->
+    <div class="modal-overlay" id="card-editor-modal">
+        <div class="modal-content" style="max-height:90vh;overflow-y:auto;">
+            <div class="modal-header">
+                <h2 id="card-editor-title">Editar Card</h2>
+                <button class="close-modal-btn" id="btn-close-card-editor"><i class="fas fa-times"></i></button>
+            </div>
+            <form id="card-editor-form">
+                <div class="form-group">
+                    <label for="card-editor-word">Nome do Card</label>
+                    <input type="text" id="card-editor-word" required placeholder="Ex: Autonomia">
+                </div>
+                <div class="form-group">
+                    <label for="card-editor-color">Cor da Borda</label>
+                    <select id="card-editor-color">
+                        <option value="solid-orange">Laranja Sólido (Essenciais)</option>
+                        <option value="border-orange">Laranja</option>
+                        <option value="border-blue">Azul</option>
+                        <option value="border-green">Verde</option>
+                        <option value="border-red">Vermelho</option>
+                        <option value="border-yellow">Amarelo</option>
+                        <option value="border-pink">Rosa</option>
+                        <option value="border-gray">Cinza</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <img id="card-editor-img-preview" style="max-width:120px;max-height:120px;display:none;border-radius:8px;object-fit:contain;margin-bottom:8px;">
+                    <label for="card-editor-image">Nova Imagem (opcional)</label>
+                    <input type="file" id="card-editor-image" accept="image/*">
+                </div>
+                <div class="form-group">
+                    <div id="card-editor-audio-indicator" style="display:none;align-items:center;gap:8px;color:#4CAF50;font-weight:bold;margin-bottom:8px;">
+                        <i class="fas fa-volume-up"></i> Áudio personalizado salvo
+                    </div>
+                    <label for="card-editor-audio">Áudio (opcional)</label>
+                    <input type="file" id="card-editor-audio" accept="audio/*">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-cancel-card-editor">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar Card</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>

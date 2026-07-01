@@ -405,7 +405,7 @@
 
             const { data } = await supabaseClient.auth.getSession();
             if (data?.session) {
-                window.location.href = 'index.html';
+                window.location.href = 'app.html';
             }
         }
         checkSession();
@@ -469,7 +469,7 @@
 
                     showStatus('Senha atualizada com sucesso. Redirecionando...', false);
                     setTimeout(() => {
-                        window.location.href = 'index.html';
+                        window.location.href = 'app.html';
                     }, 900);
                     return;
                 }
@@ -482,7 +482,7 @@
                 if (error) throw error;
 
                 if (data?.session) {
-                    window.location.href = 'index.html';
+                    window.location.href = 'app.html';
                 }
             } catch (err) {
                 console.error(err);
