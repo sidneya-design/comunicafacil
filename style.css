@@ -261,7 +261,7 @@ body {
     letter-spacing: -2px;
 }
 .presentation-video {
-    width: 100%; aspect-ratio: 16/9; min-height: 0; max-height: 55%; border-radius: 20px; border: 1px solid #ddd;
+    width: 100%; aspect-ratio: 16/9; min-height: 0; max-height: 75%; border-radius: 20px; border: 1px solid #ddd;
     box-shadow: 0 10px 30px rgba(0,0,0,0.1); background: #f5f5f5;
 }
 .presentation-right {
@@ -310,7 +310,7 @@ body {
     }
     .presentation-video { 
         min-height: auto; 
-        height: 28vh; max-height: 28vh;
+        height: 38vh; max-height: 38vh;
         aspect-ratio: 16/9; 
         margin-bottom: 0;
     }
@@ -318,7 +318,7 @@ body {
         flex: none; width: 100%; 
         display: flex; justify-content: center; 
         margin-top: 5px;
-        height: 30vh;
+        height: 22vh;
     }
     .presentation-image { 
         max-height: 100%; width: auto; max-width: 85%; 

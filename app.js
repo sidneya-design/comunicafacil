@@ -432,6 +432,7 @@ function renderMediaCards(mediasArray) {
 // Exercícios (Playlists com Edição)
 let currentEditingExerciseId = null;
 let currentEditingBlobs = {};
+let currentEditingImageUrls = {};
 let exerciseBlockCounter = 0;
 
 async function saveExercisePlaylistToDB(title, itemsArray) {
@@ -682,6 +683,7 @@ function updateBlockTitles() {
 function openEditExercise(ex) {
     currentEditingExerciseId = ex.id;
     currentEditingBlobs = {};
+    currentEditingImageUrls = {};
     exerciseBlockCounter = 0;
 
     document.getElementById('upload-exercise-modal').style.display = 'flex';
@@ -692,17 +694,20 @@ function openEditExercise(ex) {
     container.innerHTML = '';
 
     ex.items.forEach((item, index) => {
-        const hasOldImage = !!item.imageBlob;
+        const hasOldImage = !!item.image_url || !!item.imageBlob;
         addExerciseBlock(true, hasOldImage);
 
         const blockEl = container.querySelector(`[data-block-id="${index}"]`);
         blockEl.querySelector('.item-word').value = item.word || '';
-        blockEl.querySelector('.item-link').value = item.videoLink || '';
-        blockEl.querySelector('.item-color').value = item.textColor || '#333333';
-        blockEl.querySelector('.item-size').value = item.textSize || '100';
-        blockEl.querySelector('.item-uppercase').checked = !!item.isUppercase;
-        blockEl.querySelector('.item-bold').checked = item.isBold !== undefined ? item.isBold : true;
+        blockEl.querySelector('.item-link').value = item.videoLink || item.link || '';
+        blockEl.querySelector('.item-color').value = item.color || item.textColor || '#333333';
+        blockEl.querySelector('.item-size').value = item.size || item.textSize || '100';
+        blockEl.querySelector('.item-uppercase').checked = item.uppercase !== undefined ? !!item.uppercase : !!item.isUppercase;
+        blockEl.querySelector('.item-bold').checked = item.bold !== undefined ? !!item.bold : (item.isBold !== undefined ? !!item.isBold : true);
 
+        if (item.image_url) {
+            currentEditingImageUrls[index] = item.image_url;
+        }
         if (item.imageBlob) {
             currentEditingBlobs[index] = item.imageBlob;
         }
@@ -766,6 +771,7 @@ function setupModals() {
     document.getElementById('btn-open-exercise-upload').addEventListener('click', () => {
         currentEditingExerciseId = null;
         currentEditingBlobs = {};
+        currentEditingImageUrls = {};
         exerciseBlockCounter = 0;
 
         document.getElementById('upload-exercise-modal').style.display = 'flex';
@@ -802,14 +808,21 @@ function setupModals() {
                 finalBlob = currentEditingBlobs[blockId];
             }
 
+            // Preservar a URL da imagem atual se não subiu um novo arquivo
+            let existingImageUrl = null;
+            if (currentEditingImageUrls && currentEditingImageUrls[blockId]) {
+                existingImageUrl = currentEditingImageUrls[blockId];
+            }
+
             itemsArray.push({
                 word: block.querySelector('.item-word').value,
-                textColor: block.querySelector('.item-color').value,
-                textSize: block.querySelector('.item-size').value,
-                isUppercase: block.querySelector('.item-uppercase').checked,
-                isBold: block.querySelector('.item-bold').checked,
+                color: block.querySelector('.item-color').value,
+                size: block.querySelector('.item-size').value,
+                uppercase: block.querySelector('.item-uppercase').checked,
+                bold: block.querySelector('.item-bold').checked,
                 videoLink: block.querySelector('.item-link').value,
-                imageBlob: finalBlob
+                imageBlob: finalBlob,
+                image_url: existingImageUrl
             });
         });
 
