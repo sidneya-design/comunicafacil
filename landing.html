@@ -158,15 +158,18 @@
             border: 1px solid rgba(255, 255, 255, 0.4);
             box-shadow: 0 8px 20px rgba(16, 185, 129, 0.15);
             transition: transform 0.3s ease;
+            overflow: hidden;
         }
 
         .brand:hover .brand-mark {
             transform: rotate(-10deg) scale(1.05);
         }
 
-        .brand-mark i {
-            font-size: 18px;
-            color: #ffffff;
+        .brand-mark img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: inherit;
         }
 
         .brand-text h1 {
@@ -613,7 +616,7 @@
             font-size: 0.95rem;
         }
 
-        /* Seção Sobre a Afasia */
+        /* Seção sobre Afasia */
         .about-afasia {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -919,7 +922,7 @@
         <header class="topbar fade-up" id="navbar">
             <a href="#" class="brand">
                 <div class="brand-mark">
-                    <i class="fas fa-border-all"></i>
+                    <img src="img/icones/icone2.png" alt="Logo">
                 </div>
                 <div class="brand-text">
                     <h1>Comunica Fácil</h1>
@@ -1118,8 +1121,6 @@
             <span>Feito para apoiar e reduzir barreiras no treino da comunicação.</span>
         </footer>
     </div>
-
-
 </body>
 
 </html>
