@@ -442,4 +442,20 @@ body {
 }
 
 
+/* Efeito de pulso para gravação de áudio */
+@keyframes recording-pulse-anim {
+    0% {
+        box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 12px rgba(244, 67, 54, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(244, 67, 54, 0);
+    }
+}
+.recording-pulse {
+    animation: recording-pulse-anim 1.5s infinite !important;
+}
+
 button, .action-btn { touch-action: manipulation; }

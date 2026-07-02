@@ -2289,10 +2289,17 @@ function writeString(view, offset, string) {
 
 async function toggleIaAudioRecording() {
     if (isRecording) {
+        btnIaRecord.classList.remove('recording-pulse');
         btnIaRecord.style.background = 'var(--color-blue)';
         btnIaRecord.style.color = 'black';
         btnIaRecord.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         btnIaRecord.disabled = true;
+        
+        // Restaura estado do input de texto
+        if (iaChatInput) {
+            iaChatInput.placeholder = "Digite sua mensagem...";
+            iaChatInput.disabled = false;
+        }
         
         try {
             const audioBlob = stopWavRecording();
@@ -2308,15 +2315,27 @@ async function toggleIaAudioRecording() {
         btnIaRecord.style.background = '#f44336'; // Botão vermelho indicando gravação
         btnIaRecord.style.color = 'white';
         btnIaRecord.innerHTML = '<i class="fas fa-stop"></i>';
+        btnIaRecord.classList.add('recording-pulse');
+        
+        // Altera o estado do input de texto para indicar gravação
+        if (iaChatInput) {
+            iaChatInput.placeholder = "🔴 Gravando áudio... fale agora!";
+            iaChatInput.disabled = true;
+        }
         
         try {
             await startWavRecording();
         } catch (error) {
             console.error('Erro ao acessar microfone:', error);
             alert('Erro ao acessar microfone. Certifique-se de conceder a permissão no navegador.');
+            btnIaRecord.classList.remove('recording-pulse');
             btnIaRecord.style.background = 'var(--color-blue)';
             btnIaRecord.style.color = 'black';
             btnIaRecord.innerHTML = '<i class="fas fa-microphone"></i>';
+            if (iaChatInput) {
+                iaChatInput.placeholder = "Digite sua mensagem...";
+                iaChatInput.disabled = false;
+            }
         }
     }
 }
