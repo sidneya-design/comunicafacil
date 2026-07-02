@@ -124,13 +124,28 @@ function initApp() {
 function setupNavigation() {
     const navBtns = document.querySelectorAll('.nav-btn');
     const views = document.querySelectorAll('.view-section');
+    const messageBar = document.querySelector('.message-bar');
 
     navBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             navBtns.forEach(b => b.classList.remove('active'));
             views.forEach(v => v.classList.remove('active'));
             btn.classList.add('active');
-            document.getElementById(btn.dataset.view).classList.add('active');
+            
+            const targetView = btn.dataset.view;
+            const viewElement = document.getElementById(targetView);
+            if (viewElement) {
+                viewElement.classList.add('active');
+            }
+            
+            // Oculta a barra de mensagens de figuras na aba de IA e Exercícios
+            if (messageBar) {
+                if (targetView === 'view-ia' || targetView === 'view-exercises') {
+                    messageBar.style.display = 'none';
+                } else {
+                    messageBar.style.display = 'flex';
+                }
+            }
         });
     });
 }
