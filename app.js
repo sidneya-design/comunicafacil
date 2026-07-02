@@ -2051,8 +2051,15 @@ if (document.readyState === 'loading') {
     initApp();
 }
 
-// ---- CHAT IA AZURE (Via Supabase Edge Function) ----
-const AZURE_AI_ENDPOINT = "https://rrubmvykindvilptjhma.supabase.co/functions/v1/chat"; 
+// ---- CHAT IA AZURE (Via Supabase Edge Function ou Servidor Local) ----
+const isLocalhost = window.location.hostname === 'localhost' || 
+                    window.location.hostname === '127.0.0.1' || 
+                    window.location.protocol === 'file:';
+
+const AZURE_AI_ENDPOINT = isLocalhost 
+    ? "http://127.0.0.1:5001/chat" 
+    : "https://rrubmvykindvilptjhma.supabase.co/functions/v1/chat";
+
 
 const iaChatInput = document.getElementById('ia-chat-input');
 const btnIaSend = document.getElementById('btn-ia-send');
