@@ -425,20 +425,22 @@ function renderMediaCards(mediasArray) {
         btn.appendChild(imgContainer);
         btn.appendChild(textEl);
 
-        const delBtn = document.createElement('button');
-        delBtn.className = 'delete-media-btn'; delBtn.innerHTML = '<i class="fas fa-trash"></i>';
-        delBtn.onclick = async (ev) => {
-            ev.stopPropagation();
-            if (confirm('Apagar?')) {
-                if (media.fromSupabase && supabaseClient) {
-                    await supabaseClient.from('medias').delete().eq('id', media.id);
-                    loadMediaCards();
-                } else {
-                    db.transaction(['medias'], 'readwrite').objectStore('medias').delete(media.id).onsuccess = () => loadMediaCards();
+        if (isAdmin) {
+            const delBtn = document.createElement('button');
+            delBtn.className = 'delete-media-btn'; delBtn.innerHTML = '<i class="fas fa-trash"></i>';
+            delBtn.onclick = async (ev) => {
+                ev.stopPropagation();
+                if (confirm('Apagar?')) {
+                    if (media.fromSupabase && supabaseClient) {
+                        await supabaseClient.from('medias').delete().eq('id', media.id);
+                        loadMediaCards();
+                    } else {
+                        db.transaction(['medias'], 'readwrite').objectStore('medias').delete(media.id).onsuccess = () => loadMediaCards();
+                    }
                 }
-            }
-        };
-        btn.appendChild(delBtn);
+            };
+            btn.appendChild(delBtn);
+        }
         btn.addEventListener('click', () => playMedia(media));
         container.appendChild(btn);
     });
@@ -553,28 +555,30 @@ function renderExerciseCards(exercisesArray) {
         btn.appendChild(imgContainer);
         btn.appendChild(textEl);
 
-        const delBtn = document.createElement('button');
-        delBtn.className = 'delete-media-btn'; delBtn.innerHTML = '<i class="fas fa-trash"></i>';
-        delBtn.onclick = async (ev) => {
-            ev.stopPropagation();
-            if (confirm(`Apagar playlist "${ex.title}"?`)) {
-                if (ex.fromSupabase && supabaseClient) {
-                    await supabaseClient.from('exercises').delete().eq('id', ex.id);
-                    loadExerciseCards();
-                } else {
-                    db.transaction(['exercises'], 'readwrite').objectStore('exercises').delete(ex.id).onsuccess = () => loadExerciseCards();
+        if (isAdmin) {
+            const delBtn = document.createElement('button');
+            delBtn.className = 'delete-media-btn'; delBtn.innerHTML = '<i class="fas fa-trash"></i>';
+            delBtn.onclick = async (ev) => {
+                ev.stopPropagation();
+                if (confirm(`Apagar playlist "${ex.title}"?`)) {
+                    if (ex.fromSupabase && supabaseClient) {
+                        await supabaseClient.from('exercises').delete().eq('id', ex.id);
+                        loadExerciseCards();
+                    } else {
+                        db.transaction(['exercises'], 'readwrite').objectStore('exercises').delete(ex.id).onsuccess = () => loadExerciseCards();
+                    }
                 }
-            }
-        };
-        btn.appendChild(delBtn);
+            };
+            btn.appendChild(delBtn);
 
-        const editBtn = document.createElement('button');
-        editBtn.className = 'edit-media-btn'; editBtn.innerHTML = '<i class="fas fa-pencil-alt"></i>';
-        editBtn.onclick = (ev) => {
-            ev.stopPropagation();
-            openEditExercise(ex);
-        };
-        btn.appendChild(editBtn);
+            const editBtn = document.createElement('button');
+            editBtn.className = 'edit-media-btn'; editBtn.innerHTML = '<i class="fas fa-pencil-alt"></i>';
+            editBtn.onclick = (ev) => {
+                ev.stopPropagation();
+                openEditExercise(ex);
+            };
+            btn.appendChild(editBtn);
+        }
 
         btn.addEventListener('click', () => openPresentationPlaylist(ex));
         container.appendChild(btn);
@@ -730,7 +734,10 @@ function openEditExercise(ex) {
 }
 
 function setupModals() {
-    document.getElementById('btn-open-upload').addEventListener('click', () => document.getElementById('upload-modal').style.display = 'flex');
+    document.getElementById('btn-open-upload').addEventListener('click', () => {
+        if (!isAdmin) return;
+        document.getElementById('upload-modal').style.display = 'flex';
+    });
     const closeUpload = () => { document.getElementById('upload-modal').style.display = 'none'; document.getElementById('upload-form').reset(); };
     document.getElementById('btn-close-upload').addEventListener('click', closeUpload);
     document.getElementById('btn-cancel-upload').addEventListener('click', closeUpload);
@@ -754,6 +761,10 @@ function setupModals() {
 
     document.getElementById('upload-form').addEventListener('submit', (e) => {
         e.preventDefault();
+        if (!isAdmin) {
+            alert('Apenas administradores podem adicionar mídia.');
+            return;
+        }
 
         const title = document.getElementById('media-title').value.trim();
         const color = document.getElementById('media-color').value.split('-')[1];
@@ -784,6 +795,7 @@ function setupModals() {
     });
 
     document.getElementById('btn-open-exercise-upload').addEventListener('click', () => {
+        if (!isAdmin) return;
         currentEditingExerciseId = null;
         currentEditingBlobs = {};
         currentEditingImageUrls = {};
@@ -808,6 +820,10 @@ function setupModals() {
 
     document.getElementById('upload-exercise-form').addEventListener('submit', (e) => {
         e.preventDefault();
+        if (!isAdmin) {
+            alert('Apenas administradores podem salvar playlists.');
+            return;
+        }
         const title = document.getElementById('exercise-title').value;
         const blocks = document.querySelectorAll('.exercise-item-block');
 
@@ -1019,6 +1035,9 @@ function showEditBars() {
     ['btn-edit-core', 'btn-edit-virtues', 'btn-edit-topics'].forEach(id => {
         const btn = document.getElementById(id);
         if (btn) btn.parentElement.style.display = isAdmin ? 'flex' : 'none';
+    });
+    document.querySelectorAll('.media-header').forEach(header => {
+        header.style.display = isAdmin ? 'flex' : 'none';
     });
 }
 
