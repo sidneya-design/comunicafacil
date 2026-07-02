@@ -947,8 +947,21 @@ if (supabaseClient) {
         }
 
         // Se chegou aqui, a pessoa fez login. 
-        // Vamos buscar a flag de administrador dela direto no Banco de Dados
         const userId = data.session.user.id;
+        const userEmail = data.session.user.email;
+
+        // Bloqueio explícito: Albert é usuário comum e NUNCA administrador
+        if (userEmail === 'albert.h@geniantis.org') {
+            isAdmin = false;
+            document.getElementById('text-login-logout').textContent = 'Sair';
+            if (document.getElementById('btn-login-logout')) {
+                const icon = document.getElementById('btn-login-logout').querySelector('i');
+                if (icon) icon.className = 'fas fa-user';
+            }
+            showEditBars();
+            return;
+        }
+
         try {
             const { data: roleData, error } = await supabaseClient
                 .from('user_roles')
@@ -959,7 +972,10 @@ if (supabaseClient) {
             if (roleData && roleData.is_admin === true) {
                 isAdmin = true;
                 document.getElementById('text-login-logout').textContent = 'Sair (Admin)';
-                document.getElementById('btn-login-logout').querySelector('i').className = 'fas fa-unlock';
+                if (document.getElementById('btn-login-logout')) {
+                    const icon = document.getElementById('btn-login-logout').querySelector('i');
+                    if (icon) icon.className = 'fas fa-unlock';
+                }
                 
                 // Re-render grids to show edit buttons if admin
                 loadCoreAndRender();
@@ -970,7 +986,10 @@ if (supabaseClient) {
             } else {
                 isAdmin = false;
                 document.getElementById('text-login-logout').textContent = 'Sair';
-                document.getElementById('btn-login-logout').querySelector('i').className = 'fas fa-user';
+                if (document.getElementById('btn-login-logout')) {
+                    const icon = document.getElementById('btn-login-logout').querySelector('i');
+                    if (icon) icon.className = 'fas fa-user';
+                }
             }
         } catch (e) {
             console.error("Erro ao checar permissões:", e);
