@@ -2051,3 +2051,94 @@ if (document.readyState === 'loading') {
     initApp();
 }
 
+// ---- CHAT IA AZURE (Via Supabase Edge Function) ----
+const AZURE_AI_ENDPOINT = "https://rrubmvykindvilptjhma.supabase.co/functions/v1/chat"; 
+
+const iaChatInput = document.getElementById('ia-chat-input');
+const btnIaSend = document.getElementById('btn-ia-send');
+const iaChatMessages = document.getElementById('ia-chat-messages');
+
+let chatHistory = [
+    { role: "user", content: "Você é o assistente virtual do Comunica Fácil. Responda de forma curta, prestativa e gentil." }
+];
+
+async function sendIaMessage() {
+    const text = iaChatInput.value.trim();
+    if (!text) return;
+    
+    addMessageToChat(text, 'user');
+    iaChatInput.value = '';
+    
+    chatHistory.push({ role: "user", content: text });
+    const typingIndicator = addMessageToChat('Digitando...', 'ia', true);
+    
+    try {
+        const response = await fetch(AZURE_AI_ENDPOINT, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                messages: chatHistory
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Erro na API do Supabase: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error.message || data.error);
+        }
+        
+        const reply = data.reply;
+        
+        chatHistory.push({ role: "assistant", content: reply });
+        
+        typingIndicator.remove();
+        addMessageToChat(reply, 'ia');
+        
+    } catch (error) {
+        console.error('Erro ao chamar Azure AI via Supabase:', error);
+        typingIndicator.remove();
+        addMessageToChat('Desculpe, ocorreu um erro de conexão com a IA.', 'ia');
+    }
+}
+
+function addMessageToChat(text, sender, isTyping = false) {
+    const msgDiv = document.createElement('div');
+    msgDiv.style.padding = '12px 16px';
+    msgDiv.style.maxWidth = '85%';
+    msgDiv.style.boxShadow = 'var(--shadow-sm)';
+    msgDiv.style.color = 'var(--text)';
+    msgDiv.style.lineHeight = '1.4';
+    
+    if (sender === 'user') {
+        msgDiv.style.alignSelf = 'flex-end';
+        msgDiv.style.background = 'var(--accent)';
+        msgDiv.style.color = 'white';
+        msgDiv.style.borderRadius = '16px 16px 0 16px';
+    } else {
+        msgDiv.style.alignSelf = 'flex-start';
+        msgDiv.style.background = 'white';
+        msgDiv.style.borderRadius = '0 16px 16px 16px';
+        if (isTyping) msgDiv.style.fontStyle = 'italic';
+    }
+    
+    msgDiv.textContent = text;
+    if (iaChatMessages) {
+        iaChatMessages.appendChild(msgDiv);
+        iaChatMessages.scrollTop = iaChatMessages.scrollHeight;
+    }
+    return msgDiv;
+}
+
+if (btnIaSend && iaChatInput) {
+    btnIaSend.addEventListener('click', sendIaMessage);
+    iaChatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendIaMessage();
+    });
+}
+
