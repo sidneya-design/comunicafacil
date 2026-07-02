@@ -2118,14 +2118,14 @@ function addMessageToChat(text, sender, isTyping = false) {
     const msgDiv = document.createElement('div');
     msgDiv.style.padding = '12px 16px';
     msgDiv.style.maxWidth = '85%';
-    msgDiv.style.boxShadow = 'var(--shadow-sm)';
-    msgDiv.style.color = 'var(--text)';
+    msgDiv.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
+    msgDiv.style.color = 'var(--text-main)';
     msgDiv.style.lineHeight = '1.4';
     
     if (sender === 'user') {
         msgDiv.style.alignSelf = 'flex-end';
-        msgDiv.style.background = 'var(--accent)';
-        msgDiv.style.color = 'white';
+        msgDiv.style.background = 'var(--color-blue)'; // Azul do tema para o balão
+        msgDiv.style.color = 'black';                  // Cor do texto das perguntas preta
         msgDiv.style.borderRadius = '16px 16px 0 16px';
     } else {
         msgDiv.style.alignSelf = 'flex-start';
