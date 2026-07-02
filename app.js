@@ -2063,6 +2063,7 @@ const AZURE_AI_ENDPOINT = isLocalhost
 
 const iaChatInput = document.getElementById('ia-chat-input');
 const btnIaSend = document.getElementById('btn-ia-send');
+const btnIaRecord = document.getElementById('btn-ia-record');
 const iaChatMessages = document.getElementById('ia-chat-messages');
 
 let chatHistory = [
@@ -2086,7 +2087,8 @@ async function sendIaMessage() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                messages: chatHistory
+                messages: chatHistory,
+                generateAudio: true // Solicita síntese de voz na resposta
             })
         });
         
@@ -2105,7 +2107,13 @@ async function sendIaMessage() {
         chatHistory.push({ role: "assistant", content: reply });
         
         typingIndicator.remove();
-        addMessageToChat(reply, 'ia');
+        addMessageToChat(reply, 'ia', false, data.audio);
+        
+        // Toca automaticamente se houver áudio
+        if (data.audio) {
+            const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
+            audio.play();
+        }
         
     } catch (error) {
         console.error('Erro ao chamar Azure AI via Supabase:', error);
@@ -2114,27 +2122,72 @@ async function sendIaMessage() {
     }
 }
 
-function addMessageToChat(text, sender, isTyping = false) {
+function addMessageToChat(text, sender, isTyping = false, audioBase64 = null) {
     const msgDiv = document.createElement('div');
     msgDiv.style.padding = '12px 16px';
     msgDiv.style.maxWidth = '85%';
     msgDiv.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
     msgDiv.style.color = 'var(--text-main)';
     msgDiv.style.lineHeight = '1.4';
+    msgDiv.style.display = 'flex';
+    msgDiv.style.alignItems = 'center';
+    msgDiv.style.justifyContent = 'space-between';
+    msgDiv.style.gap = '15px';
+    
+    const textSpan = document.createElement('span');
+    textSpan.textContent = text;
+    msgDiv.appendChild(textSpan);
     
     if (sender === 'user') {
         msgDiv.style.alignSelf = 'flex-end';
-        msgDiv.style.background = 'var(--color-blue)'; // Azul do tema para o balão
-        msgDiv.style.color = 'black';                  // Cor do texto das perguntas preta
+        msgDiv.style.background = 'var(--color-blue)'; // Azul do tema
+        msgDiv.style.color = 'black';                  // Texto preto
         msgDiv.style.borderRadius = '16px 16px 0 16px';
     } else {
         msgDiv.style.alignSelf = 'flex-start';
         msgDiv.style.background = 'white';
         msgDiv.style.borderRadius = '0 16px 16px 16px';
-        if (isTyping) msgDiv.style.fontStyle = 'italic';
+        
+        if (isTyping) {
+            msgDiv.style.fontStyle = 'italic';
+        } else if (audioBase64) {
+            // Cria o botão de ouvir novamente
+            const playBtn = document.createElement('button');
+            playBtn.style.background = 'transparent';
+            playBtn.style.border = 'none';
+            playBtn.style.color = 'var(--color-blue)';
+            playBtn.style.cursor = 'pointer';
+            playBtn.style.fontSize = '18px';
+            playBtn.style.display = 'flex';
+            playBtn.style.alignItems = 'center';
+            playBtn.style.justifyContent = 'center';
+            playBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
+            playBtn.title = "Ouvir resposta";
+            
+            let currentAudio = null;
+            playBtn.addEventListener('click', () => {
+                if (currentAudio) {
+                    currentAudio.pause();
+                    currentAudio = null;
+                    playBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
+                } else {
+                    playBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                    currentAudio = new Audio(`data:audio/mp3;base64,${audioBase64}`);
+                    currentAudio.onended = () => {
+                        playBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
+                        currentAudio = null;
+                    };
+                    currentAudio.onerror = () => {
+                        playBtn.innerHTML = '<i class="fas fa-exclamation-circle" style="color:red;"></i>';
+                        currentAudio = null;
+                    };
+                    currentAudio.play();
+                }
+            });
+            msgDiv.appendChild(playBtn);
+        }
     }
     
-    msgDiv.textContent = text;
     if (iaChatMessages) {
         iaChatMessages.appendChild(msgDiv);
         iaChatMessages.scrollTop = iaChatMessages.scrollHeight;
@@ -2142,10 +2195,172 @@ function addMessageToChat(text, sender, isTyping = false) {
     return msgDiv;
 }
 
+// ---- GRAVADOR WAV (16kHz mono) PURE JS ----
+let audioContext;
+let audioInput;
+let recorderNode;
+let recordingBuffer = [];
+let isRecording = false;
+
+async function startWavRecording() {
+    recordingBuffer = [];
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    
+    // Força 16kHz que é o padrão exigido pela Azure
+    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    audioInput = audioContext.createMediaStreamSource(stream);
+    
+    // ScriptProcessor para compatibilidade total Chrome/Safari/Firefox
+    recorderNode = audioContext.createScriptProcessor(4096, 1, 1);
+    recorderNode.onaudioprocess = (e) => {
+        if (!isRecording) return;
+        const inputData = e.inputBuffer.getChannelData(0);
+        recordingBuffer.push(new Float32Array(inputData));
+    };
+    
+    audioInput.connect(recorderNode);
+    recorderNode.connect(audioContext.destination);
+    isRecording = true;
+}
+
+function stopWavRecording() {
+    isRecording = false;
+    
+    if (recorderNode) recorderNode.disconnect();
+    if (audioInput) audioInput.disconnect();
+    if (audioContext && audioContext.state !== 'closed') audioContext.close();
+    
+    const totalLength = recordingBuffer.reduce((acc, buf) => acc + buf.length, 0);
+    const result = new Float32Array(totalLength);
+    let offset = 0;
+    for (const buf of recordingBuffer) {
+        result.set(buf, offset);
+        offset += buf.length;
+    }
+    
+    // Converte float32 para PCM de 16 bits
+    const buffer = new ArrayBuffer(44 + result.length * 2);
+    const view = new DataView(buffer);
+    
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + result.length * 2, true);
+    writeString(view, 8, 'WAVE');
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, 16000, true);
+    view.setUint32(28, 16000 * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(view, 36, 'data');
+    view.setUint32(40, result.length * 2, true);
+    
+    let index = 44;
+    for (let i = 0; i < result.length; i++) {
+        let s = Math.max(-1, Math.min(1, result[i]));
+        view.setInt16(index, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        index += 2;
+    }
+    
+    return new Blob([view], { type: 'audio/wav' });
+}
+
+function writeString(view, offset, string) {
+    for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+    }
+}
+
+async function toggleIaAudioRecording() {
+    if (isRecording) {
+        btnIaRecord.style.background = 'var(--color-blue)';
+        btnIaRecord.style.color = 'black';
+        btnIaRecord.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        btnIaRecord.disabled = true;
+        
+        try {
+            const audioBlob = stopWavRecording();
+            await sendIaAudioMessage(audioBlob);
+        } catch (error) {
+            console.error('Erro ao parar gravação de áudio:', error);
+            alert('Não foi possível processar a sua gravação de áudio.');
+        } finally {
+            btnIaRecord.innerHTML = '<i class="fas fa-microphone"></i>';
+            btnIaRecord.disabled = false;
+        }
+    } else {
+        btnIaRecord.style.background = '#f44336'; // Botão vermelho indicando gravação
+        btnIaRecord.style.color = 'white';
+        btnIaRecord.innerHTML = '<i class="fas fa-stop"></i>';
+        
+        try {
+            await startWavRecording();
+        } catch (error) {
+            console.error('Erro ao acessar microfone:', error);
+            alert('Erro ao acessar microfone. Certifique-se de conceder a permissão no navegador.');
+            btnIaRecord.style.background = 'var(--color-blue)';
+            btnIaRecord.style.color = 'black';
+            btnIaRecord.innerHTML = '<i class="fas fa-microphone"></i>';
+        }
+    }
+}
+
+async function sendIaAudioMessage(audioBlob) {
+    const typingIndicator = addMessageToChat('Processando áudio...', 'ia', true);
+    
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'audio.wav');
+    formData.append('messages', JSON.stringify(chatHistory));
+    
+    try {
+        const response = await fetch(AZURE_AI_ENDPOINT, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Erro na Edge Function do Supabase: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error.message || data.error);
+        }
+        
+        typingIndicator.remove();
+        
+        // Exibe a pergunta transcrita no chat
+        addMessageToChat(data.user_transcription, 'user');
+        chatHistory.push({ role: "user", content: data.user_transcription });
+        
+        // Exibe a resposta com o player
+        addMessageToChat(data.reply, 'ia', false, data.audio);
+        chatHistory.push({ role: "assistant", content: data.reply });
+        
+        // Reproduz o som automaticamente
+        if (data.audio) {
+            const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
+            audio.play();
+        }
+        
+    } catch (error) {
+        console.error('Erro ao enviar áudio para a IA:', error);
+        typingIndicator.remove();
+        addMessageToChat('Desculpe, ocorreu um erro ao transcrever ou processar seu áudio.', 'ia');
+    }
+}
+
+// Configuração dos Event Listeners
 if (btnIaSend && iaChatInput) {
     btnIaSend.addEventListener('click', sendIaMessage);
     iaChatInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') sendIaMessage();
     });
+}
+
+if (btnIaRecord) {
+    btnIaRecord.addEventListener('click', toggleIaAudioRecording);
 }
 

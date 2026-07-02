@@ -31,19 +31,11 @@ if not API_KEY:
 my_agent = "falafacil"
 my_version = "11"
 
-@app.route('/chat', methods=['POST'])
-def chat():
-    data = request.json
-    messages = data.get('messages', [])
-    
-    if not messages:
-        return jsonify({"error": "Nenhuma mensagem recebida"}), 400
-    
+def get_agent_response(messages):
     headers = {
         "Content-Type": "application/json",
         "api-key": API_KEY
     }
-    
     payload = {
         "input": messages,
         "agent_reference": {
@@ -52,23 +44,96 @@ def chat():
             "type": "agent_reference"
         }
     }
-    
+    response = requests.post(AZURE_URL, headers=headers, json=payload)
+    if response.status_code != 200:
+        raise Exception(f"Erro na Azure ({response.status_code}): {response.text}")
+    res_data = response.json()
+    return res_data['output'][0]['content'][0]['text']
+
+def transcribe_audio(audio_bytes):
+    url = f"https://{AZURE_SPEECH_REGION}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=pt-BR"
+    headers = {
+        "Ocp-Apim-Subscription-Key": API_KEY,
+        "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+        "Accept": "application/json",
+        "User-Agent": "ComunicaFacilSTT"
+    }
+    response = requests.post(url, headers=headers, data=audio_bytes)
+    if response.status_code != 200:
+        raise Exception(f"Erro no Azure STT ({response.status_code}): {response.text}")
+    data = response.json()
+    if data.get("RecognitionStatus") != "Success":
+        raise Exception(f"Azure STT falhou: {data.get('RecognitionStatus')}")
+    return data.get("DisplayText", "")
+
+def synthesize_text(text):
+    url = f"https://{AZURE_SPEECH_REGION}.tts.speech.microsoft.com/cognitiveservices/v1"
+    headers = {
+        "Ocp-Apim-Subscription-Key": API_KEY,
+        "Content-Type": "application/ssml+xml",
+        "X-Microsoft-OutputFormat": "audio-16khz-128kbitrate-mono-mp3",
+        "User-Agent": "ComunicaFacilTTS"
+    }
+    ssml = f"""<speak version='1.0' xml:lang='pt-BR'>
+        <voice xml:lang='pt-BR' xml:gender='Female' name='pt-BR-FranciscaNeural'>
+            {text}
+        </voice>
+    </speak>"""
+    response = requests.post(url, headers=headers, data=ssml.encode('utf-8'))
+    if response.status_code != 200:
+        raise Exception(f"Erro no Azure TTS ({response.status_code}): {response.text}")
+    return base64.b64encode(response.content).decode('utf-8')
+
+@app.route('/chat', methods=['POST'])
+def chat():
     try:
-        # Faz a chamada HTTP direta à Azure
-        response = requests.post(AZURE_URL, headers=headers, json=payload)
-        
-        if response.status_code != 200:
-            return jsonify({"error": f"Azure retornou erro {response.status_code}: {response.text}"}), response.status_code
+        # Verifica se é multipart/form-data (envio de áudio)
+        if 'audio' in request.files:
+            audio_file = request.files['audio']
+            messages_json = request.form.get('messages', '[]')
+            messages = json.loads(messages_json)
             
-        res_data = response.json()
-        
-        # Extrai a resposta textual do agente baseado no formato da API
-        reply = res_data['output'][0]['content'][0]['text']
-        
-        return jsonify({"reply": reply})
-        
+            # Transcreve áudio
+            audio_bytes = audio_file.read()
+            transcription = transcribe_audio(audio_bytes)
+            
+            # Adiciona mensagem do usuário
+            messages.append({"role": "user", "content": transcription})
+            
+            # Obtém resposta do agente
+            reply = get_agent_response(messages)
+            
+            # Sintetiza resposta para áudio
+            audio_base64 = synthesize_text(reply)
+            
+            return jsonify({
+                "reply": reply,
+                "audio": audio_base64,
+                "user_transcription": transcription
+            })
+            
+        else:
+            # Fluxo de texto clássico
+            data = request.json or {}
+            messages = data.get('messages', [])
+            generate_audio = data.get('generateAudio', False)
+            
+            if not messages:
+                return jsonify({"error": "Nenhuma mensagem recebida"}), 400
+                
+            reply = get_agent_response(messages)
+            
+            audio_base64 = None
+            if generate_audio:
+                audio_base64 = synthesize_text(reply)
+                
+            return jsonify({
+                "reply": reply,
+                "audio": audio_base64
+            })
+            
     except Exception as e:
-        print(f"Erro na comunicação com Azure AI: {e}")
+        print(f"Erro no processamento da rota /chat: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
