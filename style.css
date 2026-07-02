@@ -30,6 +30,14 @@ body {
     width: 120px; background-color: var(--sidebar-bg); display: flex; flex-direction: column;
     padding: 20px 10px; gap: 15px; box-shadow: 2px 0 15px rgba(0,0,0,0.2); z-index: 10;
     flex-shrink: 0;
+    overflow-y: auto;
+    max-height: 100%;
+    /* Esconde a barra de rolagem */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+.sidebar::-webkit-scrollbar {
+    display: none;
 }
 .nav-btn {
     background: transparent; border: none; color: #a0a0b0; display: flex; flex-direction: column;
