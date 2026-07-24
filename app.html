@@ -1,0 +1,1329 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Comunica Fácil</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#e0e0e0">
+    <link rel="stylesheet" href="vendor/fonts/outfit.css">
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="app-layout">
+        <!-- Barra Lateral (Sidebar) -->
+        <nav class="sidebar" aria-label="Navegação principal">
+            <button class="nav-btn active" data-view="view-core" aria-pressed="true">
+                <i class="fas fa-border-all" aria-hidden="true"></i>
+                <span>Essenciais</span>
+            </button>
+
+            <button class="nav-btn" id="btn-nav-carometro" data-view="view-carometro" aria-pressed="false" style="display:none;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="44" height="44" role="img" aria-label="Ícone de Carômetro" fill="currentColor">
+                  <path fill-rule="evenodd" clip-rule="evenodd" d="M8.4 8.2H10V7.1C10 6.5 10.5 6 11.1 6H13C13.6 6 14.1 6.5 14.1 7.1V8.2H15.3L16.1 5.2C16.3 4.5 16.9 4 17.6 4H22C22.7 4 23.3 4.5 23.5 5.2L24.3 8.2H26.1C28.25 8.2 30 9.95 30 12.1V24.1C30 26.25 28.25 28 26.1 28H24.8C24.25 28 23.8 27.55 23.8 27C23.8 26.45 24.25 26 24.8 26H26.1C27.15 26 28 25.15 28 24.1V12.1C28 11.05 27.15 10.2 26.1 10.2H23.55C23.1 10.2 22.7 9.9 22.58 9.47L21.72 6H17.88L17.02 9.47C16.9 9.9 16.5 10.2 16.05 10.2H13.1C12.55 10.2 12.1 9.75 12.1 9.2V8H12V9.2C12 9.75 11.55 10.2 11 10.2H8.4C7.07 10.2 6 11.27 6 12.6V23.6C6 24.93 7.07 26 8.4 26H9.7C10.25 26 10.7 26.45 10.7 27C10.7 27.55 10.25 28 9.7 28H8.4C5.97 28 4 26.03 4 23.6V12.6C4 10.17 5.97 8.2 8.4 8.2Z"/>
+                  <circle cx="10.3" cy="12.5" r="0.9"/>
+                  <path fill-rule="evenodd" clip-rule="evenodd" d="M18 11.3C14.85 11.3 12.3 13.85 12.3 17C12.3 20.15 14.85 22.7 18 22.7C21.15 22.7 23.7 20.15 23.7 17C23.7 13.85 21.15 11.3 18 11.3ZM18 13.3C20.04 13.3 21.7 14.96 21.7 17C21.7 19.04 20.04 20.7 18 20.7C15.96 20.7 14.3 19.04 14.3 17C14.3 14.96 15.96 13.3 18 13.3Z"/>
+                  <path fill-rule="evenodd" clip-rule="evenodd" d="M14 21.9C14.55 21.9 15 22.35 15 22.9C15 23.45 14.55 23.9 14 23.9C12.35 23.9 11 25.25 11 26.9V27.5H25V26.9C25 25.25 23.65 23.9 22 23.9C21.45 23.9 21 23.45 21 22.9C21 22.35 21.45 21.9 22 21.9C24.75 21.9 27 24.15 27 26.9V28.5C27 29.05 26.55 29.5 26 29.5H10C9.45 29.5 9 29.05 9 28.5V26.9C9 24.15 11.25 21.9 14 21.9Z"/>
+                </svg>
+                <span>Carômetro</span>
+            </button>
+
+            <button class="nav-btn" data-view="view-topics" aria-pressed="false">
+                <i class="fas fa-folder-open" aria-hidden="true"></i>
+                <span>Tópicos</span>
+            </button>
+            <button class="nav-btn" data-view="view-virtues" aria-pressed="false">
+                <i class="fas fa-star" aria-hidden="true"></i>
+                <span>Fomes e Forças</span>
+            </button>
+            <button class="nav-btn" data-view="view-keyboard" aria-pressed="false">
+                <i class="fas fa-keyboard" aria-hidden="true"></i>
+                <span>Teclado</span>
+            </button>
+            <button class="nav-btn" data-view="view-media" aria-pressed="false">
+                <i class="fas fa-play-circle" aria-hidden="true"></i>
+                <span>Mídias</span>
+            </button>
+            <button class="nav-btn" data-view="view-exercises" aria-pressed="false">
+                <i class="fas fa-dumbbell" aria-hidden="true"></i>
+                <span>Exercícios</span>
+            </button>
+            <button class="nav-btn" data-view="view-games" aria-pressed="false">
+                <i class="fas fa-gamepad" aria-hidden="true"></i>
+                <span>Jogos</span>
+            </button>
+            <button class="nav-btn" data-view="view-ia" aria-pressed="false">
+                <i class="fas fa-robot" aria-hidden="true"></i>
+                <span>IA</span>
+            </button>
+
+            <button class="nav-btn" data-view="view-admin" id="btn-nav-admin" aria-pressed="false" style="display:none;">
+                <i class="fas fa-user-shield" aria-hidden="true"></i>
+                <span>Admin</span>
+            </button>
+
+            <div class="sidebar-spacer"></div>
+
+            <button class="nav-btn btn-login" id="btn-login-logout">
+                <i class="fas fa-lock" aria-hidden="true"></i>
+                <span id="text-login-logout">Admin</span>
+            </button>
+        </nav>
+
+        <div class="main-content">
+            <!-- Barra de Mensagem (Fixa no topo) -->
+            <header class="message-bar">
+                <div class="message-display" id="message-display" role="region" aria-live="polite" aria-label="Frase montada"></div>
+                <div class="message-actions">
+                    <button id="btn-backspace" class="action-btn backspace-btn" title="Apagar última palavra" aria-label="Apagar última palavra">
+                        <i class="fas fa-delete-left" aria-hidden="true"></i>
+                    </button>
+                    <button id="btn-speak" class="action-btn speak-btn" title="Falar frase completa" aria-label="Falar frase completa">
+                        <i class="fas fa-volume-up" aria-hidden="true"></i>
+                    </button>
+                    <button id="btn-clear" class="action-btn clear-btn" title="Apagar tudo" aria-label="Apagar tudo">
+                        <i class="fas fa-trash-alt" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Container de Telas (Views) -->
+            <div class="views-container">
+                <!-- Tela: Palavras Essenciais -->
+                <main class="view-section active" id="view-core">
+                    <div class="section-edit-bar">
+                        <button class="edit-mode-btn" id="btn-edit-core"><i class="fas fa-pen" aria-hidden="true"></i> Editar</button>
+                    </div>
+                    <div class="grid-wrapper">
+                        <div class="grid-container" id="grid-core"></div>
+                    </div>
+                </main>
+
+
+                <!-- Tela: Tópicos (Fringe) -->
+                <main class="view-section" id="view-topics">
+                    <div class="section-edit-bar">
+                        <button class="virtue-back-btn" id="btn-topic-back" style="display:none;">
+                            <i class="fas fa-arrow-left" aria-hidden="true"></i> Voltar
+                        </button>
+                        <button class="edit-mode-btn" id="btn-edit-topics"><i class="fas fa-pen" aria-hidden="true"></i> Editar</button>
+                    </div>
+                    <div class="grid-wrapper">
+                        <div class="grid-container" id="grid-topics-folders"></div>
+                        <div class="grid-container" id="grid-topic-words" style="display:none;"></div>
+                    </div>
+                </main>
+
+                <!-- Tela: Fomes e Forças -->
+                <main class="view-section" id="view-virtues">
+                    <div class="section-edit-bar">
+                        <button class="virtue-back-btn" id="btn-virtue-back" style="display:none;">
+                            <i class="fas fa-arrow-left" aria-hidden="true"></i> Voltar
+                        </button>
+                        <button class="edit-mode-btn" id="btn-edit-virtues"><i class="fas fa-pen" aria-hidden="true"></i> Editar</button>
+                    </div>
+                    <div class="grid-wrapper">
+                        <div class="grid-container" id="grid-virtues-folders"></div>
+                        <div class="grid-container" id="grid-virtue-words" style="display:none;"></div>
+                    </div>
+                </main>
+
+                <!-- Tela: Teclado -->
+                <main class="view-section" id="view-keyboard">
+                    <div class="native-keyboard-container">
+                        <textarea id="native-keyboard-input" placeholder="Toque aqui para digitar com o teclado do seu aparelho..." rows="4"></textarea>
+                    </div>
+                </main>
+
+                <!-- Tela: Mídias Simples -->
+                <main class="view-section" id="view-media">
+                    <div class="media-header">
+                        <button class="add-media-btn" id="btn-open-upload">
+                            <i class="fas fa-plus-circle" aria-hidden="true"></i> Adicionar Mídia
+                        </button>
+                        <p class="media-hint">Adicione seus próprios vídeos ou áudios aqui.</p>
+                    </div>
+                    <div class="grid-container" id="grid-media"></div>
+                </main>
+
+                <!-- Tela: Exercícios (Flashcards) -->
+                <main class="view-section" id="view-exercises">
+                    <div class="section-edit-bar">
+                        <button class="virtue-back-btn" id="btn-exercises-back" style="display:none;">
+                            <i class="fas fa-arrow-left" aria-hidden="true"></i> Voltar
+                        </button>
+                    </div>
+                    <div class="media-header" id="exercises-header">
+                        <button class="add-media-btn" id="btn-open-exercise-upload"
+                            style="background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%);">
+                            <i class="fas fa-plus-circle" aria-hidden="true"></i> Novo Exercício
+                        </button>
+                        <p class="media-hint">Cards com sequências de slides (palavra + imagem, vídeo opcional).</p>
+                    </div>
+                    <div class="grid-container" id="grid-exercises"></div>
+
+                    <div id="game-naming-container" style="display:none; height:100%; flex-direction:column; gap:15px;">
+                        <div class="memory-header">
+                            <button class="add-media-btn" id="btn-naming-new-game" style="background: linear-gradient(135deg, #43e97b, #38f9d7); color: #1a1a2e;">
+                                <i class="fas fa-rotate" aria-hidden="true"></i> Novo Jogo
+                            </button>
+                            <div class="memory-status-bar">
+                                <span id="naming-score">0/0 correto</span>
+                            </div>
+                            <span id="naming-edit-wrapper" style="display:none;">
+                                <button class="edit-mode-btn" id="btn-edit-naming"><i class="fas fa-pen" aria-hidden="true"></i> Editar</button>
+                            </span>
+                        </div>
+                        <p id="naming-status-live" class="sr-only" role="status" aria-live="polite"></p>
+
+                        <div class="naming-play-area" id="naming-play-area" style="display:none;">
+                            <p class="naming-instruction">Toque na imagem que representa a palavra:</p>
+                            <div class="naming-word-row">
+                                <div class="naming-word-display" id="naming-word-display"></div>
+                                <button type="button" class="presentation-audio-btn" id="btn-speak-naming" aria-label="Ouvir a palavra"><i
+                                        class="fas fa-volume-up" aria-hidden="true"></i></button>
+                            </div>
+                            <div class="naming-choices" id="naming-choices"></div>
+                            <div class="naming-controls">
+                                <button type="button" class="btn-secondary" id="btn-naming-help"><i class="fas fa-lightbulb" aria-hidden="true"></i> Ajuda</button>
+                                <button type="button" class="btn-secondary" id="btn-naming-skip"><i class="fas fa-forward" aria-hidden="true"></i> Passa</button>
+                                <button type="button" class="btn-secondary" id="btn-naming-stop"><i class="fas fa-right-from-bracket" aria-hidden="true"></i> Sair</button>
+                            </div>
+                        </div>
+
+                        <div class="memory-grid" id="grid-naming" style="display:none;"></div>
+                    </div>
+
+                    <div id="game-afasia-container" style="display:none; height:100%; flex-direction:column; gap:15px;">
+                        <div class="memory-header">
+                            <button class="add-media-btn" id="btn-afasia-new-game" style="background: linear-gradient(135deg, #43e97b, #38f9d7); color: #1a1a2e;">
+                                <i class="fas fa-rotate" aria-hidden="true"></i> Novo Jogo
+                            </button>
+                            <div class="memory-status-bar">
+                                <span id="afasia-score">0/0 correto</span>
+                            </div>
+                            <span id="afasia-edit-wrapper" style="display:none;">
+                                <button class="edit-mode-btn" id="btn-edit-afasia"><i class="fas fa-pen" aria-hidden="true"></i> Editar</button>
+                            </span>
+                        </div>
+                        <p id="afasia-status-live" class="sr-only" role="status" aria-live="polite"></p>
+
+                        <div class="afasia-play-area" id="afasia-play-area" style="display:none;">
+                            <div class="afasia-image-frame" id="afasia-image-frame">
+                                <img id="afasia-image" alt="Imagem da atividade" />
+                            </div>
+                            <p class="afasia-question" id="afasia-question"></p>
+                            <div class="afasia-choices" id="afasia-choices"></div>
+                            <div class="naming-controls">
+                                <button type="button" class="btn-secondary" id="btn-afasia-help"><i class="fas fa-lightbulb" aria-hidden="true"></i> Ajuda</button>
+                                <button type="button" class="btn-secondary" id="btn-afasia-skip"><i class="fas fa-forward" aria-hidden="true"></i> Passa</button>
+                                <button type="button" class="btn-secondary" id="btn-afasia-stop"><i class="fas fa-right-from-bracket" aria-hidden="true"></i> Sair</button>
+                            </div>
+                        </div>
+
+                        <div class="memory-grid" id="grid-afasia" style="display:none;"></div>
+                    </div>
+
+                        <div id="game-complete-sentence-container" class="complete-sentence-game" style="display:none;">
+                            <div class="memory-header complete-sentence-game-header">
+                                <div class="complete-sentence-game-title">
+                                    <span class="complete-sentence-game-icon"><i class="fas fa-puzzle-piece" aria-hidden="true"></i></span>
+                                    <div>
+                                        <strong>Complete a Frase</strong>
+                                        <small>Arraste, complete e ouça frases do cotidiano</small>
+                                    </div>
+                                </div>
+                                <button type="button" class="edit-mode-btn" id="btn-manage-complete-sentence" style="display:none;">
+                                    <i class="fas fa-sliders" aria-hidden="true"></i> Gerenciar frases
+                                </button>
+                            </div>
+                            <iframe id="complete-sentence-frame" data-src="complete-frase.html?embedded=1"
+                                title="Atividade Complete a Frase" loading="lazy"></iframe>
+                        </div>
+
+                </main>
+
+                <!-- Tela: Jogos -->
+                <main class="view-section" id="view-games">
+                    <div class="section-edit-bar" id="games-edit-bar">
+                        <button class="virtue-back-btn" id="btn-games-back" style="display:none;">
+                            <i class="fas fa-arrow-left" aria-hidden="true"></i> Voltar
+                        </button>
+                    </div>
+                    <div class="grid-wrapper">
+                        <div class="grid-container" id="grid-games-list"></div>
+
+                        <div id="game-memory-container" style="display:none; height:100%; flex-direction:column; gap:15px;">
+                            <div class="memory-header">
+                                <button class="add-media-btn" id="btn-memory-new-game" style="background: linear-gradient(135deg, #43e97b, #38f9d7); color: #1a1a2e;">
+                                    <i class="fas fa-rotate" aria-hidden="true"></i> Novo Jogo
+                                </button>
+                                <div class="memory-status-bar">
+                                    <span id="memory-pairs-count">Pares: 0/0</span>
+                                    <span id="memory-moves-count">Jogadas: 0</span>
+                                </div>
+                                <span id="memory-edit-wrapper" style="display:none;">
+                                    <button class="edit-mode-btn" id="btn-edit-memory"><i class="fas fa-pen" aria-hidden="true"></i> Editar</button>
+                                </span>
+                            </div>
+                            <p id="memory-status-live" class="sr-only" role="status" aria-live="polite"></p>
+                            <div class="memory-grid" id="grid-memory"></div>
+                        </div>
+
+                        <div id="game-alphabet-memory-container" style="display:none; height:100%; flex-direction:column; gap:15px;">
+                            <div class="memory-header">
+                                <button class="add-media-btn" id="btn-alphabet-memory-new-game" style="background: linear-gradient(135deg, #43e97b, #38f9d7); color: #1a1a2e;">
+                                    <i class="fas fa-rotate" aria-hidden="true"></i> Novo Jogo
+                                </button>
+                                <div class="memory-status-bar">
+                                    <span id="alphabet-memory-pairs-count">Pares: 0/0</span>
+                                    <span id="alphabet-memory-moves-count">Jogadas: 0</span>
+                                </div>
+                                <span id="alphabet-memory-edit-wrapper" style="display:none;">
+                                    <button class="edit-mode-btn" id="btn-edit-alphabet-memory"><i class="fas fa-pen" aria-hidden="true"></i> Editar</button>
+                                </span>
+                            </div>
+                            <p id="alphabet-memory-status-live" class="sr-only" role="status" aria-live="polite"></p>
+                            <div class="memory-grid" id="grid-alphabet-memory"></div>
+                        </div>
+
+
+                        <!-- JOGO: TRILHA DE APRENDIZADO DE FORÇAS (ID: jogo2) -->
+                        <div id="game-jogo2-container" class="jogo2-game" style="display:none;">
+                            <div class="memory-header jogo2-header">
+                                <div class="complete-sentence-game-title">
+                                    <span class="complete-sentence-game-icon jogo2-icon" style="color: #ea580c; background: #ffedd5;"><i class="fas fa-route" aria-hidden="true"></i></span>
+                                    <div>
+                                        <strong>Trilha de Aprendizado de Forças</strong>
+                                        <small>Gire a roleta, avance pela trilha e divirta-se com as forças de caráter!</small>
+                                    </div>
+                                </div>
+                                <button type="button" class="add-media-btn" id="btn-jogo2-new-game" style="background: linear-gradient(135deg, #0ea5e9, #38bdf8); color: white;">
+                                    <i class="fas fa-rotate" aria-hidden="true"></i> Novo Jogo
+                                </button>
+                                <button type="button" class="add-media-btn" id="btn-jogo2-manage" style="background: linear-gradient(135deg, #a855f7, #c084fc); color: white; display: none;">
+                                    <i class="fas fa-sliders" aria-hidden="true"></i> Gerenciar Cartas
+                                </button>
+                                
+                                <div class="jogo2-player-legend" id="jogo2-player-legend" aria-label="Jogadores"></div>
+                                
+                                <div class="memory-status-bar">
+                                    <span id="jogo2-position-status">Escolha os jogadores</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Tela de Configuração dos Jogadores (Setup) -->
+                            <section class="jogo2-board-setup" id="jogo2-board-setup" aria-label="Configurar jogadores">
+                                <div class="jogo2-setup-card">
+                                    <span class="jogo2-setup-kicker">Vamos Começar!</span>
+                                    <h2>Quem vai jogar na Trilha?</h2>
+
+                                    <!-- PASSO 1: escolha do adversário -->
+                                    <div id="jogo2-opponent-picker" style="margin-bottom:18px;">
+                                        <p style="color:#475569; font-weight:700; margin-bottom:12px; font-size:0.95rem;">Escolha seu adversário:</p>
+                                        <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;" id="jogo2-opponent-cards">
+                                            <!-- Cards gerados via JS -->
+                                        </div>
+                                    </div>
+
+                                    <label style="display: flex; align-items: center; justify-content: center; gap: 8px; margin: 10px 0 15px; font-weight: 700; color: #475569; cursor: pointer; font-size: 0.95rem; background: #f8fafc; padding: 12px; border-radius: 12px; border: 1.5px dashed #cbd5e1;">
+                                        <input type="checkbox" id="jogo2-solo-mode-checkbox" onchange="toggleJogo2SoloMode(this)" style="width: 20px; height: 20px; accent-color: #a855f7; cursor: pointer;" />
+                                        <span>Jogar contra um dos Personagens</span>
+                                    </label>
+
+                                    <!-- Lista de cadastro de nomes e avatares -->
+                                    <div class="jogo2-players-setup-list" id="jogo2-players-setup-list">
+                                        <!-- Será preenchido via JS para os jogadores ativos -->
+                                    </div>
+
+                                    <button type="button" class="btn-primary jogo2-start-game-btn" id="btn-jogo2-start">
+                                        <i class="fas fa-play" aria-hidden="true"></i> Iniciar Trilha
+                                    </button>
+                                </div>
+                            </section>
+
+                            <!-- Layout Principal do Jogo -->
+                            <div class="jogo2-board-layout">
+                                <section class="jogo2-board-panel" id="jogo2-board-panel" aria-label="Tabuleiro Trilha de Aprendizado de Forças">
+                                    <!-- Cenário de Fundo Animado -->
+                                    <div class="jogo2-board-scenery" aria-hidden="true">
+                                        <div class="jogo2-sun"></div>
+                                        <div class="jogo2-cloud cloud-one"></div>
+                                        <div class="jogo2-cloud cloud-two"></div>
+                                        <div class="jogo2-cloud cloud-three"></div>
+                                        
+                                        <!-- Elefantes decorativos no cenário de fundo -->
+                                        <div class="scenery-insect bee-bg elephant-azul">🐘</div>
+                                        <div class="scenery-insect butterfly-bg elephant-vermelho">🐘</div>
+                                        <div class="scenery-insect ladybug-bg elephant-verde">🐘</div>
+                                        <div class="scenery-insect grasshopper-bg elephant-amarelo">🐘</div>
+                                        <div class="scenery-insect spider-bg elephant-rosa">🐘</div>
+                                        
+                                        <!-- Flores no gramado na base -->
+                                        <div class="scenery-flower flower-left-1">🌼</div>
+                                        <div class="scenery-flower flower-left-2">🌸</div>
+                                        <div class="scenery-flower flower-right-1">🌻</div>
+                                        <div class="scenery-flower flower-right-2">🌺</div>
+                                    </div>
+
+
+                                    <!-- Grid de casas do tabuleiro (inclui o banner centralizado) -->
+                                    <div class="jogo2-board-path" id="jogo2-board-path">
+                                        <!-- O banner será posicionado no centro do grid via CSS -->
+                                        <div class="jogo2-board-title-banner" id="jogo2-board-center-banner">
+                                            <div class="jogo2-banner-badge">
+                                                <i class="fas fa-trophy" aria-hidden="true"></i> Trilha
+                                            </div>
+                                            <div class="jogo2-banner-title">
+                                                <span class="banner-sparkle">🌟</span>
+                                                <strong>FORÇAS DE CARÁTER</strong>
+                                                <span class="banner-sparkle">🌟</span>
+                                            </div>
+                                            <p class="jogo2-banner-sub">
+                                                Gire a roleta, supere os desafios e alcance o Fim da Trilha! ✨
+                                            </p>
+                                            <div class="jogo2-banner-decor">
+                                                <span>🐘</span><span>⭐</span><span>🦋</span><span>🌻</span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Balão de Fala do Oponente Centralizado (Por cima do banner central) -->
+                                        <div class="jogo2-opponent-bubble" id="jogo2-opponent-bubble" style="display: none;">
+                                            <div class="opponent-bubble-avatar-wrapper">
+                                                <img id="jogo2-bubble-avatar-img" src="" alt="Avatar">
+                                            </div>
+                                            <div class="opponent-bubble-content">
+                                                <strong id="jogo2-bubble-name">Oponente</strong>
+                                                <p id="jogo2-bubble-text">Minha vez!</p>
+                                            </div>
+                                        </div>
+
+                                        <!-- Overlay de efeitos especiais (Estrelas, abelhas, teias, explosões) -->
+                                        <div id="jogo2-effects-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; overflow: hidden;"></div>
+                                    </div>
+                                </section>
+                                
+                                <aside class="jogo2-card-panel" aria-label="Painel de controle e cartas">
+
+                                    <!-- Área da Roleta Premium (Quadrada Verde com Seta Giratória Branca) -->
+                                    <div class="jogo2-wheel-panel" style="display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 140px;">
+                                        <!-- Moldura Verde Alface Quadrada com cantos arredondados -->
+                                        <div class="jogo2-wheel-board" style="position: relative; width: 140px; height: 140px; background: #a3e635; border-radius: 20px; display: grid; place-items: center; box-shadow: 0 6px 12px rgba(0,0,0,0.15), inset 0 -3px 0 #84cc16, 0 3px 0 #65a30d; border: 3px solid #84cc16; overflow: visible;">
+                                            <!-- Roleta Colorida Estática Interna -->
+                                            <div class="jogo2-wheel" id="jogo2-wheel" style="width: 116px; height: 116px; border-radius: 50%; border: 4px solid #1e293b; background: conic-gradient(#38bdf8 0deg 51.4deg, #f87171 51.4deg 102.8deg, #fbbf24 102.8deg 154.3deg, #facc15 154.3deg 205.7deg, #a3e635 205.7deg 257.1deg, #f472b6 257.1deg 308.6deg, #082b1d 308.6deg 360deg); position: relative; box-shadow: inset 0 2px 5px rgba(0,0,0,0.25); overflow: hidden;">
+                                                <!-- Números das Fatias -->
+                                                <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(25.7deg) translateY(-36px) rotate(-25.7deg); font-family: 'Outfit'; font-weight: 900; font-size: 1rem; color: white; text-shadow: 0 1.5px 3px rgba(0,0,0,0.7); z-index: 5;">1</span>
+                                                <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(77.1deg) translateY(-36px) rotate(-77.1deg); font-family: 'Outfit'; font-weight: 900; font-size: 1rem; color: white; text-shadow: 0 1.5px 3px rgba(0,0,0,0.7); z-index: 5;">2</span>
+                                                <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(128.6deg) translateY(-36px) rotate(-128.6deg); font-family: 'Outfit'; font-weight: 900; font-size: 1rem; color: white; text-shadow: 0 1.5px 3px rgba(0,0,0,0.7); z-index: 5;">3</span>
+                                                <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(180deg) translateY(-36px) rotate(-180deg); font-family: 'Outfit'; font-weight: 900; font-size: 1rem; color: white; text-shadow: 0 1.5px 3px rgba(0,0,0,0.7); z-index: 5;">4</span>
+                                                <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(231.4deg) translateY(-36px) rotate(-231.4deg); font-family: 'Outfit'; font-weight: 900; font-size: 1rem; color: white; text-shadow: 0 1.5px 3px rgba(0,0,0,0.7); z-index: 5;">5</span>
+                                                <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(282.9deg) translateY(-36px) rotate(-282.9deg); font-family: 'Outfit'; font-weight: 900; font-size: 1rem; color: white; text-shadow: 0 1.5px 3px rgba(0,0,0,0.7); z-index: 5;">6</span>
+                                                <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(334.3deg) translateY(-36px) rotate(-334.3deg); font-family: 'Outfit'; font-weight: 900; font-size: 0.7rem; line-height: 0.9; color: white; text-shadow: 0 1.5px 3px rgba(0,0,0,0.7); z-index: 5; text-align: center;">🚫<br>Passa</span>
+                                            </div>
+                                            <!-- Wrapper da Seta Giratória Central (Gira no JS) -->
+                                            <div class="jogo2-wheel-arrow-wrapper" id="jogo2-wheel-arrow" style="position: absolute; width: 76px; height: 76px; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(30deg); transform-origin: 50% 50%; z-index: 10; transition: transform 3s cubic-bezier(0.1, 0.8, 0.25, 1); pointer-events: none; display: grid; place-items: center;">
+                                                <svg viewBox="0 0 100 100" style="width: 100%; height: 100%; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));">
+                                                    <path d="M 50 8 L 76 38 L 61 38 L 61 80 C 61 84, 39 84, 39 80 L 39 38 L 24 38 Z" fill="#ffffff" stroke="#1e293b" stroke-width="4.5" stroke-linejoin="round" />
+                                                </svg>
+                                            </div>
+                                            <!-- Pino Central Decorativo -->
+                                            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 18px; height: 18px; background: #e2e8f0; border: 3.5px solid #1e293b; border-radius: 50%; box-shadow: 0 2px 3px rgba(0,0,0,0.2); z-index: 12;"></div>
+                                        </div>
+
+                                        <!-- Botão de Giro Transformável em Barra de Força -->
+                                        <button type="button" class="btn-primary jogo2-roll-btn-power" id="btn-jogo2-roll">
+                                            <div class="jogo2-roll-fill" id="btn-jogo2-roll-fill"></div>
+                                            <span class="jogo2-roll-label" id="btn-jogo2-roll-label">
+                                                <i class="fas fa-sync-alt" aria-hidden="true"></i> Girar Roleta
+                                            </span>
+                                        </button>
+                                    </div>
+
+                                    <!-- Carta de Desafio Atual -->
+                                    <div class="jogo2-card" id="jogo2-current-card">
+                                        <span class="jogo2-card-kicker" id="jogo2-card-kicker">Desafio</span>
+                                        <div class="jogo2-card-icon" id="jogo2-card-icon-area">🎡</div>
+                                        <h3 id="jogo2-card-question">Preparar...</h3>
+                                        <p id="jogo2-card-text">Gire a roleta para iniciar a sua jornada pela trilha!</p>
+                                        
+                                        <!-- Container das Opções de Múltipla Escolha -->
+                                        <div class="jogo2-card-options" id="jogo2-card-options" style="display:none;">
+                                            <!-- Opções injetadas via JavaScript -->
+                                        </div>
+                                        
+                                        <!-- Feedback de Acerto ou Erro -->
+                                        <div class="jogo2-card-feedback" id="jogo2-card-feedback" style="display:none;">
+                                            <!-- Feedback injetado via JavaScript -->
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn-primary jogo2-card-action" id="btn-jogo2-complete" disabled>
+                                        <i class="fas fa-arrow-right" aria-hidden="true"></i> Avançar Turno
+                                    </button>
+                                </aside>
+                            </div>
+                            <!-- Overlay de Gerenciamento de Cartas (Exclusivo para Admin) -->
+                            <div class="manager-overlay" id="jogo2-manager-overlay" aria-hidden="true" style="display: none;">
+                                <aside class="manager-panel" role="dialog" aria-modal="true" aria-labelledby="jogo2-manager-title">
+                                    <header class="manager-header">
+                                        <div>
+                                            <p class="manager-kicker"><i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i> Personalizar Trilha</p>
+                                            <h2 id="jogo2-manager-title">Gerenciar Cartas</h2>
+                                            <p>Cadastre perguntas e respostas para a trilha.</p>
+                                        </div>
+                                        <button class="manager-close" id="btn-jogo2-manager-close" type="button" aria-label="Fechar cadastro">
+                                            <i class="fas fa-xmark" aria-hidden="true"></i>
+                                        </button>
+                                    </header>
+
+                                    <div class="manager-body" style="padding: 20px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; height: calc(100% - 90px);">
+                                        <section class="manager-form-section" style="border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+                                            <form id="jogo2-card-form" novalidate style="display: flex; flex-direction: column; gap: 12px;">
+                                                <label class="field-label" style="display: flex; flex-direction: column; gap: 4px;">
+                                                    <span style="font-weight: 700; font-size: 0.9rem; color: #475569;">Pergunta</span>
+                                                    <input id="jogo2-form-question" type="text" placeholder="Ex: Qual inseto faz mel?" required style="padding: 8px 12px; border: 2px solid #cbd5e1; border-radius: 8px; font-family: 'Outfit'; font-size: 0.95rem;" />
+                                                </label>
+                                                
+                                                <div style="display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 10px;">
+                                                    <label class="field-label" style="display: flex; flex-direction: column; gap: 4px;">
+                                                        <span style="font-weight: 700; font-size: 0.9rem; color: #475569;">Ícone/Emoji</span>
+                                                        <input id="jogo2-form-icon" type="text" maxlength="8" value="❓" style="padding: 8px 12px; border: 2px solid #cbd5e1; border-radius: 8px; font-family: 'Outfit'; font-size: 0.95rem; text-align: center;" />
+                                                    </label>
+                                                    <label class="field-label" style="display: flex; flex-direction: column; gap: 4px;">
+                                                        <span style="font-weight: 700; font-size: 0.9rem; color: #475569;">Virtude de Caráter</span>
+                                                        <select id="jogo2-form-virtue" style="padding: 8px 12px; border: 2px solid #cbd5e1; border-radius: 8px; font-family: 'Outfit'; font-size: 0.95rem;">
+                                                            <option value="sabedoria">Sabedoria 🧠</option>
+                                                            <option value="coragem">Coragem 💪</option>
+                                                            <option value="humanidade">Humanidade ❤️</option>
+                                                            <option value="justica">Justiça ⚖️</option>
+                                                            <option value="moderacao">Moderação 🛡️</option>
+                                                            <option value="transcendencia">Transcendência ✨</option>
+                                                            <option value="desafio">Desafio Geral ❓</option>
+                                                        </select>
+                                                    </label>
+                                                    <label class="field-label" style="display: flex; flex-direction: column; gap: 4px;">
+                                                        <span style="font-weight: 700; font-size: 0.9rem; color: #475569;">Casa (1 a 50)</span>
+                                                        <input id="jogo2-form-space-number" type="number" min="1" max="50" placeholder="Qualquer" style="padding: 8px 12px; border: 2px solid #cbd5e1; border-radius: 8px; font-family: 'Outfit'; font-size: 0.95rem; text-align: center;" />
+                                                    </label>
+                                                </div>
+
+                                                <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 5px;">
+                                                    <span style="font-weight: 700; font-size: 0.9rem; color: #475569;">Opções de Resposta e indicação da Correta:</span>
+                                                    
+                                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                                        <input type="radio" name="jogo2-correct-ans" value="0" checked style="width: 18px; height: 18px; accent-color: #a855f7;" />
+                                                        <input id="jogo2-form-opt0" type="text" placeholder="Opção A (Correta)" required style="flex: 1; padding: 8px 12px; border: 2px solid #cbd5e1; border-radius: 8px; font-family: 'Outfit';" />
+                                                    </div>
+                                                    
+                                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                                        <input type="radio" name="jogo2-correct-ans" value="1" style="width: 18px; height: 18px; accent-color: #a855f7;" />
+                                                        <input id="jogo2-form-opt1" type="text" placeholder="Opção B" required style="flex: 1; padding: 8px 12px; border: 2px solid #cbd5e1; border-radius: 8px; font-family: 'Outfit';" />
+                                                    </div>
+                                                    
+                                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                                        <input type="radio" name="jogo2-correct-ans" value="2" style="width: 18px; height: 18px; accent-color: #a855f7;" />
+                                                        <input id="jogo2-form-opt2" type="text" placeholder="Opção C" required style="flex: 1; padding: 8px 12px; border: 2px solid #cbd5e1; border-radius: 8px; font-family: 'Outfit';" />
+                                                    </div>
+                                                </div>
+
+                                                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                                                    <button class="save-question-button" id="jogo2-btn-submit" type="submit" style="flex: 1; background: linear-gradient(135deg, #a855f7, #c084fc); color: white; border: none; border-radius: 12px; padding: 12px; font-weight: 700; font-family: 'Outfit'; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                                                        <i class="fas fa-floppy-disk" aria-hidden="true"></i> Adicionar à Trilha
+                                                    </button>
+                                                    <button type="button" id="jogo2-btn-cancel-edit" onclick="cancelJogo2CardEdit()" style="display: none; background: #f1f5f9; color: #64748b; border: 2px solid #cbd5e1; border-radius: 12px; padding: 12px; font-weight: 700; font-family: 'Outfit'; cursor: pointer; align-items: center; justify-content: center; gap: 8px;">
+                                                        Cancelar
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </section>
+
+                                        <section class="question-library" style="border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+                                            <h3 style="font-size: 1.1rem; color: #334155; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                                                <span style="display: flex; align-items: center; gap: 6px;">
+                                                    <i class="fas fa-list-check" aria-hidden="true" style="color: #a855f7;"></i>
+                                                    Perguntas Customizadas (<span id="jogo2-custom-count">0</span>)
+                                                </span>
+                                                <button type="button" onclick="resetJogo2CardsToFactory()" style="background: none; border: none; color: #a855f7; font-family: 'Outfit'; font-size: 0.8rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; transition: all 0.2s;" onmouseover="this.style.background='#f3e8ff'" onmouseout="this.style.background='none'">
+                                                    <i class="fas fa-rotate-left"></i> Restaurar Padrões
+                                                </button>
+                                            </h3>
+                                            <div style="background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: 12px; padding: 12px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px; font-size: 0.85rem; color: #475569;">
+                                                <div style="font-weight: 700; color: #334155; display: flex; align-items: center; gap: 6px;">
+                                                    <i class="fas fa-file-excel" style="color: #10b981; font-size: 1rem;"></i>
+                                                    Importar em Lote (Excel / CSV)
+                                                </div>
+                                                <div>Cadastre várias perguntas de uma vez! Salve sua planilha no Excel como <strong>CSV separado por ponto e vírgula (;)</strong>.</div>
+                                                <div style="display: flex; gap: 8px; margin-top: 4px;">
+                                                    <button type="button" onclick="triggerJogo2CSVUpload()" style="flex: 1; background: #e2e8f0; border: none; border-radius: 8px; padding: 8px 12px; font-weight: 700; color: #475569; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-family: 'Outfit'; font-size: 0.8rem; transition: all 0.2s;" onmouseover="this.style.background='#cbd5e1'" onmouseout="this.style.background='#e2e8f0'">
+                                                        <i class="fas fa-file-import"></i> Selecionar Arquivo
+                                                    </button>
+                                                    <button type="button" onclick="downloadJogo2CSVTemplate()" style="background: none; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 6px 12px; font-weight: 700; color: #64748b; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-family: 'Outfit'; font-size: 0.8rem; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='none'">
+                                                        <i class="fas fa-download"></i> Modelo
+                                                    </button>
+                                                    <button type="button" onclick="downloadJogo2RegisteredCardsCSV()" style="background: #eef2ff; border: 1.5px solid #c7d2fe; border-radius: 8px; padding: 6px 12px; font-weight: 700; color: #4338ca; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-family: 'Outfit'; font-size: 0.8rem; transition: all 0.2s;" onmouseover="this.style.background='#e0e7ff'" onmouseout="this.style.background='#eef2ff'">
+                                                        <i class="fas fa-file-arrow-down"></i> Baixar Cartas
+                                                    </button>
+                                                </div>
+                                                <input id="jogo2-csv-file-input" type="file" accept=".csv" onchange="handleJogo2CSVImport(event)" style="display: none;" />
+                                            </div>
+                                            <div id="jogo2-custom-questions-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 250px; overflow-y: auto;">
+                                                <!-- Lista de perguntas customizadas cadastradas -->
+                                            </div>
+                                        </section>
+                                    </div>
+                                </aside>
+                            </div>
+                        </div>
+
+                    </div>
+                </main>
+
+                <!-- Tela: IA (Chat Nativo com Azure AI) -->
+                <main class="view-section" id="view-ia" style="background: var(--bg-1); border-radius: var(--radius); overflow: hidden;">
+                    <div style="background: white; color: black; padding: 15px 20px; font-weight: 600; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #ddd;">
+                        <i class="fas fa-robot" aria-hidden="true"></i> Assistente IA
+                        <button id="btn-ia-restart" title="Apagar a conversa e começar do zero"
+                            style="margin-left: auto; background: #f1f3f5; color: #333; border: 1px solid #ddd; border-radius: 20px; padding: 8px 16px; font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: background 0.2s;">
+                            <i class="fas fa-rotate-right" aria-hidden="true"></i> Nova conversa
+                        </button>
+                    </div>
+
+                    <div id="ia-chat-messages" role="log" aria-live="polite" aria-label="Conversa com o assistente" style="flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px;">
+                        <div style="align-self: flex-start; background: white; padding: 12px 16px; border-radius: 0 16px 16px 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); max-width: 85%; color: var(--text-main);">
+                            Olá! Sou o Comunica Fácil IA. Como posso ajudar você hoje?
+                        </div>
+                    </div>
+
+                    <div style="padding: 15px; background: white; border-top: 1px solid var(--border-subtle); display: flex; gap: 10px; align-items: center;">
+                        <button id="btn-ia-record" aria-label="Gravar mensagem de voz" style="background: var(--color-blue); color: black; border: none; border-radius: 50%; width: 45px; height: 45px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); transition: all 0.2s;" title="Gravar mensagem de voz">
+                            <i class="fas fa-microphone" aria-hidden="true"></i>
+                        </button>
+                        <label for="ia-chat-input" class="sr-only">Mensagem para o assistente IA</label>
+                        <input type="text" id="ia-chat-input" placeholder="Digite sua mensagem..." style="flex: 1; padding: 12px 15px; border: 1px solid var(--border-subtle); border-radius: 24px; outline: none; font-family: 'Outfit', sans-serif; font-size: 16px;">
+                        <button id="btn-ia-send" aria-label="Enviar mensagem" style="background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%); color: white; border: none; border-radius: 50%; width: 45px; height: 45px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); transition: transform 0.2s;">
+                            <i class="fas fa-paper-plane" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </main>
+
+                <!-- Tela: Admin (gestão de usuários e papéis) -->
+                <main class="view-section" id="view-admin">
+                    <div class="admin-tabbar" role="tablist" aria-label="Painel administrativo">
+                        <button class="admin-tab active" id="btn-admin-tab-users" data-admin-tab="users" type="button" role="tab" aria-selected="true">Usuários</button>
+                        <button class="admin-tab" id="btn-admin-tab-usage" data-admin-tab="usage" type="button" role="tab" aria-selected="false">Uso e insights</button>
+                        <button class="admin-tab" id="btn-admin-tab-modules" data-admin-tab="modules" type="button" role="tab" aria-selected="false">Módulos</button>
+                    </div>
+
+                    <section class="admin-tab-panel active" id="admin-users-panel" role="tabpanel" aria-labelledby="btn-admin-tab-users">
+                        <div class="media-header">
+                            <button class="add-media-btn" id="btn-open-new-user">
+                                <i class="fas fa-user-plus" aria-hidden="true"></i> Novo usuário
+                            </button>
+                            <p class="media-hint">Crie contas, defina quem pode editar conteúdo e quem é administrador.</p>
+                        </div>
+                        <div id="admin-users-feedback" class="admin-feedback" role="status" aria-live="polite" style="display:none;"></div>
+                        <div class="admin-table-wrapper">
+                            <table class="admin-users-table">
+                                <thead>
+                                    <tr>
+                                        <th>Nome Completo</th>
+                                        <th>E-mail</th>
+                                        <th>Papel</th>
+                                        <th>Criado em</th>
+                                        <th>Último acesso</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-users-tbody">
+                                    <tr><td colspan="6">Carregando...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section class="admin-tab-panel" id="admin-usage-panel" role="tabpanel" aria-labelledby="btn-admin-tab-usage">
+                        <section class="admin-analytics-panel">
+                            <div class="admin-analytics-hero">
+                                <div>
+                                    <div class="admin-panel-kicker"><i class="fas fa-cloud" aria-hidden="true"></i> Uso na nuvem (Tempo Real)</div>
+                                    <h3>Tempo logado, atividades mais usadas e sinais de concentração de uso.</h3>
+                                    <p>Os dados abaixo são sincronizados com o banco de dados Supabase e exibem o uso acumulado de todos os pacientes e cuidadores.</p>
+                                </div>
+                                <div class="admin-analytics-actions">
+                                    <select id="usage-user-filter" class="admin-analytics-select" aria-label="Filtrar por usuário">
+                                        <option value="all">Filtrar: Todos os usuários</option>
+                                    </select>
+                                    <button type="button" class="admin-analytics-action" id="btn-refresh-usage">
+                                        <i class="fas fa-rotate" aria-hidden="true"></i> Atualizar
+                                    </button>
+                                    <button type="button" class="admin-analytics-action danger" id="btn-clear-usage">
+                                        <i class="fas fa-broom" aria-hidden="true"></i> Limpar dados locais
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="admin-metric-grid">
+                                <article class="admin-metric-card">
+                                    <span>Usuários com uso</span>
+                                    <strong id="usage-total-users">0</strong>
+                                    <small id="usage-total-sessions">0 sessões registradas</small>
+                                </article>
+                                <article class="admin-metric-card">
+                                    <span>Tempo total logado</span>
+                                    <strong id="usage-total-time">0</strong>
+                                    <small id="usage-active-now">0 sessões ativas agora</small>
+                                </article>
+                                <article class="admin-metric-card">
+                                    <span>Atividades monitoradas</span>
+                                    <strong id="usage-total-activities">0</strong>
+                                    <small id="usage-total-events">0 eventos registrados</small>
+                                </article>
+                                <article class="admin-metric-card">
+                                    <span>Atividade mais forte</span>
+                                    <strong id="usage-top-item">—</strong>
+                                    <small id="usage-top-share">Sem dados suficientes ainda</small>
+                                </article>
+                            </div>
+
+                            <div class="admin-analytics-grid">
+                                <section class="admin-analytics-card">
+                                    <div class="admin-card-header">
+                                        <h4>Usuários com mais tempo</h4>
+                                        <span>Tempo ativo acumulado</span>
+                                    </div>
+                                    <div id="usage-user-ranking" class="usage-list"></div>
+                                </section>
+                                <section class="admin-analytics-card">
+                                    <div class="admin-card-header">
+                                        <h4>Atividades mais acessadas</h4>
+                                        <span>Itens com maior uso</span>
+                                    </div>
+                                    <div id="usage-top-activities" class="usage-list"></div>
+                                </section>
+                                <section class="admin-analytics-card">
+                                    <div class="admin-card-header">
+                                        <h4>Tempo gasto nas atividades</h4>
+                                        <span>Duração acumulada e recordes</span>
+                                    </div>
+                                    <div id="usage-activities-durations" class="usage-list"></div>
+                                </section>
+                                <section class="admin-analytics-card">
+                                    <div class="admin-card-header">
+                                        <h4>Sessões ativas</h4>
+                                        <span>Quem está usando agora</span>
+                                    </div>
+                                    <div id="usage-live-sessions" class="usage-list"></div>
+                                </section>
+                            </div>
+
+                            <section class="admin-analytics-card">
+                                <div class="admin-card-header">
+                                    <h4>Últimos eventos</h4>
+                                    <span>Mais recentes primeiro</span>
+                                </div>
+                                <div id="usage-event-log" class="usage-timeline"></div>
+                            </section>
+
+                            <section class="admin-analytics-card admin-insight-card">
+                                <div class="admin-card-header">
+                                    <h4>O que isso indica?</h4>
+                                    <span>Leitura rápida do comportamento</span>
+                                </div>
+                                <p id="usage-insight" class="admin-insight-text">Colete alguns acessos para liberar as leituras automáticas do painel.</p>
+                            </section>
+                        </section>
+                    </section>
+
+                    <!-- Aba: Controle de Módulos -->
+                    <section class="admin-tab-panel" id="admin-modules-panel" role="tabpanel" aria-labelledby="btn-admin-tab-modules">
+                        <div class="media-header">
+                            <div>
+                                <h2>Habilitar e Desabilitar Módulos</h2>
+                                <p class="media-hint" style="margin-top: 5px;">Ligue ou desligue as telas da barra lateral para focar apenas no que o usuário precisa.</p>
+                            </div>
+                        </div>
+                        <div class="grid-wrapper">
+                            <div class="grid-container" id="modules-toggles-container">
+                                <!-- Módulos injetados via JS -->
+                            </div>
+                        </div>
+                    </section>
+                </main>
+
+                <!-- Tela: Carômetro -->
+                <main class="view-section" id="view-carometro">
+                    <!-- Barra flutuante de edição de texto -->
+                    <div id="carometro-text-toolbar" class="carometro-toolbar" style="display:none;">
+                        <button type="button" data-command="bold" title="Negrito"><i class="fas fa-bold"></i></button>
+                        <button type="button" data-command="italic" title="Itálico"><i class="fas fa-italic"></i></button>
+                        <button type="button" data-command="underline" title="Sublinhado"><i class="fas fa-underline"></i></button>
+                        
+                        <div class="toolbar-separator"></div>
+                        
+                        <input type="color" id="toolbar-color-picker" title="Cor do Texto" value="#1a202c">
+                        
+                        <div class="toolbar-separator"></div>
+                        
+                        <select id="toolbar-font-size" title="Tamanho da Fonte">
+                            <option value="1">Muito Pequeno</option>
+                            <option value="2">Pequeno</option>
+                            <option value="3" selected>Normal</option>
+                            <option value="4">Grande</option>
+                            <option value="5">Muito Grande</option>
+                            <option value="6">Enorme</option>
+                        </select>
+                        
+                        <div class="toolbar-separator"></div>
+                        
+                        <select id="toolbar-font-name" title="Estilo da Fonte">
+                            <option value="Arial" selected>Arial</option>
+                            <option value="'Times New Roman'">Times New Roman</option>
+                            <option value="'Courier New'">Courier New</option>
+                            <option value="Georgia">Georgia</option>
+                            <option value="Verdana">Verdana</option>
+                            <option value="Tahoma">Tahoma</option>
+                            <option value="'Trebuchet MS'">Trebuchet MS</option>
+                        </select>
+                    </div>
+
+                    <input type="file" id="carometro-file-input" accept="image/*" style="display:none;">
+
+                    <div class="carometro-container" style="display: flex; flex-direction: column;">
+                        <div class="section-edit-bar" style="padding: 0; background: transparent; border: none; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; gap: 12px; overflow: hidden;">
+                            <div class="carometro-tabs-wrapper" style="display: flex; align-items: center; background: #f8fafc; border-radius: 16px; padding: 5px; flex: 1; min-width: 0; overflow: hidden; box-shadow: inset 0 2px 5px rgba(0,0,0,0.03);">
+                                <div id="carometro-tabs-bar" class="carometro-tabs-bar" style="margin-bottom: 0; padding: 5px; background: transparent; box-shadow: none; flex-grow: 1; width: 100%;"></div>
+                            </div>
+                            <button class="edit-mode-btn" id="btn-edit-carometro" style="flex-shrink: 0; display: none;"><i class="fas fa-pen" aria-hidden="true"></i> Editar</button>
+                        </div>
+
+                        <div id="carometro-dynamic-container">
+                            <!-- O conteúdo do carômetro será gerado dinamicamente aqui -->
+                        </div>
+                        
+                        <div class="carometro-actions" id="carometro-global-actions" style="display:none; text-align: center; margin: 30px 0;">
+                        <button class="btn-add-sector" id="btn-add-carometro-sector">
+                            <i class="fas fa-plus"></i> Adicionar Novo Setor
+                        </button>
+                    </div>
+                </main>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Upload de Mídia Simples -->
+    <div class="modal-overlay" id="upload-modal" role="dialog" aria-modal="true" aria-labelledby="upload-modal-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="upload-modal-title">Nova Mídia</h2>
+                <button class="close-modal-btn" id="btn-close-upload" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <form id="upload-form">
+                <div class="form-group">
+                    <label for="media-title">Título</label>
+                    <input type="text" id="media-title" required>
+                </div>
+                <div class="form-group">
+                    <label>Fonte da Mídia</label>
+                    <div class="media-source-switch">
+                        <label><input type="radio" name="media-source" value="file" checked> Arquivo</label>
+                        <label><input type="radio" name="media-source" value="link"> Link</label>
+                    </div>
+                </div>
+                <div class="form-group" id="media-file-group">
+                    <label for="media-file">Arquivo (Áudio ou Vídeo)</label>
+                    <input type="file" id="media-file" accept="audio/*,video/*">
+                </div>
+                <div class="form-group" id="media-link-group" style="display:none;">
+                    <label for="media-link">Link do YouTube / Vimeo / Drive</label>
+                    <input type="url" id="media-link" placeholder="https://" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="media-color">Cor da Borda</label>
+                    <select id="media-color">
+                        <option value="color-orange">Laranja</option>
+                        <option value="color-blue">Azul</option>
+                        <option value="color-green">Verde</option>
+                        <option value="color-red">Vermelho</option>
+                        <option value="color-yellow">Amarelo</option>
+                        <option value="color-pink">Rosa</option>
+                        <option value="color-gray">Cinza</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-cancel-upload">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar Mídia</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Escolha do tipo de exercício -->
+    <div class="modal-overlay" id="exercise-type-modal" role="dialog" aria-modal="true" aria-labelledby="exercise-type-modal-title">
+        <div class="modal-content exercise-type-modal-content">
+            <div class="modal-header">
+                <h2 id="exercise-type-modal-title">Qual exercício deseja criar?</h2>
+                <button class="close-modal-btn" id="btn-close-exercise-type" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <p class="exercise-type-hint">Escolha o formato da nova atividade.</p>
+            <div class="exercise-type-grid">
+                <button type="button" class="exercise-type-option slides" id="btn-create-slides-exercise">
+                    <i class="fas fa-images" aria-hidden="true"></i>
+                    <strong>Exercício com Slides</strong>
+                    <span>Sequência de palavras, imagens e vídeos opcionais.</span>
+                </button>
+                <button type="button" class="exercise-type-option recognition" id="btn-create-recognition-exercise">
+                    <i class="fas fa-eye" aria-hidden="true"></i>
+                    <strong>Reconhecimento de Palavras</strong>
+                    <span>Uma palavra, a imagem correta e duas alternativas.</span>
+                </button>
+                <button type="button" class="exercise-type-option afasia" id="btn-create-afasia-exercise">
+                    <i class="fas fa-comment-medical" aria-hidden="true"></i>
+                    <strong>Reconhecimento de Imagem</strong>
+                    <span>Imagem, pergunta e três opções de resposta.</span>
+                </button>
+                <button type="button" class="exercise-type-option complete-sentence" id="btn-create-complete-sentence-exercise" style="border-color: #f6ad55; color: #dd6b20;">
+                    <i class="fas fa-puzzle-piece" aria-hidden="true"></i>
+                    <strong>Complete a Frase</strong>
+                    <span>Arraste, complete e ouça frases do cotidiano.</span>
+                </button>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" id="btn-cancel-exercise-type">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Upload de Exercício (sequência de slides, vídeo opcional) -->
+    <div class="modal-overlay" id="upload-exercise-modal" role="dialog" aria-modal="true" aria-labelledby="upload-exercise-modal-title">
+        <div class="modal-content" style="max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h2 id="upload-exercise-modal-title">Novo Exercício (Slides)</h2>
+                <button class="close-modal-btn" id="btn-close-exercise-upload" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <form id="upload-exercise-form">
+                <div class="form-group">
+                    <label for="exercise-title">Nome da Categoria (Ex: Sons do P)</label>
+                    <input type="text" id="exercise-title" required placeholder="Ex: Categoria Alimentos">
+                </div>
+                <div class="form-group">
+                    <label for="exercise-color">Cor do Card</label>
+                    <select id="exercise-color" style="width: 100%; height: 40px; border: 1px solid #ddd; border-radius: 8px; padding: 0 10px; background: white; cursor: pointer;">
+                        <option value="pink">Rosa</option>
+                        <option value="orange">Laranja</option>
+                        <option value="blue">Azul</option>
+                        <option value="green">Verde</option>
+                        <option value="red">Vermelho</option>
+                        <option value="yellow">Amarelo</option>
+                        <option value="gray">Cinza</option>
+                    </select>
+                </div>
+
+                <div id="exercise-items-container">
+                    <!-- Primeiro slide do exercício -->
+                    <div class="exercise-item-block">
+                        <div style="display: flex; justify-content: space-between;">
+                            <h4>Slide 1</h4>
+                        </div>
+                        <div class="form-group">
+                            <label>Palavra Escrita</label>
+                            <input type="text" class="item-word" required placeholder="Ex: PÓ">
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                            <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                <label>Cor do Texto</label>
+                                <input type="color" class="item-color" value="#333333"
+                                    style="width: 100%; height: 40px; cursor: pointer; border: 1px solid #ddd; border-radius: 8px;">
+                            </div>
+                            <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                <label>Tamanho (px)</label>
+                                <input type="number" class="item-size" value="100" min="20" max="300"
+                                    style="width: 100%; height: 40px; box-sizing: border-box; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px;">
+                            </div>
+                        </div>
+                        <div
+                            style="display: flex; gap: 20px; margin-bottom: 15px; align-items: center; justify-content: flex-start; padding-left: 5px;">
+                            <label
+                                style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; cursor: pointer;">
+                                <input type="checkbox" class="item-uppercase"
+                                    style="width: 18px; height: 18px; cursor: pointer;"> Caixa Alta
+                            </label>
+                            <label
+                                style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; cursor: pointer;">
+                                <input type="checkbox" class="item-bold"
+                                    style="width: 18px; height: 18px; cursor: pointer;" checked> Negrito
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>Imagem (Objeto) — opcional, usa pictograma automático se vazio</label>
+                            <input type="file" class="item-image" accept="image/*">
+                        </div>
+                        <div class="form-group">
+                            <label>Link do Vídeo (Vimeo, Drive, YouTube, Figma) — opcional</label>
+                            <input type="url" class="item-link" placeholder="Cole o link aqui...">
+                        </div>
+                    </div>
+                </div>
+
+                <button type="button" class="btn-secondary" id="btn-add-exercise-item"
+                    style="margin-bottom: 20px; width: 100%;">
+                    <i class="fas fa-plus" aria-hidden="true"></i> Adicionar outro slide a este exercício
+                </button>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-cancel-exercise-upload">Cancelar</button>
+                    <button type="submit" class="btn-primary"
+                        style="background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%);">Salvar Exercício</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de Reprodução de Vídeo Simples -->
+    <div class="modal-overlay" id="video-modal" role="dialog" aria-modal="true" aria-labelledby="video-modal-title">
+        <div class="modal-content video-modal-content">
+            <div class="modal-header">
+                <h2 id="video-modal-title">Vídeo</h2>
+                <button class="close-modal-btn" id="btn-close-video" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <video id="video-player" controls autoplay></video>
+        </div>
+    </div>
+
+    <!-- Tela de Apresentação (Exercícios - Fundo Branco com setas) -->
+    <div class="presentation-modal" id="presentation-modal" role="dialog" aria-modal="true" aria-label="Apresentação de exercício">
+        <div class="presentation-top-bar">
+            <span class="presentation-progress" id="presentation-progress">1 / 1</span>
+            <button class="presentation-close-btn" id="btn-close-presentation"><i class="fas fa-times" aria-hidden="true"></i>
+                Fechar</button>
+        </div>
+
+        <button class="nav-arrow prev-arrow" id="btn-prev-presentation" aria-label="Item anterior"><i class="fas fa-chevron-left" aria-hidden="true"></i></button>
+        <button class="nav-arrow next-arrow" id="btn-next-presentation" aria-label="Próximo item"><i class="fas fa-chevron-right" aria-hidden="true"></i></button>
+
+        <div class="presentation-layout">
+            <div class="presentation-left">
+                <div class="presentation-word-row">
+                    <h1 class="presentation-word" id="presentation-word-text">PÁ</h1>
+                    <button class="presentation-audio-btn" id="btn-speak-presentation" aria-label="Ouvir em voz alta"><i
+                            class="fas fa-volume-up" aria-hidden="true"></i></button>
+                </div>
+                <iframe class="presentation-video" id="presentation-iframe" frameborder="0" allowfullscreen
+                    allow="autoplay; fullscreen"></iframe>
+            </div>
+            <div class="presentation-right">
+                <img class="presentation-image" id="presentation-image" src="" alt="Objeto">
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Modal Compartilhado de Edição de Card -->
+    <div class="modal-overlay" id="card-editor-modal" role="dialog" aria-modal="true" aria-labelledby="card-editor-title">
+        <div class="modal-content" style="max-height:90vh;overflow-y:auto;">
+            <div class="modal-header">
+                <h2 id="card-editor-title">Editar Card</h2>
+                <button class="close-modal-btn" id="btn-close-card-editor" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <form id="card-editor-form">
+                <div class="form-group">
+                    <label for="card-editor-word">Nome do Card</label>
+                    <input type="text" id="card-editor-word" required placeholder="Ex: Autonomia">
+                </div>
+                <div class="form-group">
+                    <label for="card-editor-color">Cor da Borda</label>
+                    <select id="card-editor-color">
+                        <option value="solid-orange">Laranja Sólido (Essenciais)</option>
+                        <option value="border-orange">Laranja</option>
+                        <option value="border-blue">Azul</option>
+                        <option value="border-green">Verde</option>
+                        <option value="border-red">Vermelho</option>
+                        <option value="border-yellow">Amarelo</option>
+                        <option value="border-pink">Rosa</option>
+                        <option value="border-gray">Cinza</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <img id="card-editor-img-preview" alt="Pré-visualização da imagem selecionada" style="max-width:120px;max-height:120px;display:none;border-radius:8px;object-fit:contain;margin-bottom:8px;">
+                    <label for="card-editor-image">Nova Imagem (opcional)</label>
+                    <input type="file" id="card-editor-image" accept="image/*">
+                </div>
+                <div class="form-group">
+                    <div id="card-editor-audio-indicator" style="display:none;align-items:center;gap:8px;color:#4CAF50;font-weight:bold;margin-bottom:8px;">
+                        <i class="fas fa-volume-up" aria-hidden="true"></i> Áudio personalizado salvo
+                    </div>
+                    <label for="card-editor-audio">Áudio (opcional)</label>
+                    <input type="file" id="card-editor-audio" accept="audio/*">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-cancel-card-editor">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar Card</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal independente: Carta do Jogo da Memória (não compartilha lógica com card-editor-modal) -->
+    <div class="modal-overlay" id="memory-card-modal" role="dialog" aria-modal="true" aria-labelledby="memory-card-modal-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="memory-card-modal-title">Nova Carta</h2>
+                <button class="close-modal-btn" id="btn-close-memory-card" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <p style="font-size:13px;color:#666;margin-bottom:15px;">Uma carta do jogo da memória é um par: envie as duas imagens que devem ser encontradas juntas.</p>
+            <form id="memory-card-form">
+                <div class="form-group">
+                    <label for="memory-card-word">Nome do par (só para identificar na lista)</label>
+                    <input type="text" id="memory-card-word" required placeholder="Ex: Bicicleta">
+                </div>
+                <div class="form-group">
+                    <img id="memory-card-img-preview-a" alt="Pré-visualização da imagem A" style="max-width:120px;max-height:120px;display:none;border-radius:8px;object-fit:contain;margin-bottom:8px;">
+                    <label for="memory-card-image-a">Imagem A</label>
+                    <input type="file" id="memory-card-image-a" accept="image/*">
+                </div>
+                <div class="form-group">
+                    <img id="memory-card-img-preview-b" alt="Pré-visualização da imagem B" style="max-width:120px;max-height:120px;display:none;border-radius:8px;object-fit:contain;margin-bottom:8px;">
+                    <label for="memory-card-image-b">Imagem B</label>
+                    <input type="file" id="memory-card-image-b" accept="image/*">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-cancel-memory-card">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar Par</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal independente: Carta do Jogo da Memória do Alfabeto (duplicata do memory-card-modal) -->
+    <div class="modal-overlay" id="alphabet-memory-card-modal" role="dialog" aria-modal="true" aria-labelledby="alphabet-memory-card-modal-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="alphabet-memory-card-modal-title">Nova Carta</h2>
+                <button class="close-modal-btn" id="btn-close-alphabet-memory-card" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <p style="font-size:13px;color:#666;margin-bottom:15px;">Uma carta do jogo da memória é um par: envie as duas imagens que devem ser encontradas juntas (ex: a letra "A" em dois estilos diferentes).</p>
+            <form id="alphabet-memory-card-form">
+                <div class="form-group">
+                    <label for="alphabet-memory-card-word">Nome do par (só para identificar na lista)</label>
+                    <input type="text" id="alphabet-memory-card-word" required placeholder="Ex: A">
+                </div>
+                <div class="form-group">
+                    <img id="alphabet-memory-card-img-preview-a" alt="Pré-visualização da imagem A" style="max-width:120px;max-height:120px;display:none;border-radius:8px;object-fit:contain;margin-bottom:8px;">
+                    <label for="alphabet-memory-card-image-a">Imagem A</label>
+                    <input type="file" id="alphabet-memory-card-image-a" accept="image/*">
+                </div>
+                <div class="form-group">
+                    <img id="alphabet-memory-card-img-preview-b" alt="Pré-visualização da imagem B" style="max-width:120px;max-height:120px;display:none;border-radius:8px;object-fit:contain;margin-bottom:8px;">
+                    <label for="alphabet-memory-card-image-b">Imagem B</label>
+                    <input type="file" id="alphabet-memory-card-image-b" accept="image/*">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-cancel-alphabet-memory-card">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar Par</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal independente: Conjunto do Jogo de Reconhecimento (palavra + imagem certa + distratoras) -->
+    <div class="modal-overlay" id="naming-set-modal" role="dialog" aria-modal="true" aria-labelledby="naming-set-modal-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="naming-set-modal-title">Nova Palavra</h2>
+                <button class="close-modal-btn" id="btn-close-naming-set" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <p style="font-size:13px;color:#666;margin-bottom:15px;">Envie a imagem que representa a palavra e duas imagens diferentes como opções erradas.</p>
+            <form id="naming-set-form">
+                <div class="form-group">
+                    <label for="naming-set-word">Palavra</label>
+                    <input type="text" id="naming-set-word" required placeholder="Ex: Café">
+                </div>
+                <div class="form-group">
+                    <img id="naming-set-img-preview-correct" alt="Pré-visualização da imagem correta" style="max-width:120px;max-height:120px;display:none;border-radius:8px;object-fit:contain;margin-bottom:8px;">
+                    <label for="naming-set-image-correct">Imagem Correta</label>
+                    <input type="file" id="naming-set-image-correct" accept="image/*">
+                </div>
+                <div class="form-group">
+                    <img id="naming-set-img-preview-d1" alt="Pré-visualização da distração 1" style="max-width:120px;max-height:120px;display:none;border-radius:8px;object-fit:contain;margin-bottom:8px;">
+                    <label for="naming-set-image-d1">Imagem Distração 1</label>
+                    <input type="file" id="naming-set-image-d1" accept="image/*">
+                </div>
+                <div class="form-group">
+                    <img id="naming-set-img-preview-d2" alt="Pré-visualização da distração 2" style="max-width:120px;max-height:120px;display:none;border-radius:8px;object-fit:contain;margin-bottom:8px;">
+                    <label for="naming-set-image-d2">Imagem Distração 2</label>
+                    <input type="file" id="naming-set-image-d2" accept="image/*">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-cancel-naming-set">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar Palavra</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal independente: Atividade para Afasia (imagem + pergunta + palavra certa + 2 erradas) -->
+    <div class="modal-overlay" id="afasia-set-modal" role="dialog" aria-modal="true" aria-labelledby="afasia-set-modal-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="afasia-set-modal-title">Novo Reconhecimento de Imagem</h2>
+                <button class="close-modal-btn" id="btn-close-afasia-set" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <p style="font-size:13px;color:#666;margin-bottom:15px;">Envie uma imagem, escreva a pergunta e as opções de resposta: a correta e duas erradas.</p>
+            <form id="afasia-set-form">
+                <div class="form-group">
+                    <img id="afasia-set-img-preview" alt="Pré-visualização da imagem" style="max-width:120px;max-height:120px;display:none;border-radius:8px;object-fit:contain;margin-bottom:8px;">
+                    <label for="afasia-set-image">Imagem</label>
+                    <input type="file" id="afasia-set-image" accept="image/*">
+                </div>
+                <div class="form-group">
+                    <label for="afasia-set-question">Pergunta</label>
+                    <input type="text" id="afasia-set-question" required placeholder="Ex: Qual palavra combina com a imagem?">
+                </div>
+                <div class="form-group">
+                    <label for="afasia-set-word-correct">Resposta correta</label>
+                    <input type="text" id="afasia-set-word-correct" required placeholder="Ex: MAÇÃ">
+                </div>
+                <div class="form-group">
+                    <label for="afasia-set-word-d1">Resposta errada 1</label>
+                    <input type="text" id="afasia-set-word-d1" required placeholder="Ex: BOLA">
+                </div>
+                <div class="form-group">
+                    <label for="afasia-set-word-d2">Resposta errada 2</label>
+                    <input type="text" id="afasia-set-word-d2" required placeholder="Ex: CASA">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-cancel-afasia-set">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar Atividade</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Novo Usuário (Admin) -->
+    <div class="modal-overlay" id="new-user-modal" role="dialog" aria-modal="true" aria-labelledby="new-user-modal-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="new-user-modal-title">Novo usuário</h2>
+                <button class="close-modal-btn" id="btn-close-new-user" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <form id="new-user-form">
+                <div class="form-group">
+                    <label for="new-user-name">Nome Completo</label>
+                    <input type="text" id="new-user-name" required placeholder="Ex: João da Silva">
+                </div>
+                <div class="form-group">
+                    <label for="new-user-email">E-mail</label>
+                    <input type="email" id="new-user-email" required placeholder="pessoa@exemplo.com">
+                </div>
+                <div class="form-group">
+                    <label for="new-user-password">Senha temporária</label>
+                    <input type="text" id="new-user-password" required minlength="6" placeholder="Mínimo de 6 caracteres">
+                </div>
+                <div class="form-group">
+                    <label for="new-user-role">Papel</label>
+                    <select id="new-user-role">
+                        <option value="viewer">Visualizar (só usa o app)</option>
+                        <option value="editor">Editar conteúdo</option>
+                        <option value="admin">Admin (gerencia usuários)</option>
+                    </select>
+                </div>
+                <div id="new-user-error" class="admin-feedback error" style="display:none;"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-cancel-new-user">Cancelar</button>
+                    <button type="submit" class="btn-primary" id="btn-submit-new-user">Criar usuário</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Alterar Senha (Admin) -->
+    <div class="modal-overlay" id="change-password-modal" role="dialog" aria-modal="true" aria-labelledby="change-password-modal-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="change-password-modal-title">Alterar senha</h2>
+                <button class="close-modal-btn" id="btn-close-change-password" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <form id="change-password-form">
+                <p style="font-size:14px;color:#666;margin-bottom:15px;">Definindo nova senha para <strong id="change-password-email"></strong></p>
+                <div class="form-group">
+                    <label for="change-password-input">Nova senha</label>
+                    <input type="text" id="change-password-input" required minlength="6" placeholder="Mínimo de 6 caracteres">
+                </div>
+                <div id="change-password-error" class="admin-feedback error" style="display:none;"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-cancel-change-password">Cancelar</button>
+                    <button type="submit" class="btn-primary" id="btn-submit-change-password">Salvar senha</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+    <!-- Modal de confirmação de saída -->
+    <div id="modal-exit-confirm" style="
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: rgba(0,0,0,0.55);
+        backdrop-filter: blur(4px);
+        align-items: center;
+        justify-content: center;
+    ">
+        <div style="
+            background: #fff;
+            border-radius: 20px;
+            padding: 32px 28px;
+            max-width: 340px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+            animation: exitModalIn 0.25s ease;
+        ">
+            <div style="font-size: 3rem; margin-bottom: 12px;">🚪</div>
+            <h2 style="margin: 0 0 8px; font-size: 1.3rem; color: #1e293b;">Deseja mesmo sair?</h2>
+            <p style="color: #64748b; font-size: 0.95rem; margin: 0 0 24px;">O progresso do jogo atual será perdido.</p>
+            <div style="display: flex; gap: 12px; justify-content: center;">
+                <button id="btn-exit-cancel" style="
+                    flex: 1;
+                    padding: 12px;
+                    border-radius: 12px;
+                    border: 2px solid #e2e8f0;
+                    background: #f8fafc;
+                    color: #475569;
+                    font-size: 1rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                ">Cancelar</button>
+                <button id="btn-exit-confirm" style="
+                    flex: 1;
+                    padding: 12px;
+                    border-radius: 12px;
+                    border: none;
+                    background: linear-gradient(135deg, #ef4444, #dc2626);
+                    color: #fff;
+                    font-size: 1rem;
+                    font-weight: 700;
+                    cursor: pointer;
+                    box-shadow: 0 4px 12px rgba(239,68,68,0.35);
+                ">Sair</button>
+            </div>
+        </div>
+    </div>
+    <style>
+        @keyframes exitModalIn {
+            from { transform: scale(0.85); opacity: 0; }
+            to   { transform: scale(1);    opacity: 1; }
+        }
+    </style>
+
+    <link rel="stylesheet" href="style.css?v=23">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script defer src="app.js?v=23"></script>
+</body>
+
+
+</html>
