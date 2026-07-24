@@ -85,6 +85,8 @@ Deno.serve(async (req) => {
 
     const safeTitle = escapeHtml(title);
     const safeCategory = escapeHtml(category);
+    const genderArticle = ["categoria", "atividade"].includes(category.toLowerCase()) ? "A" : "O";
+    const genderAdjective = ["categoria", "atividade"].includes(category.toLowerCase()) ? "Nova" : "Novo";
     const linkHtml = APP_PUBLIC_URL
       ? `<p style="margin:24px 0"><a href="${escapeHtml(APP_PUBLIC_URL)}" style="background:#2563eb;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700">Abrir Comunica Fácil</a></p>`
       : "";
@@ -101,9 +103,9 @@ Deno.serve(async (req) => {
       from: `Comunica Fácil <${GMAIL_SMTP_USER}>`,
       to: GMAIL_SMTP_USER,
       bcc: recipients,
-      subject: `Nova ${category.toLowerCase()} disponível: ${title}`,
-      text: `Olá! A ${category.toLowerCase()} "${title}" já está disponível no Comunica Fácil.${APP_PUBLIC_URL ? ` Acesse: ${APP_PUBLIC_URL}` : ""}`,
-      html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;color:#1f2937"><h2 style="color:#2563eb">Novidade no Comunica Fácil</h2><p>Olá!</p><p>A ${safeCategory.toLowerCase()} <strong>${safeTitle}</strong> já está disponível para você.</p>${linkHtml}<p style="color:#6b7280;font-size:13px">Este é um aviso automático do Comunica Fácil.</p></div>`,
+      subject: `${genderAdjective} ${category.toLowerCase()} disponível: ${title}`,
+      text: `Olá! ${genderArticle} ${category.toLowerCase()} "${title}" já está disponível no Comunica Fácil.${APP_PUBLIC_URL ? ` Acesse: ${APP_PUBLIC_URL}` : ""}`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;color:#1f2937"><h2 style="color:#2563eb">Novidade no Comunica Fácil</h2><p>Olá!</p><p>${genderArticle} ${safeCategory.toLowerCase()} <strong>${safeTitle}</strong> já está disponível para você.</p>${linkHtml}<p style="color:#6b7280;font-size:13px">Este é um aviso automático do Comunica Fácil.</p></div>`,
     });
 
     return json({ recipientCount: recipients.length });
