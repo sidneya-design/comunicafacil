@@ -172,6 +172,8 @@ const usageCatalog = { views: new Map(), activities: new Map() };
 let usageState = null;
 let usageCurrentUser = null;
 let usageCurrentSessionId = null;
+let usageCurrentActivity = null;
+let usageCurrentActivityStartedAt = 0;
 let usageHeartbeatTimer = null;
 let usageLastHeartbeatAt = 0;
 let usageSelectedUserId = null;
@@ -183,7 +185,10 @@ function createEmptyUsageState() {
 }
 
 function loadUsageState() {
-    if (usageState) return usageState;
+    if (usageState) {
+        normalizeUsageStateActivities(usageState);
+        return usageState;
+    }
     try {
         const raw = localStorage.getItem(USAGE_STORAGE_KEY);
         usageState = raw ? JSON.parse(raw) : createEmptyUsageState();
@@ -193,6 +198,7 @@ function loadUsageState() {
     if (!usageState.users) usageState.users = {};
     if (!Array.isArray(usageState.sessions)) usageState.sessions = [];
     if (!Array.isArray(usageState.events)) usageState.events = [];
+    normalizeUsageStateActivities(usageState);
     return usageState;
 }
 
@@ -230,6 +236,178 @@ function ensureUserUsageRecord(user) {
     if (!record.createdAt) record.createdAt = now;
     state.users[user.id] = record;
     return record;
+}
+
+function createEmptyActivityStats() {
+    return {
+        count: 0,
+        totalSeconds: 0,
+        lastAccessAt: null
+    };
+}
+
+function normalizeActivityStats(value) {
+    if (typeof value === 'number') {
+        return {
+            count: value,
+            totalSeconds: 0,
+            lastAccessAt: null
+        };
+    }
+
+    if (!value || typeof value !== 'object') {
+        return createEmptyActivityStats();
+    }
+
+    return {
+        count: Number(value.count || value.totalCount || value.total || 0),
+        totalSeconds: Number(value.totalSeconds || value.total_seconds || value.seconds || 0),
+        lastAccessAt: value.lastAccessAt || value.last_access_at || value.lastSeenAt || value.last_seen_at || null
+    };
+}
+
+function normalizeUsageActivityLabel(label) {
+    return String(label || '')
+        .trim()
+        .replace(/:duration\s*$/i, '')
+        .trim();
+}
+
+function isUsageDurationLabel(label) {
+    return /:duration\s*$/i.test(String(label || '').trim());
+}
+
+function formatUsageActivityDisplayLabel(label) {
+    const cleanLabel = normalizeUsageActivityLabel(label);
+    if (!cleanLabel) return 'Atividade';
+
+    const prefixes = ['Jogo:', 'Exercício:', 'Nomeação:', 'Compositor:', 'Palavra:', 'Tela:'];
+    for (const prefix of prefixes) {
+        if (cleanLabel.toLowerCase().startsWith(prefix.toLowerCase())) {
+            const raw = cleanLabel.slice(prefix.length).trim();
+            if (!raw) return cleanLabel;
+            return raw.charAt(0).toUpperCase() + raw.slice(1);
+        }
+    }
+
+    return cleanLabel;
+}
+
+function normalizeUsageActivityStore(store) {
+    const normalized = {};
+    Object.entries(store || {}).forEach(([label, rawStats]) => {
+        const normalizedLabel = normalizeUsageActivityLabel(label);
+        if (!normalizedLabel) return;
+        if (normalizedLabel.toLowerCase().startsWith('tela:')) return;
+
+        const stats = normalizeActivityStats(rawStats);
+        const incoming = isUsageDurationLabel(label)
+            ? {
+                count: 0,
+                totalSeconds: stats.totalSeconds || stats.count || 0,
+                lastAccessAt: stats.lastAccessAt
+            }
+            : stats;
+        mergeActivityAggregate(normalized, normalizedLabel, incoming);
+    });
+    return normalized;
+}
+
+function normalizeUsageStateActivities(state) {
+    if (!state || typeof state !== 'object') return;
+    Object.values(state.users || {}).forEach(user => {
+        if (user?.activities) user.activities = normalizeUsageActivityStore(user.activities);
+    });
+    (state.sessions || []).forEach(session => {
+        if (session?.activities) session.activities = normalizeUsageActivityStore(session.activities);
+    });
+}
+
+function ensureAggregateUser(users, uid, fallback = {}) {
+    if (!uid) return null;
+    if (!users[uid]) {
+        users[uid] = {
+            userId: uid,
+            email: fallback.email || 'sem e-mail',
+            role: fallback.role || 'viewer',
+            totalActiveSeconds: 0,
+            totalSessions: 0,
+            totalEvents: 0,
+            lastSeenAt: null,
+            lastActiveAt: null,
+            views: {},
+            activities: {}
+        };
+    }
+    const user = users[uid];
+    if (fallback.email) user.email = fallback.email;
+    if (fallback.role) user.role = fallback.role;
+    return user;
+}
+
+function ensureActivityStatsRecord(container, label) {
+    const current = normalizeActivityStats(container[label]);
+    container[label] = current;
+    return current;
+}
+
+function addActivityAccess(container, label, timestamp) {
+    const stats = ensureActivityStatsRecord(container, label);
+    stats.count += 1;
+    stats.lastAccessAt = timestamp;
+    return stats;
+}
+
+function addActivityDuration(container, label, seconds) {
+    const stats = ensureActivityStatsRecord(container, label);
+    stats.totalSeconds += seconds;
+    return stats;
+}
+
+function mergeActivityAggregate(target, label, incoming) {
+    const stats = normalizeActivityStats(incoming);
+    const current = ensureActivityStatsRecord(target, label);
+    current.count += stats.count;
+    current.totalSeconds += stats.totalSeconds;
+    if (stats.lastAccessAt && (!current.lastAccessAt || new Date(stats.lastAccessAt) > new Date(current.lastAccessAt))) {
+        current.lastAccessAt = stats.lastAccessAt;
+    }
+    return current;
+}
+
+function resolveActivityTitle(activityId) {
+    const activity = exerciseActivities.find(item => item.id === activityId) || gamesList.find(item => item.id === activityId);
+    return activity ? activity.title : activityId;
+}
+
+function getActivityTrackingMeta(activityId) {
+    const exercise = exerciseActivities.find(item => item.id === activityId);
+    if (exercise) {
+        return {
+            label: exercise.title,
+            meta: {
+                key: `exercise:${activityId}`,
+                group: 'Exercícios',
+                view: 'view-exercises',
+                detail: 'Atividade aberta'
+            }
+        };
+    }
+
+    const game = gamesList.find(item => item.id === activityId);
+    if (game) {
+        return {
+            label: game.title,
+            meta: {
+                key: `game:${activityId}`,
+                group: 'Jogos',
+                view: 'view-games',
+                detail: 'Jogo aberto'
+            }
+        };
+    }
+
+    return null;
 }
 
 function dbSaveSession(session) {
@@ -326,7 +504,8 @@ function startUsageSession(user) {
 }
 
 function closeUsageSession(reason = 'encerrada') {
-    flushUsageActiveTime();
+    stopUsageActivity(reason);
+    flushUsageActiveTime(true);
     const session = getCurrentUsageSession();
     if (session) {
         session.status = 'closed';
@@ -374,11 +553,11 @@ function startUsageHeartbeat() {
     }, USAGE_HEARTBEAT_MS);
 }
 
-function flushUsageActiveTime() {
+function flushUsageActiveTime(force = false) {
     if (!usageCurrentUser) return;
     const session = getCurrentUsageSession();
     const userRecord = usageCurrentUser ? loadUsageState().users[usageCurrentUser.id] : null;
-    if (!session || !userRecord || document.hidden) return;
+    if (!session || !userRecord || (document.hidden && !force)) return;
 
     const now = Date.now();
     const elapsedSeconds = Math.max(0, Math.floor((now - usageLastHeartbeatAt) / 1000));
@@ -420,30 +599,41 @@ function getSectionLabel(sectionId) {
 
 function changeUsageSection(newSectionId) {
     if (!usageCurrentUser) return;
-    flushUsageSectionTime();
+    flushUsageActivityTime();
     usageCurrentSection = newSectionId;
     usageSectionLastActiveAt = Date.now();
 }
 
 function flushUsageSectionTime() {
-    if (!usageCurrentUser) return;
+    flushUsageActivityTime();
+    usageSectionLastActiveAt = Date.now();
+}
+
+function flushUsageActivityTime() {
+    if (!usageCurrentUser || !usageCurrentActivity || !usageCurrentActivityStartedAt) return;
     const session = getCurrentUsageSession();
-    const userRecord = usageCurrentUser ? loadUsageState().users[usageCurrentUser.id] : null;
-    if (!session || !userRecord || document.hidden) {
-        usageSectionLastActiveAt = Date.now();
+    const userRecord = loadUsageState().users[usageCurrentUser.id];
+    if (!userRecord) return;
+
+    const now = Date.now();
+    const elapsedSeconds = Math.max(0, Math.floor((now - usageCurrentActivityStartedAt) / 1000));
+    if (elapsedSeconds <= 0) {
+        usageCurrentActivityStartedAt = now;
         return;
     }
-    
-    const now = Date.now();
-    const elapsedSeconds = Math.max(0, Math.floor((now - usageSectionLastActiveAt) / 1000));
-    if (elapsedSeconds > 0) {
-        const sectionLabel = getSectionLabel(usageCurrentSection);
-        incrementCounter(session.activities, sectionLabel + ':duration', elapsedSeconds);
-        incrementCounter(userRecord.activities, sectionLabel + ':duration', elapsedSeconds);
-        saveUsageState();
-        dbSaveSession(session);
+
+    const startedAtIso = new Date(usageCurrentActivityStartedAt).toISOString();
+    const currentStats = addActivityDuration(userRecord.activities, usageCurrentActivity.label, elapsedSeconds);
+    if (!currentStats.lastAccessAt) currentStats.lastAccessAt = startedAtIso;
+
+    if (session) {
+        const sessionStats = addActivityDuration(session.activities, usageCurrentActivity.label, elapsedSeconds);
+        if (!sessionStats.lastAccessAt) sessionStats.lastAccessAt = startedAtIso;
     }
-    usageSectionLastActiveAt = now;
+
+    usageCurrentActivityStartedAt = now;
+    saveUsageState();
+    if (session) dbSaveSession(session);
 }
 
 function registerUsageCatalog(kind, label, meta = {}) {
@@ -469,21 +659,24 @@ function trackUsageEvent(type, label, meta = {}) {
     const state = loadUsageState();
     const userRecord = ensureUserUsageRecord(usageCurrentUser);
     const session = getCurrentUsageSession();
-    const eventLabel = label || meta.view || meta.group || type;
+    const eventLabel = type === 'activity'
+        ? (usageCurrentActivity?.label || label || meta.view || meta.group || type)
+        : (label || meta.view || meta.group || type);
+    const timestamp = new Date().toISOString();
 
     if (type === 'view') {
         incrementCounter(userRecord.views, eventLabel);
         if (session) incrementCounter(session.views, eventLabel);
         registerUsageCatalog('view', eventLabel, { key: meta.view || eventLabel, group: meta.group || 'Tela' });
     } else if (type === 'activity') {
-        incrementCounter(userRecord.activities, eventLabel);
-        if (session) incrementCounter(session.activities, eventLabel);
+        addActivityAccess(userRecord.activities, eventLabel, timestamp);
+        if (session) addActivityAccess(session.activities, eventLabel, timestamp);
         registerUsageCatalog('activity', eventLabel, { key: meta.key || eventLabel, group: meta.group || 'Atividade' });
     }
 
     const event = {
         id: makeUsageId('event'),
-        timestamp: new Date().toISOString(),
+        timestamp,
         userId: usageCurrentUser.id,
         email: usageCurrentUser.email,
         role: usageCurrentUser.role,
@@ -524,6 +717,49 @@ function trackUsageActivity(label, meta = {}) {
     trackUsageEvent('activity', label, meta);
 }
 
+function startUsageActivity(label, meta = {}) {
+    if (!usageCurrentUser || !label) return;
+    const key = meta.key || label;
+    if (usageCurrentActivity && usageCurrentActivity.key === key) return;
+
+    stopUsageActivity('troca-atividade');
+    trackUsageActivity(label, meta);
+    usageCurrentActivity = { label, key };
+    usageCurrentActivityStartedAt = Date.now();
+}
+
+function stopUsageActivity(reason = 'encerrada') {
+    if (!usageCurrentUser || !usageCurrentActivity) return;
+    flushUsageActivityTime();
+    usageCurrentActivity = null;
+    usageCurrentActivityStartedAt = 0;
+    if (reason === 'troca-atividade') return;
+}
+
+function setupUsageVisibilityHandling() {
+    if (setupUsageVisibilityHandling.isBound) return;
+    setupUsageVisibilityHandling.isBound = true;
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            flushUsageActiveTime(true);
+            flushUsageActivityTime();
+            return;
+        }
+
+        usageLastHeartbeatAt = Date.now();
+        if (usageCurrentActivity) {
+            usageCurrentActivityStartedAt = Date.now();
+        }
+    });
+
+    window.addEventListener('pagehide', () => {
+        flushUsageActiveTime(true);
+        flushUsageActivityTime();
+        closeUsageSession('pagehide');
+    });
+}
+
 function formatUsageSeconds(totalSeconds) {
     const seconds = Math.max(0, Math.round(totalSeconds || 0));
     const hours = Math.floor(seconds / 3600);
@@ -558,23 +794,15 @@ async function getUsageAggregate() {
                 const users = {};
                 const viewTotals = {};
                 const activityTotals = {};
+                const activityStatsTotals = {};
 
                 dbSessions.forEach(session => {
                     const uid = session.user_id;
-                    if (!users[uid]) {
-                        users[uid] = {
-                            userId: uid,
-                            email: session.email || 'sem e-mail',
-                            role: session.role || 'viewer',
-                            totalActiveSeconds: 0,
-                            totalSessions: 0,
-                            lastSeenAt: null,
-                            lastActiveAt: null,
-                            views: {},
-                            activities: {}
-                        };
-                    }
-                    const u = users[uid];
+                    const u = ensureAggregateUser(users, uid, {
+                        email: session.email || 'sem e-mail',
+                        role: session.role || 'viewer'
+                    });
+                    if (!u) return;
                     u.totalActiveSeconds += session.active_seconds || 0;
                     u.totalSessions += 1;
 
@@ -589,15 +817,41 @@ async function getUsageAggregate() {
                         incrementCounter(u.views, label, count);
                         incrementCounter(viewTotals, label, count);
                     });
-                    Object.entries(session.activities || {}).forEach(([label, count]) => {
-                        incrementCounter(u.activities, label, count);
-                        incrementCounter(activityTotals, label, count);
+                    Object.entries(session.activities || {}).forEach(([label, rawStats]) => {
+                        const normalizedLabel = normalizeUsageActivityLabel(label);
+                        if (!normalizedLabel || normalizedLabel.toLowerCase().startsWith('tela:')) return;
+
+                        const stats = normalizeActivityStats(rawStats);
+                        const incoming = isUsageDurationLabel(label)
+                            ? {
+                                count: 0,
+                                totalSeconds: stats.totalSeconds || stats.count || 0,
+                                lastAccessAt: stats.lastAccessAt
+                            }
+                            : stats;
+                        mergeActivityAggregate(u.activities, normalizedLabel, incoming);
+                        incrementCounter(activityTotals, normalizedLabel, incoming.count || 0);
+                        mergeActivityAggregate(activityStatsTotals, normalizedLabel, incoming);
                     });
+                });
+
+                dbEvents.forEach(event => {
+                    const uid = event.user_id;
+                    const u = ensureAggregateUser(users, uid, {
+                        email: event.email || 'sem e-mail',
+                        role: event.role || 'viewer'
+                    });
+                    if (!u) return;
+                    u.totalEvents = (u.totalEvents || 0) + 1;
+                    if (event.timestamp && (!u.lastSeenAt || new Date(event.timestamp) > new Date(u.lastSeenAt))) {
+                        u.lastSeenAt = event.timestamp;
+                    }
                 });
 
                 const knownViews = Array.from(usageCatalog.views.values());
                 const knownActivities = Array.from(usageCatalog.activities.values());
-                const topActivity = Object.entries(activityTotals).sort((a, b) => b[1] - a[1])[0] || null;
+                const topActivity = Object.entries(activityStatsTotals)
+                    .sort((a, b) => (b[1].totalSeconds || 0) - (a[1].totalSeconds || 0))[0] || null;
 
                 const sessions = dbSessions.map(s => ({
                     id: s.id,
@@ -629,7 +883,7 @@ async function getUsageAggregate() {
                     value: e.value
                 }));
 
-                return { users: Object.values(users), sessions, events, viewTotals, activityTotals, knownViews, knownActivities, topActivity };
+                return { users: Object.values(users), sessions, events, viewTotals, activityTotals, activityStatsTotals, knownViews, knownActivities, topActivity };
             }
         } catch (e) {
             console.error("Falha ao agregar dados do Supabase:", e);
@@ -642,17 +896,45 @@ async function getUsageAggregate() {
     const events = state.events.slice();
     const viewTotals = {};
     const activityTotals = {};
+    const activityStatsTotals = {};
 
     users.forEach(user => {
         Object.entries(user.views || {}).forEach(([label, count]) => incrementCounter(viewTotals, label, count));
-        Object.entries(user.activities || {}).forEach(([label, count]) => incrementCounter(activityTotals, label, count));
+        Object.entries(user.activities || {}).forEach(([label, rawStats]) => {
+            const normalizedLabel = normalizeUsageActivityLabel(label);
+            if (!normalizedLabel || normalizedLabel.toLowerCase().startsWith('tela:')) return;
+
+            const stats = normalizeActivityStats(rawStats);
+            const incoming = isUsageDurationLabel(label)
+                ? {
+                    count: 0,
+                    totalSeconds: stats.totalSeconds || stats.count || 0,
+                    lastAccessAt: stats.lastAccessAt
+                }
+                : stats;
+            incrementCounter(activityTotals, normalizedLabel, incoming.count || 0);
+            mergeActivityAggregate(activityStatsTotals, normalizedLabel, incoming);
+        });
+    });
+
+    events.forEach(event => {
+        const u = ensureAggregateUser(state.users || {}, event.userId, {
+            email: event.email || 'sem e-mail',
+            role: event.role || 'viewer'
+        });
+        if (!u) return;
+        u.totalEvents = (u.totalEvents || 0) + 1;
+        if (event.timestamp && (!u.lastSeenAt || new Date(event.timestamp) > new Date(u.lastSeenAt))) {
+            u.lastSeenAt = event.timestamp;
+        }
     });
 
     const knownViews = Array.from(usageCatalog.views.values());
     const knownActivities = Array.from(usageCatalog.activities.values());
-    const topActivity = Object.entries(activityTotals).sort((a, b) => b[1] - a[1])[0] || null;
+    const topActivity = Object.entries(activityStatsTotals)
+        .sort((a, b) => (b[1].totalSeconds || 0) - (a[1].totalSeconds || 0))[0] || null;
 
-    return { users, sessions, events, viewTotals, activityTotals, knownViews, knownActivities, topActivity };
+    return { users, sessions, events, viewTotals, activityTotals, activityStatsTotals, knownViews, knownActivities, topActivity };
 }
 
 function usageListItem(label, valueText, shareText, percent = 0) {
@@ -722,6 +1004,56 @@ function renderUsageList(containerId, items, emptyText) {
     });
 }
 
+function renderUsageActivityTable(containerId, items, emptyText) {
+    const tbody = document.getElementById(containerId);
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    if (!items || items.length === 0) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 5;
+        cell.textContent = emptyText;
+        row.appendChild(cell);
+        tbody.appendChild(row);
+        return;
+    }
+
+    items.forEach(item => {
+        const row = document.createElement('tr');
+
+        const activityCell = document.createElement('td');
+        activityCell.textContent = item.label;
+        activityCell.title = item.label;
+        activityCell.className = 'usage-activity-cell usage-activity-cell-name';
+
+        const timeCell = document.createElement('td');
+        timeCell.textContent = formatUsageSeconds(item.totalSeconds || 0);
+        timeCell.className = 'usage-activity-cell usage-activity-cell-time';
+
+        const averageCell = document.createElement('td');
+        const count = Number(item.count || 0);
+        const totalSeconds = Number(item.totalSeconds || 0);
+        averageCell.textContent = count > 0 ? formatUsageSeconds(Math.round(totalSeconds / count)) : '—';
+        averageCell.className = 'usage-activity-cell usage-activity-cell-average';
+
+        const countCell = document.createElement('td');
+        countCell.textContent = String(count);
+        countCell.className = 'usage-activity-cell usage-activity-cell-count';
+
+        const lastAccessCell = document.createElement('td');
+        lastAccessCell.textContent = formatUsageDateTime(item.lastAccessAt);
+        lastAccessCell.className = 'usage-activity-cell usage-activity-cell-last';
+
+        row.appendChild(activityCell);
+        row.appendChild(timeCell);
+        row.appendChild(averageCell);
+        row.appendChild(countCell);
+        row.appendChild(lastAccessCell);
+        tbody.appendChild(row);
+    });
+}
+
 async function renderUsageDashboard() {
     const aggregate = await getUsageAggregate();
     
@@ -757,58 +1089,82 @@ async function renderUsageDashboard() {
     // Determina se vamos trabalhar com dados filtrados para um usuário específico
     const selectedUserRecord = usageSelectedUserId ? aggregate.users.find(u => u.userId === usageSelectedUserId) : null;
     
-    const filteredActivityTotals = (usageSelectedUserId && selectedUserRecord) ? (selectedUserRecord.activities || {}) : aggregate.activityTotals;
-    
-    const durationsMap = {};
-    const countsMap = {};
-    
-    Object.entries(filteredActivityTotals).forEach(([label, value]) => {
-        if (label.endsWith(':duration')) {
-            const cleanLabel = label.substring(0, label.length - 9);
-            durationsMap[cleanLabel] = value;
-        } else {
-            countsMap[label] = value;
-        }
-    });
-
-    const activityEntries = Object.entries(countsMap)
-        .map(([label, value]) => ({ label, value }))
-        .sort((a, b) => b.value - a.value);
+    const filteredActivityStats = (usageSelectedUserId && selectedUserRecord) ? (selectedUserRecord.activities || {}) : aggregate.activityStatsTotals;
+    const activityEntries = Object.entries(filteredActivityStats)
+        .map(([label, rawStats]) => {
+            const stats = normalizeActivityStats(rawStats);
+            return {
+                label,
+                displayLabel: formatUsageActivityDisplayLabel(label),
+                count: stats.count,
+                totalSeconds: stats.totalSeconds,
+                lastAccessAt: stats.lastAccessAt
+            };
+        })
+        .sort((a, b) => {
+            if ((b.totalSeconds || 0) !== (a.totalSeconds || 0)) {
+                return (b.totalSeconds || 0) - (a.totalSeconds || 0);
+            }
+            return (b.count || 0) - (a.count || 0);
+        });
 
     const topActivities = activityEntries.slice(0, 5).map(item => ({
-        label: item.label,
-        value: item.value,
-        valueText: `${item.value} usos`,
-        shareText: 'Mais acessadas'
+        label: item.displayLabel,
+        value: item.totalSeconds,
+        valueText: formatUsageSeconds(item.totalSeconds),
+        shareText: `${item.count} acessos • último acesso ${formatUsageDateTime(item.lastAccessAt)}`
     }));
 
-    const durationEntries = Object.entries(durationsMap)
-        .map(([label, value]) => ({ label, value }))
-        .sort((a, b) => b.value - a.value);
+    const catalogActivityMap = new Map();
+    aggregate.knownActivities.forEach(meta => {
+        catalogActivityMap.set(meta.label, meta);
+    });
+    Object.keys(aggregate.activityStatsTotals || {}).forEach(label => {
+        if (!catalogActivityMap.has(label)) {
+            catalogActivityMap.set(label, {
+                label,
+                key: label,
+                group: 'Atividade',
+                kind: 'activity',
+                order: 9999
+            });
+        }
+    });
+    const catalogActivityEntries = Array.from(catalogActivityMap.values()).map(meta => ({
+        label: formatUsageActivityDisplayLabel(meta.label),
+        value: normalizeActivityStats((usageSelectedUserId && selectedUserRecord) ? (selectedUserRecord.activities[meta.label] || 0) : (aggregate.activityStatsTotals[meta.label] || 0))
+    }));
+    const activityTableEntries = [...catalogActivityEntries]
+        .sort((a, b) => {
+            if ((b.value.totalSeconds || 0) !== (a.value.totalSeconds || 0)) {
+                return (b.value.totalSeconds || 0) - (a.value.totalSeconds || 0);
+            }
+            return (b.value.count || 0) - (a.value.count || 0);
+        })
+        .map(item => ({
+            label: item.label,
+            totalSeconds: item.value.totalSeconds || 0,
+            count: item.value.count || 0,
+            lastAccessAt: item.value.lastAccessAt
+        }));
+    const lowActivities = [...catalogActivityEntries]
+        .sort((a, b) => {
+            if ((a.value.totalSeconds || 0) !== (b.value.totalSeconds || 0)) {
+                return (a.value.totalSeconds || 0) - (b.value.totalSeconds || 0);
+            }
+            return (a.value.count || 0) - (b.value.count || 0);
+        })
+        .slice(0, 5)
+        .map(item => ({
+            label: item.label,
+            value: item.value.totalSeconds,
+            valueText: formatUsageSeconds(item.value.totalSeconds),
+            shareText: item.value.count === 0
+                ? 'Ainda sem acesso'
+                : `${item.value.count} acessos • último acesso ${formatUsageDateTime(item.value.lastAccessAt)}`
+        }));
 
     const filteredSessions = usageSelectedUserId ? aggregate.sessions.filter(s => s.userId === usageSelectedUserId) : aggregate.sessions;
-    
-    const maxDurations = {};
-    filteredSessions.forEach(session => {
-        Object.entries(session.activities || {}).forEach(([label, value]) => {
-            if (label.endsWith(':duration')) {
-                const cleanLabel = label.substring(0, label.length - 9);
-                if (!maxDurations[cleanLabel] || value > maxDurations[cleanLabel]) {
-                    maxDurations[cleanLabel] = value;
-                }
-            }
-        });
-    });
-
-    const activitiesDurationsItems = durationEntries.slice(0, 5).map(item => {
-        const maxSec = maxDurations[item.label] || 0;
-        return {
-            label: item.label,
-            value: item.value,
-            valueText: formatUsageSeconds(item.value),
-            shareText: maxSec > 0 ? `Maior sessão: ${formatUsageSeconds(maxSec)}` : 'Duração acumulada'
-        };
-    });
 
     const activeSessions = filteredSessions.filter(session => session.status === 'active')
         .sort((a, b) => new Date(b.lastSeenAt || b.startAt) - new Date(a.lastSeenAt || a.startAt))
@@ -823,7 +1179,9 @@ async function renderUsageDashboard() {
     const filteredEvents = usageSelectedUserId ? aggregate.events.filter(e => e.userId === usageSelectedUserId) : aggregate.events;
     const eventItems = filteredEvents.slice(0, 18).map(event => ({
         timestamp: event.timestamp,
-        label: event.type === 'view' ? `Tela aberta: ${event.label}` : `${event.group || 'Ação'}: ${event.label}`,
+        label: event.type === 'view'
+            ? `Tela aberta: ${event.label}`
+            : formatUsageActivityDisplayLabel(event.label),
         detail: event.detail || `${event.email} • ${event.role}`,
         kind: event.type
     }));
@@ -832,12 +1190,12 @@ async function renderUsageDashboard() {
         ? (selectedUserRecord ? (selectedUserRecord.totalActiveSeconds || 0) : 0)
         : rankedUsers.reduce((sum, user) => sum + (user.totalActiveSeconds || 0), 0);
 
-    const totalActions = activityEntries.reduce((sum, item) => sum + item.value, 0);
-    const topActivity = activityEntries[0] ? [activityEntries[0].label, activityEntries[0].value] : null;
+    const totalActions = activityEntries.reduce((sum, item) => sum + (item.count || 0), 0);
+    const topActivity = activityEntries[0] ? activityEntries[0] : null;
     const totalSessions = filteredSessions.length;
     const activeSessionsCount = filteredSessions.filter(session => session.status === 'active').length;
     const avgSessionSeconds = totalSessions > 0 ? Math.round(totalActiveSeconds / totalSessions) : 0;
-    const topShare = totalActions > 0 && topActivity ? Math.round((topActivity[1] / totalActions) * 100) : 0;
+    const topShare = totalActions > 0 && topActivity ? Math.round((topActivity.count / totalActions) * 100) : 0;
 
     const usersBox = document.getElementById('usage-total-users');
     if (usersBox) {
@@ -853,11 +1211,20 @@ async function renderUsageDashboard() {
     if (totalTimeBox) totalTimeBox.textContent = formatUsageSeconds(totalActiveSeconds);
     const activeNowBox = document.getElementById('usage-active-now');
     if (activeNowBox) activeNowBox.textContent = `${activeSessionsCount} sessões ativas agora`;
+
+    const avgSessionBox = document.getElementById('usage-avg-session-time');
+    if (avgSessionBox) avgSessionBox.textContent = formatUsageSeconds(avgSessionSeconds);
+    const avgSessionNoteBox = document.getElementById('usage-avg-session-note');
+    if (avgSessionNoteBox) {
+        avgSessionNoteBox.textContent = totalSessions > 0
+            ? `${totalSessions} sessões consideradas`
+            : 'Baseado nas sessões registradas';
+    }
     
     const totalActivitiesBox = document.getElementById('usage-total-activities');
     if (totalActivitiesBox) {
-        const activeCount = usageSelectedUserId 
-            ? Object.keys(filteredActivityTotals).length 
+        const activeCount = usageSelectedUserId
+            ? Object.keys(filteredActivityStats).length
             : aggregate.knownActivities.length;
         totalActivitiesBox.textContent = activeCount.toString();
     }
@@ -867,8 +1234,8 @@ async function renderUsageDashboard() {
     const topItemBox = document.getElementById('usage-top-item');
     const topShareBox = document.getElementById('usage-top-share');
     if (topActivity && topItemBox && topShareBox) {
-        topItemBox.textContent = topActivity[0];
-        topShareBox.textContent = `${topActivity[1]} usos, cerca de ${topShare}% das interações`;
+        topItemBox.textContent = formatUsageActivityDisplayLabel(topActivity.label);
+        topShareBox.textContent = `${formatUsageSeconds(topActivity.totalSeconds)} • último acesso ${formatUsageDateTime(topActivity.lastAccessAt)} • ${topActivity.count} acessos`;
     } else if (topItemBox && topShareBox) {
         topItemBox.textContent = '—';
         topShareBox.textContent = 'Sem dados suficientes ainda';
@@ -887,8 +1254,9 @@ async function renderUsageDashboard() {
     );
 
     renderUsageList('usage-top-activities', topActivities, 'Nenhuma atividade acessada ainda');
-    renderUsageList('usage-activities-durations', activitiesDurationsItems, 'Ainda não há dados de tempo registrados');
+    renderUsageList('usage-activities-durations', lowActivities, 'Ainda não há dados de tempo registrados');
     renderUsageList('usage-live-sessions', activeSessions, 'Nenhuma sessão ativa agora');
+    renderUsageActivityTable('usage-activity-table-body', activityTableEntries, 'Nenhuma atividade registrada ainda');
 
     const timeline = document.getElementById('usage-event-log');
     if (timeline) {
@@ -922,15 +1290,15 @@ async function renderUsageDashboard() {
     let insight = 'Cole mais alguns dias de uso para que o painel passe a mostrar padrões confiáveis.';
     if (usageSelectedUserId && selectedUserRecord) {
         if (topShare >= 35 && topActivity) {
-            insight = `O usuário foca muito em "${topActivity[0]}", que representa ${topShare}% do seu uso. Pode sugerir facilidade de uso ou hiperfoco nessa seção.`;
+            insight = `O usuário foca muito em "${formatUsageActivityDisplayLabel(topActivity.label)}", que representa ${topShare}% do tempo nas atividades. Último acesso em ${formatUsageDateTime(topActivity.lastAccessAt)}.`;
         } else if (avgSessionSeconds > 0 && avgSessionSeconds < 120) {
             insight = `Este usuário realiza sessões muito curtas (média de ${formatUsageSeconds(avgSessionSeconds)}). Pode indicar dificuldades para manter a interação ou navegação confusa.`;
         } else {
-            insight = `Uso equilibrado observado para este paciente. A atividade principal é "${topActivity ? topActivity[0] : 'Nenhuma'}" com ${totalActions} ações registradas.`;
+            insight = `Uso equilibrado observado para este paciente. A atividade principal é "${topActivity ? formatUsageActivityDisplayLabel(topActivity.label) : 'Nenhuma'}" com ${formatUsageSeconds(topActivity ? topActivity.totalSeconds : 0)} registrados.`;
         }
     } else {
         if (topShare >= 35 && topActivity) {
-            insight = `A atividade dominante já concentra ${topShare}% das interações. Isso costuma indicar um atalho útil, mas também pode sugerir que o restante da navegação está escondido ou menos intuitivo.`;
+            insight = `A atividade dominante já concentra ${topShare}% do tempo registrado. Isso costuma indicar um atalho útil, mas também pode sugerir que o restante da navegação está escondido ou menos intuitivo.`;
         } else if (avgSessionSeconds > 0 && avgSessionSeconds < 120 && totalActions < 20) {
             insight = 'As sessões estão curtas e com poucas ações. Isso pode significar que o usuário entrou, encontrou pouco valor imediato ou precisou sair rápido.';
         } else if (activeSessionsCount > 0) {
@@ -984,6 +1352,7 @@ function setAdminTab(tabName) {
 
 function initApp() {
     setupNavigation();
+    setupUsageVisibilityHandling();
     initIndexedDB();
     setupModals();
     setupCardEditor();
@@ -1031,6 +1400,7 @@ function setupNavigation() {
             if (viewElement) {
                 viewElement.classList.add('active');
             }
+            stopUsageActivity('troca-de-tela');
             trackUsageView(targetView);
 
             if (targetView !== 'view-games') {
@@ -1754,12 +2124,23 @@ async function loadExerciseCards() {
             if (!exErr) {
                 const { data: itemData } = await supabaseClient.from('exercise_items').select('*');
                 currentExercises = exData.map(ex => {
+                    const inferredSeedKey = ex.seed_key || inferExerciseSeedKeyFromTitle(ex.title);
+                    const inferredVisible = ex.visible !== undefined
+                        ? ex.visible !== false
+                        : inferredSeedKey ? false : true;
                     const items = (itemData || []).filter(item => item.exercise_id === ex.id).map(item => ({
                         word: item.word, color: item.color, size: item.size, uppercase: item.uppercase,
                         bold: item.bold, videoLink: item.link, image_url: item.image_url,
                         pairId: item.pair_id, role: item.role
                     }));
-                    return { id: ex.id, title: ex.title, items, visible: ex.visible !== false, seedKey: ex.seed_key, fromSupabase: true };
+                    return {
+                        id: ex.id,
+                        title: ex.title,
+                        items,
+                        visible: inferredVisible,
+                        seedKey: inferredSeedKey,
+                        fromSupabase: true
+                    };
                 });
             }
         } catch(e) {}
@@ -2466,6 +2847,7 @@ function setupModals() {
     });
 
     document.getElementById('btn-close-presentation').addEventListener('click', () => {
+        stopUsageActivity('fechar-apresentacao');
         document.getElementById('presentation-modal').style.display = 'none';
         document.getElementById('presentation-iframe').src = '';
     });
@@ -2475,8 +2857,8 @@ function setupModals() {
     document.getElementById('btn-speak-presentation').addEventListener('click', () => {
         const item = currentPlaylistItems[currentPlaylistIndex];
         if (item) {
-            trackUsageActivity(`Exercícios: Falar item`, {
-                key: `exercise:speak:${item.word}`,
+            trackUsageActivity(usageCurrentActivity?.label || 'Exercício', {
+                key: `exercise:speak:${usageCurrentActivity?.label || 'Exercício'}`,
                 group: 'Exercícios',
                 detail: `Ouviu palavra: ${item.word}`
             });
@@ -2523,6 +2905,13 @@ function openPresentationPlaylist(ex) {
     currentPlaylistIndex = 0;
 
     document.getElementById('presentation-modal').style.display = 'flex';
+    const activityLabel = (ex.title || '').split('|')[0] || ex.title || 'Exercício';
+    startUsageActivity(activityLabel, {
+        key: `exercise:${ex.id || activityLabel}`,
+        group: 'Exercícios',
+        view: 'view-exercises',
+        detail: 'Exercício aberto'
+    });
     renderCurrentPlaylistItem();
 }
 
@@ -2587,6 +2976,26 @@ const exerciseActivities = [
     { id: 'naming', title: 'Reconhecimento de Palavras', icon: 'fa-images', styleClass: 'border-red' },
     { id: 'afasia', title: 'Reconhecimento de Imagem', icon: 'fa-comment-medical', styleClass: 'border-yellow' }
 ];
+
+function seedUsageCatalogActivities() {
+    gamesList.forEach((item, index) => {
+        registerUsageCatalog('activity', `Jogo: ${item.title}`, {
+            key: `game:${item.id}`,
+            group: 'Jogos',
+            order: index
+        });
+    });
+
+    exerciseActivities.forEach((item, index) => {
+        registerUsageCatalog('activity', `Exercício: ${item.title}`, {
+            key: `exercise:${item.id}`,
+            group: 'Exercícios',
+            order: index
+        });
+    });
+}
+
+seedUsageCatalogActivities();
 
 // As listas consultam a visibilidade de cada card de forma assíncrona. Estes
 // contadores invalidam uma renderização antiga quando uma atualização mais nova
@@ -2892,15 +3301,11 @@ function openGame(gameId) {
         const frame = document.getElementById('complete-sentence-frame');
         container.style.display = 'flex';
         if (!frame.src) frame.src = frame.dataset.src;
-        registerUsageCatalog('activity', 'Jogo: Complete a Frase', {
-            key: 'game:complete-sentence',
-            group: 'Jogos'
-        });
-        trackUsageActivity('Jogo: Complete a Frase', {
-            key: 'game:complete-sentence',
-            group: 'Jogos',
-            detail: 'Atividade aberta'
-        });
+    }
+
+    const activityInfo = getActivityTrackingMeta(gameId);
+    if (activityInfo) {
+        startUsageActivity(activityInfo.label, activityInfo.meta);
     }
 }
 
@@ -2935,6 +3340,7 @@ function clearAllJogo2Timeouts() {
 }
 
 function closeGame() {
+    stopUsageActivity('fechar-jogo');
     clearAllJogo2Timeouts();
 
     const activeView = document.querySelector('.nav-btn.active')?.dataset.view || 'view-games';
@@ -3533,6 +3939,18 @@ const JOGO2_VIRTUE_META = {
     transcendencia: { label: 'Transcendência', icon: '✨', color: '#b568e8', textColor: '#581c87' },
     desafio: { label: 'Desafio', icon: '❓', color: '#8b5cf6', textColor: '#4c1d95' }
 };
+
+function inferExerciseSeedKeyFromTitle(title) {
+    const normalized = (title || '').split('|')[0].trim();
+    const seedMap = {
+        'Cartas do Jogo da Memória': MEMORY_CARDS_SEED_KEY,
+        'Cartas do Jogo da Memória do Alfabeto': ALPHABET_MEMORY_SEED_KEY,
+        'Jogo de Reconhecimento': NAMING_SEED_KEY,
+        'Reconhecimento de Imagem': AFASIA_SEED_KEY,
+        'Cartas da Trilha de Aprendizado de Forças': JOGO2_CARDS_SEED_KEY
+    };
+    return seedMap[normalized] || null;
+}
 
 // ============================================================
 // NOVOS RECURSOS LÚDICOS DO JOGO 2 (Sons, Falas e Efeitos)
@@ -4176,10 +4594,12 @@ async function saveJogo2CardsContainer(container) {
             const { error: insertError } = await supabaseClient.from('exercise_items').insert(dbItems);
             if (insertError) throw insertError;
         }
+        localStorage.setItem('jogo2_factory_initialized_v2', 'true');
         return;
     }
 
     await putLocalGameContainer(container);
+    localStorage.setItem('jogo2_factory_initialized_v2', 'true');
 }
 
 function updateJogo2SetupSelection() {
@@ -4203,7 +4623,7 @@ async function loadJogo2CustomCards() {
     }
 
     // Importação inicial automática de fábrica caso a base esteja vazia e nunca inicializada com a versão v2 (sem emojis nas opções)
-    if (!localStorage.getItem('jogo2_factory_initialized_v2')) {
+    if (!localStorage.getItem('jogo2_factory_initialized_v2') && jogo2CustomCards.length === 0) {
         jogo2CustomCards = [];
         let defaultIdCounter = 1;
         for (let virtue in jogo2DefaultQuestions) {
@@ -5049,7 +5469,7 @@ async function resetJogo2CardsToFactory() {
     if (!confirm('Deseja apagar todas as cartas customizadas atuais e restaurar as 21 perguntas padrões de fábrica?')) return;
     
     jogo2CustomCards = [];
-    localStorage.removeItem('jogo2_factory_initialized');
+    localStorage.removeItem('jogo2_factory_initialized_v2');
     cancelJogo2CardEdit();
 
     // Re-importa as perguntas de fábrica para a base
@@ -5073,7 +5493,7 @@ async function resetJogo2CardsToFactory() {
     try {
         const container = await getOrCreateJogo2CardsContainer();
         await saveJogo2CardsContainer(container);
-        localStorage.setItem('jogo2_factory_initialized', 'true');
+        localStorage.setItem('jogo2_factory_initialized_v2', 'true');
         
         renderJogo2CustomQuestionsList();
         const countSpan = document.getElementById('jogo2-custom-count');
@@ -6371,12 +6791,53 @@ async function getOrCreateGameContainer(seedKey, title) {
     if (supabaseClient) {
         try {
             const { data: existing, error } = await supabaseClient.from('exercises').select('*').eq('seed_key', seedKey).maybeSingle();
-            if (!error) {
-                if (existing) return { ...existing, fromSupabase: true };
-                const { data: created, error: insertErr } = await supabaseClient.from('exercises')
-                    .insert([{ title, visible: false, seed_key: seedKey }])
-                    .select().single();
-                if (!insertErr && created) return { ...created, fromSupabase: true };
+            if (!error && existing) {
+                return {
+                    ...existing,
+                    fromSupabase: true,
+                    seedKey,
+                    visible: existing.visible !== undefined ? existing.visible !== false : false
+                };
+            }
+        } catch (e) {}
+
+        try {
+            const { data: byTitle, error: titleErr } = await supabaseClient.from('exercises').select('*').eq('title', title).maybeSingle();
+            if (!titleErr && byTitle) {
+                return {
+                    ...byTitle,
+                    fromSupabase: true,
+                    seedKey: byTitle.seed_key || seedKey,
+                    visible: byTitle.visible !== undefined ? byTitle.visible !== false : false
+                };
+            }
+        } catch (e) {}
+
+        try {
+            const { data: created, error: insertErr } = await supabaseClient.from('exercises')
+                .insert([{ title, visible: false, seed_key: seedKey }])
+                .select().single();
+            if (!insertErr && created) return { ...created, fromSupabase: true, seedKey };
+        } catch (e) {}
+
+        try {
+            const { data: created, error: insertErr } = await supabaseClient.from('exercises')
+                .insert([{ title, visible: false }])
+                .select().single();
+            if (!insertErr && created) return { ...created, fromSupabase: true, seedKey: created.seed_key || seedKey };
+        } catch (e) {}
+
+        try {
+            const { data: created, error: insertErr } = await supabaseClient.from('exercises')
+                .insert([{ title }])
+                .select().single();
+            if (!insertErr && created) {
+                return {
+                    ...created,
+                    fromSupabase: true,
+                    seedKey: created.seed_key || seedKey,
+                    visible: created.visible !== undefined ? created.visible !== false : false
+                };
             }
         } catch (e) {}
     }
@@ -8056,15 +8517,31 @@ function isLocalAppHost() {
     return ['localhost', '127.0.0.1'].includes(window.location.hostname) || window.location.protocol === 'file:';
 }
 
+if (isLocalAppHost()) {
+    startUsageSession({
+        id: 'local-demo-user',
+        email: 'local@localhost',
+        role: 'admin'
+    });
+}
+
 // Verificar sessão no carregamento
 if (supabaseClient) {
     supabaseClient.auth.getSession().then(async ({ data }) => {
         if (!data?.session) {
             if (isLocalAppHost()) {
                 isAdmin = true;
+                canManageUsers = true;
+                startUsageSession({
+                    id: 'local-demo-user',
+                    email: 'local@localhost',
+                    role: 'admin'
+                });
                 showEditBars();
                 applyModuleVisibility();
                 renderGamesList();
+                const adminNavBtn = document.getElementById('btn-nav-admin');
+                if (adminNavBtn) adminNavBtn.style.display = 'flex';
                 return;
             }
             // Ninguém pode acessar sem login! Redireciona para a landing page (index.html).
@@ -8179,6 +8656,11 @@ async function loadAdminUsers() {
     try {
         const { data: sessionData } = await supabaseClient.auth.getSession();
         const currentUserId = sessionData?.session?.user?.id;
+        if (!currentUserId && isLocalAppHost()) {
+            tbody.innerHTML = '<tr><td colspan="5">Para ver e editar usuários, faça login com uma conta admin do Supabase.</td></tr>';
+            showAdminFeedback('A aba Usuários depende da sessão do Supabase para carregar a lista.', true);
+            return;
+        }
         const { users } = await callAdminUsersFn('list');
 
         users.sort((a, b) => a.email.localeCompare(b.email));
@@ -8345,6 +8827,7 @@ async function loadAdminUsers() {
         });
     } catch (err) {
         tbody.innerHTML = `<tr><td colspan="5">Erro ao carregar usuários: ${err.message}</td></tr>`;
+        showAdminFeedback(err.message || 'Erro ao carregar usuários.', true);
     }
     renderUsageDashboard();
 }
@@ -9593,6 +10076,9 @@ const SUPABASE_CHAT_ENDPOINT = "https://rrubmvykindvilptjhma.supabase.co/functio
 const AZURE_AI_ENDPOINT = isLocalhost
     ? "http://127.0.0.1:5001/chat"
     : SUPABASE_CHAT_ENDPOINT;
+const IA_ENDPOINT_FALLBACKS = isLocalhost
+    ? [AZURE_AI_ENDPOINT, SUPABASE_CHAT_ENDPOINT]
+    : [SUPABASE_CHAT_ENDPOINT];
 
 
 const iaChatInput = document.getElementById('ia-chat-input');
@@ -9625,6 +10111,27 @@ function restartIaChat() {
 }
 btnIaRestart?.addEventListener('click', restartIaChat);
 
+async function postIaPayload(payload, useFormData = false) {
+    let lastError = null;
+    for (const endpoint of IA_ENDPOINT_FALLBACKS) {
+        try {
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: useFormData ? undefined : { 'Content-Type': 'application/json' },
+                body: useFormData ? payload : JSON.stringify(payload)
+            });
+            if (!response.ok) {
+                lastError = new Error(`Erro na API (${response.status})`);
+                continue;
+            }
+            return await response.json();
+        } catch (error) {
+            lastError = error;
+        }
+    }
+    throw lastError || new Error('Falha ao chamar a IA.');
+}
+
 async function sendIaMessage() {
     const text = iaChatInput.value.trim();
     if (!text) return;
@@ -9636,23 +10143,11 @@ async function sendIaMessage() {
     const typingIndicator = addMessageToChat('Digitando...', 'ia', true);
     
     try {
-        const response = await fetch(AZURE_AI_ENDPOINT, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                messages: chatHistory,
-                generateAudio: true, // Solicita síntese de voz na resposta
-                previous_response_id: lastResponseId
-            })
+        const data = await postIaPayload({
+            messages: chatHistory,
+            generateAudio: true, // Solicita síntese de voz na resposta
+            previous_response_id: lastResponseId
         });
-
-        if (!response.ok) {
-            throw new Error(`Erro na API do Supabase: ${response.status}`);
-        }
-
-        const data = await response.json();
 
         if (data.error) {
             throw new Error(data.error.message || data.error);
@@ -9953,16 +10448,7 @@ async function sendIaAudioMessage(audioBlob) {
     if (lastResponseId) formData.append('previous_response_id', lastResponseId);
 
     try {
-        const response = await fetch(AZURE_AI_ENDPOINT, {
-            method: 'POST',
-            body: formData
-        });
-
-        if (!response.ok) {
-            throw new Error(`Erro na Edge Function do Supabase: ${response.status}`);
-        }
-
-        const data = await response.json();
+        const data = await postIaPayload(formData, true);
 
         if (data.error) {
             throw new Error(data.error.message || data.error);

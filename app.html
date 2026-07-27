@@ -675,12 +675,17 @@
                                     <small id="usage-active-now">0 sessões ativas agora</small>
                                 </article>
                                 <article class="admin-metric-card">
+                                    <span>Tempo médio por sessão</span>
+                                    <strong id="usage-avg-session-time">0</strong>
+                                    <small id="usage-avg-session-note">Baseado nas sessões registradas</small>
+                                </article>
+                                <article class="admin-metric-card">
                                     <span>Atividades monitoradas</span>
                                     <strong id="usage-total-activities">0</strong>
                                     <small id="usage-total-events">0 eventos registrados</small>
                                 </article>
                                 <article class="admin-metric-card">
-                                    <span>Atividade mais forte</span>
+                                    <span>Atividade com mais tempo</span>
                                     <strong id="usage-top-item">—</strong>
                                     <small id="usage-top-share">Sem dados suficientes ainda</small>
                                 </article>
@@ -696,8 +701,8 @@
                                 </section>
                                 <section class="admin-analytics-card">
                                     <div class="admin-card-header">
-                                        <h4>Atividades mais acessadas</h4>
-                                        <span>Itens com maior uso</span>
+                                        <h4>Tempo por atividade</h4>
+                                        <span>Último acesso e permanência</span>
                                     </div>
                                     <div id="usage-top-activities" class="usage-list"></div>
                                 </section>
@@ -716,6 +721,29 @@
                                     <div id="usage-live-sessions" class="usage-list"></div>
                                 </section>
                             </div>
+
+                            <section class="admin-analytics-card">
+                                <div class="admin-card-header">
+                                    <h4>Detalhe por atividade</h4>
+                                    <span>Tempo, acessos e último registro</span>
+                                </div>
+                                <div class="admin-table-wrapper usage-table-wrapper">
+                                    <table class="usage-detail-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Atividade</th>
+                                                <th>Tempo total</th>
+                                                <th>Média/acesso</th>
+                                                <th>Acessos</th>
+                                                <th>Último acesso</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="usage-activity-table-body">
+                                            <tr><td colspan="5">Carregando...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
 
                             <section class="admin-analytics-card">
                                 <div class="admin-card-header">
