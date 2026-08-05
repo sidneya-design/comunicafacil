@@ -324,6 +324,8 @@ function renderExercise() {
     setFeedback("", state.level === 5
         ? "Toque em Ouvir frase quando quiser. Depois, escolha uma imagem."
         : `Arraste uma opção até a lacuna. ${removalInstruction()}`);
+    const listenBtn = document.getElementById("listen-prompt");
+    if (listenBtn) listenBtn.classList.toggle("visible", Boolean(state.level === 5 || state.completed));
     updateCounters();
     prefetchTts(promptText(false));
 }
@@ -406,6 +408,8 @@ function validateIfReady() {
         state.completed = true;
         state.score += 1;
         nextButton.disabled = false;
+        const listenBtn = document.getElementById("listen-prompt");
+        if (listenBtn) listenBtn.classList.add("visible");
         setFeedback("success", "Muito bem! A frase está completa.", "fa-circle-check");
         updateCounters();
         speak(`Muito bem! ${promptText(true)}`);

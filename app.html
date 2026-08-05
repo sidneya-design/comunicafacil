@@ -236,9 +236,14 @@
                                         <small>Arraste, complete e ouça frases do cotidiano</small>
                                     </div>
                                 </div>
-                                <button type="button" class="edit-mode-btn" id="btn-manage-complete-sentence" style="display:none;">
-                                    <i class="fas fa-sliders" aria-hidden="true"></i> Gerenciar frases
-                                </button>
+                                <div style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
+                                    <button type="button" class="notify-header-btn" id="btn-notify-complete-sentence" style="display:none;" title="Avisar usuários por e-mail">
+                                        <i class="fas fa-envelope" aria-hidden="true"></i> Avisar usuários
+                                    </button>
+                                    <button type="button" class="edit-mode-btn" id="btn-manage-complete-sentence" style="display:none;">
+                                        <i class="fas fa-sliders" aria-hidden="true"></i> Gerenciar frases
+                                    </button>
+                                </div>
                             </div>
                             <iframe id="complete-sentence-frame" data-src="complete-frase.html?embedded=1"
                                 title="Atividade Complete a Frase" loading="lazy"></iframe>

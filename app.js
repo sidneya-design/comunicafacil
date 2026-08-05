@@ -2059,8 +2059,13 @@ async function saveExercisePlaylistToDB(title, itemsArray) {
 
 async function toggleExerciseVisibility(ex) {
     const newVisible = !(ex.visible !== false);
+    ex.visible = newVisible;
     if (ex.fromSupabase && supabaseClient) {
-        await supabaseClient.from('exercises').update({ visible: newVisible }).eq('id', ex.id);
+        try {
+            await supabaseClient.from('exercises').update({ visible: newVisible }).eq('id', ex.id);
+        } catch (e) {
+            console.warn('Erro ao atualizar visibilidade no Supabase:', e);
+        }
     } else {
         db.transaction(['exercises'], 'readonly').objectStore('exercises').get(ex.id).onsuccess = (e) => {
             const rec = e.target.result;
@@ -2210,7 +2215,7 @@ function renderExerciseCards(exercisesArray) {
             toggleBtn.onclick = (ev) => { ev.stopPropagation(); toggleExerciseVisibility(ex); };
             btn.appendChild(toggleBtn);
 
-            if (isVisible && ex.fromSupabase) {
+            if (isVisible) {
                 btn.appendChild(createNotifyUsersButton(displayTitle, 'Exercício'));
             }
 
@@ -2438,6 +2443,13 @@ function setupModals() {
     });
     document.getElementById('btn-strengths-roll')?.addEventListener('click', rollStrengthsBoardDie);
     document.getElementById('btn-strengths-complete')?.addEventListener('click', completeStrengthsBoardCard);
+    document.getElementById('btn-notify-complete-sentence')?.addEventListener('click', async () => {
+        const btn = document.getElementById('btn-notify-complete-sentence');
+        if (btn) btn.disabled = true;
+        await sendActivityNotification('Complete a Frase', 'Jogo');
+        if (btn) btn.disabled = false;
+    });
+
     document.getElementById('btn-manage-complete-sentence')?.addEventListener('click', () => {
         const frame = document.getElementById('complete-sentence-frame');
         const openManagerMessage = () => frame.contentWindow?.postMessage({ type: 'complete-sentence:open-manager' }, window.location.origin);
@@ -3020,28 +3032,32 @@ function setLocalGameFlag(gameId, visible) {
 
 async function getGameVisibility(gameId) {
     if (gameId === 'complete-sentence' && isCompleteSentenceLocalDemo()) return true;
+    const localFlags = getLocalGameFlags();
+    if (localFlags[gameId] !== undefined) {
+        return localFlags[gameId] !== false;
+    }
     if (supabaseClient) {
         try {
             const { data, error } = await supabaseClient.from('game_flags').select('visible').eq('game_id', gameId).single();
-            if (!error && data) return data.visible !== false;
+            if (!error && data && data.visible !== undefined) {
+                setLocalGameFlag(gameId, data.visible !== false);
+                return data.visible !== false;
+            }
         } catch (e) {}
     }
-    return getLocalGameFlags()[gameId] !== false; // default: visível
+    return true;
 }
 
 async function toggleGameVisibility(gameId, currentVisible) {
     const newVisible = !currentVisible;
+    setLocalGameFlag(gameId, newVisible);
     if (supabaseClient) {
         try {
-            const { error } = await supabaseClient.from('game_flags').upsert({ game_id: gameId, visible: newVisible });
-            if (error) throw error;
-            renderActivityLists();
-            return;
+            await supabaseClient.from('game_flags').upsert({ game_id: gameId, visible: newVisible });
         } catch (e) {
             console.warn('Fallback local para game_flags:', e);
         }
     }
-    setLocalGameFlag(gameId, newVisible);
     renderActivityLists();
 }
 
@@ -3238,6 +3254,7 @@ async function renderExerciseActivities() {
 
 function renderActivityLists() {
     renderGamesList();
+    renderExerciseActivities();
     renderExerciseCards(lastMergedExercises);
 }
 
@@ -8950,6 +8967,8 @@ function showEditBars() {
     });
     const completeSentenceManager = document.getElementById('btn-manage-complete-sentence');
     if (completeSentenceManager) completeSentenceManager.style.display = isAdmin ? 'flex' : 'none';
+    const completeSentenceNotify = document.getElementById('btn-notify-complete-sentence');
+    if (completeSentenceNotify) completeSentenceNotify.style.display = isAdmin ? 'inline-flex' : 'none';
 }
 
 // Mostra "Salvando..." e desabilita os botões de ação enquanto as cartas pendentes

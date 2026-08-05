@@ -25,9 +25,16 @@ body {
     overflow-x: hidden;
 }
 
+html, body.embedded-mode {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
 body.embedded-mode {
-    min-height: 100%;
     background: #f8f7fc;
+    box-sizing: border-box;
+    padding: 6px 8px 30px;
 }
 
 body.embedded-mode .page-glow,
@@ -35,17 +42,22 @@ body.embedded-mode .activity-header,
 body.embedded-mode .intro-row,
 body.embedded-mode .accessibility-note { display: none; }
 
-body.embedded-mode .activity-shell { width: 100%; margin: 0; padding: 0; }
-body.embedded-mode .level-picker { margin: 0 0 10px; padding: 2px; }
-body.embedded-mode .exercise-card { padding: clamp(16px, 2.4vw, 26px); border-radius: 18px; box-shadow: none; }
-body.embedded-mode .exercise-topline .score-card { margin-left: auto; padding: 8px 13px; gap: 12px; border-radius: 13px; box-shadow: none; }
-body.embedded-mode .exercise-topline .score-card div:not(.score-divider) { min-width: 52px; }
-body.embedded-mode .exercise-topline .score-card span { font-size: .64rem; }
+body.embedded-mode .activity-shell { width: 100%; margin: 0; padding: 0 0 20px; }
+body.embedded-mode .level-picker { margin: 0 0 8px; padding: 2px; }
+body.embedded-mode .level-button { padding: 8px 10px; }
+body.embedded-mode .exercise-card { padding: clamp(12px, 2vw, 20px); border-radius: 18px; box-shadow: none; }
+body.embedded-mode .exercise-topline .score-card { margin-left: auto; padding: 6px 12px; gap: 10px; border-radius: 12px; box-shadow: none; }
+body.embedded-mode .exercise-topline .score-card div:not(.score-divider) { min-width: 48px; }
+body.embedded-mode .exercise-topline .score-card span { font-size: .62rem; }
 body.embedded-mode .exercise-topline .score-card strong { font-size: 1.05rem; }
 body.embedded-mode .exercise-topline .score-divider { height: 27px; }
-body.embedded-mode .sentence-area { min-height: 110px; padding: 18px 8px; }
-body.embedded-mode .visual-clue { width: 100px; height: 100px; margin-top: 16px; font-size: 3.8rem; }
-body.embedded-mode .exercise-actions { margin-top: 20px; }
+body.embedded-mode .sentence-area { min-height: 80px; padding: 12px 6px; }
+body.embedded-mode .visual-clue { width: 75px; height: 75px; margin-top: 8px; font-size: 2.8rem; border-radius: 18px; }
+body.embedded-mode .feedback { min-height: 38px; padding: 6px 12px; margin-top: 6px; font-size: 0.92rem; }
+body.embedded-mode .options-label { margin: 12px 2px 8px; }
+body.embedded-mode .word-bank { min-height: 56px; gap: 10px; }
+body.embedded-mode .word-option { min-width: 120px; min-height: 50px; padding: 8px 16px; font-size: 1.1rem; }
+body.embedded-mode .exercise-actions { margin-top: 14px; }
 
 button, a { font: inherit; }
 button { color: inherit; }
@@ -218,7 +230,7 @@ h1 { margin: 0; font-size: clamp(2rem, 4vw, 3.45rem); line-height: 1.04; letter-
 .exercise-topline { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
 .instruction { margin: 0; color: var(--muted); font-size: 1.05rem; font-weight: 650; }
 .listen-button {
-    display: inline-flex;
+    display: none;
     align-items: center;
     gap: 9px;
     min-height: 46px;
@@ -227,6 +239,9 @@ h1 { margin: 0; font-size: clamp(2rem, 4vw, 3.45rem); line-height: 1.04; letter-
     background: var(--purple-soft);
     border-radius: 14px;
     font-weight: 750;
+}
+.listen-button.visible {
+    display: inline-flex;
 }
 
 .visual-clue { display: none; margin: 28px auto 0; width: 140px; height: 140px; place-items: center; font-size: 5.4rem; background: #f8f5ff; border: 2px solid var(--line); border-radius: 28px; }
