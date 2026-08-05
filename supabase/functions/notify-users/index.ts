@@ -84,11 +84,13 @@ Deno.serve(async (req) => {
     }
 
     const safeTitle = escapeHtml(title);
-    const safeCategory = escapeHtml(category);
-    const genderArticle = ["categoria", "atividade"].includes(category.toLowerCase()) ? "A" : "O";
-    const genderAdjective = ["categoria", "atividade"].includes(category.toLowerCase()) ? "Nova" : "Novo";
+    const categoryKey = category.toLowerCase();
+    const genderAdjective = ["categoria", "atividade"].includes(categoryKey) ? "Nova" : "Novo";
+    const introArticle = ["categoria", "atividade"].includes(categoryKey) ? "A" : "O";
+    const introCategory = categoryKey === "jogo" ? "jogo" : categoryKey;
+    const introText = `${introArticle} ${introCategory} <strong>${safeTitle}</strong> já está disponível para você.`;
     const linkHtml = APP_PUBLIC_URL
-      ? `<p style="margin:24px 0"><a href="${escapeHtml(APP_PUBLIC_URL)}" style="background:#2563eb;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700">Abrir Comunica Fácil</a></p>`
+      ? `<p style="margin:20px 0 0"><a href="${escapeHtml(APP_PUBLIC_URL)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:700;font-size:16px;line-height:1">Abrir Comunica Fácil</a></p>`
       : "";
 
     // O Supabase bloqueia SMTP nas portas 25 e 587. O Gmail usa TLS direto na 465.
@@ -103,9 +105,9 @@ Deno.serve(async (req) => {
       from: `Comunica Fácil <${GMAIL_SMTP_USER}>`,
       to: GMAIL_SMTP_USER,
       bcc: recipients,
-      subject: `${genderAdjective} ${category.toLowerCase()} disponível: ${title}`,
-      text: `Olá! ${genderArticle} ${category.toLowerCase()} "${title}" já está disponível no Comunica Fácil.${APP_PUBLIC_URL ? ` Acesse: ${APP_PUBLIC_URL}` : ""}`,
-      html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;color:#1f2937"><h2 style="color:#2563eb">Novidade no Comunica Fácil</h2><p>Olá!</p><p>${genderArticle} ${safeCategory.toLowerCase()} <strong>${safeTitle}</strong> já está disponível para você.</p>${linkHtml}<p style="color:#6b7280;font-size:13px">Este é um aviso automático do Comunica Fácil.</p></div>`,
+      subject: `${genderAdjective} ${categoryKey} disponível: ${title}`,
+      text: `Olá! ${introArticle} ${introCategory} "${title}" já está disponível para você. ${APP_PUBLIC_URL ? `Abra o Comunica Fácil: ${APP_PUBLIC_URL}` : ""}`.trim(),
+      html: `<div style="margin:0;background:#ffffff;font-family:Arial,sans-serif;color:#1f2937"><div style="max-width:560px;padding:28px 24px 32px"><h1 style="margin:0 0 18px;font-size:28px;line-height:1.15;color:#2563eb;font-weight:800">Novidade no Comunica Fácil</h1><p style="margin:0 0 14px;font-size:18px;line-height:1.5;color:#111827">Olá!</p><p style="margin:0;font-size:18px;line-height:1.6;color:#1f2937">${introText}</p>${linkHtml}<p style="margin:18px 0 0;font-size:14px;line-height:1.5;color:#6b7280">Este é um aviso automático do Comunica Fácil.</p></div></div>`,
     });
 
     return json({ recipientCount: recipients.length });
