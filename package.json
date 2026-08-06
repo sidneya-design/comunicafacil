@@ -1,0 +1,13 @@
+{
+  "type": "module",
+  "scripts": {
+    "populate": "node scripts/populate_books.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.2",
+    "dotenv": "^17.4.2",
+    "epubjs": "^0.3.93",
+    "node-fetch": "^2.6.7",
+    "pdfjs-dist": "^6.2.108"
+  }
+}

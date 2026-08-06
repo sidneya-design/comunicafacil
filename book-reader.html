@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ComunicaFácil · Livros</title>
+  <meta name="description" content="Leitor de livros EPUB e PDF" />
+  <link rel="stylesheet" href="book-reader.css" />
+  <!-- JSZip is required by epub.js when loading from ArrayBuffer -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://unpkg.com/epubjs/dist/epub.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+</head>
+<body>
+
+<!-- Navbar Netflix-style -->
+<header class="netflix-nav">
+  <div class="nav-left">
+    <h1 class="logo">ComunicaFácil <span>Livros</span></h1>
+    <ul class="nav-links">
+      <li class="active">Início</li>
+      <li>Meus Livros</li>
+    </ul>
+  </div>
+  <div class="nav-right">
+    <button id="nav-upload-btn" class="nav-btn">Upload</button>
+  </div>
+</header>
+
+<!-- Main Library View -->
+<main id="library-view" class="netflix-main">
+  
+  <!-- Hero Section -->
+  <div class="hero-section">
+    <div class="hero-content">
+      <h2>Sua Biblioteca</h2>
+      <p>Leia seus PDFs e EPUBs favoritos diretamente no navegador com suporte a leitura em voz alta.</p>
+    </div>
+  </div>
+
+  <!-- Rows -->
+  <div class="netflix-row">
+    <h3>Continuar Lendo</h3>
+    <div class="row-container">
+      <ul id="book-list-recent" class="row-items">
+        <!-- populated by JS -->
+      </ul>
+      <div id="empty-msg" class="empty-msg" style="display:none;">Nenhum livro encontrado.</div>
+    </div>
+  </div>
+
+  <div class="netflix-row">
+    <h3>Adicionados Recentemente</h3>
+    <div class="row-container">
+      <ul id="book-list-all" class="row-items">
+        <!-- populated by JS -->
+      </ul>
+    </div>
+  </div>
+
+</main>
+
+<!-- Upload Modal -->
+<div id="upload-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-content">
+    <button id="close-modal" class="close-btn">&times;</button>
+    <h2>Adicionar novo livro</h2>
+    <div class="upload-dropzone" id="dropzone">
+      <span class="upload-icon">📂</span>
+      <p>Arraste um arquivo ou clique para selecionar</p>
+      <span>EPUB ou PDF · até 200 MB</span>
+      <input type="file" id="book-file" accept=".epub,.pdf" />
+    </div>
+    <button id="upload-btn" class="btn-primary">Enviar Livro</button>
+    <div id="upload-status" class="upload-status"></div>
+  </div>
+</div>
+
+<!-- Reader View (Hidden by default) -->
+<div id="reader-view" class="reader-view" style="display:none;">
+  <header class="reader-header">
+    <button id="back-to-library" class="btn-icon">← Voltar</button>
+    <h2 id="reader-title">Lendo...</h2>
+    
+    <div class="reader-controls">
+      <button class="btn-icon" id="listen-btn" style="margin-right: 1rem; font-weight: bold; color: var(--accent);">🎧 Ouvir Áudio</button>
+      <select id="font-size-select" class="ctrl-select" style="margin-right: 1rem;">
+        <option value="1rem">A- (Pequeno)</option>
+        <option value="1.15rem" selected>A (Normal)</option>
+        <option value="1.4rem">A+ (Grande)</option>
+        <option value="1.8rem">A++ (Gigante)</option>
+      </select>
+      <select id="theme-select" class="ctrl-select">
+        <option value="dark" selected>Escuro</option>
+        <option value="light">Claro</option>
+      </select>
+    </div>
+  </header>
+
+  <div class="viewer-wrapper" style="position: relative; flex: 1; width: 100%; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.4); padding: 1rem;">
+    <button id="prev-page-btn" class="nav-page-btn" style="left: 1rem;">&#10094;</button>
+    
+    <div class="device-frame">
+      <div id="viewer" class="device-screen viewer-container" style="width: 100%; height: 100%;"></div>
+      <div class="device-logo">ComunicaFácil<span>Livros</span></div>
+    </div>
+    
+    <!-- TTS Player Bar -->
+    <div id="tts-player" class="tts-player hidden">
+      <select id="tts-voice-select" class="tts-btn" style="font-size: 0.9rem; max-width: 150px; background: rgba(255,255,255,0.1); border-radius: 20px; padding: 5px 10px;"></select>
+      <button class="tts-btn tts-speed" id="tts-speed-btn" title="Velocidade">1.0x</button>
+      <button class="tts-btn" id="tts-rewind-btn" title="Reiniciar Página">↺</button>
+      <button class="tts-btn tts-play-pause" id="tts-play-pause-btn">▶</button>
+      <button class="tts-btn" id="tts-stop-btn" title="Fechar Áudio">✕</button>
+    </div>
+
+    <button id="next-page-btn" class="nav-page-btn" style="right: 1rem;">&#10095;</button>
+  </div>
+</div>
+
+<script src="book-reader.js" type="module"></script>
+</body>
+</html>

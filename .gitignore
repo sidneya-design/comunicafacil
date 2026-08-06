@@ -7,3 +7,7 @@ supabase/.temp/
 backups/
 *.zip
 
+node_modules/
+*.xlsx
+*.csv
+scripts/

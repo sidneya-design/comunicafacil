@@ -225,3 +225,29 @@ insert into public.topic_items (topic_id, word, style_class) values
 (2, 'bola', 'border-orange'),
 (2, 'carrinho', 'border-orange'),
 (2, 'boneca', 'border-orange');
+
+-- ========================================================
+-- TABELA: books (Livros para leitura interna)
+-- ========================================================
+
+create table if not exists public.books (
+    id uuid default uuid_generate_v4() primary key,
+    title text not null,
+    mime_type text not null default 'application/pdf',
+    file_path text not null,
+    file_size bigint,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+    updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Habilitar RLS
+alter table public.books enable row level security;
+
+-- Qualquer usuário autenticado pode listar e ler os livros
+create policy "Leitura de livros para usuários públicos" on public.books
+    for select using (true);
+
+-- Apenas usuários autenticados podem inserir/atualizar/deletar livros
+create policy "Escrita de livros para admins autenticados" on public.books
+    for all to authenticated using (true) with check (true);
+
