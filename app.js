@@ -3150,6 +3150,7 @@ function renderAdminModulesPanel(flags) {
         { id: 'view-virtues', name: 'Fomes e Forças', icon: 'fa-star' },
         { id: 'view-keyboard', name: 'Teclado', icon: 'fa-keyboard' },
         { id: 'view-media', name: 'Mídias', icon: 'fa-play-circle' },
+        { id: 'view-books', name: 'Livros', icon: 'fa-book' },
         { id: 'view-exercises', name: 'Exercícios', icon: 'fa-dumbbell' },
         { id: 'view-games', name: 'Jogos', icon: 'fa-gamepad' },
         { id: 'view-ia', name: 'Assistente IA', icon: 'fa-robot' }
