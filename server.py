@@ -123,7 +123,8 @@ def clean_text_for_tts(text):
 # O fluxo do chat com IA continua usando o Azure TTS oficial (synthesize_text) abaixo.
 EDGE_TTS_VOICE = "pt-BR-FranciscaNeural"
 
-def synthesize_text_edge(text, voice="pt-BR-AntonioNeural", rate="-12%", pitch="-2Hz"):
+def synthesize_text_edge(text, voice=EDGE_TTS_VOICE, rate="-12%", pitch="-2Hz"):
+    print(f"[TTS-DEBUG] voice={voice!r} rate={rate!r} text={text[:40]!r}", flush=True)
     text = clean_text_for_tts(text)
     if not text:
         return None
@@ -149,7 +150,7 @@ def synthesize_text(text):
         "User-Agent": "ComunicaFacilTTS"
     }
     ssml = f"""<speak version='1.0' xml:lang='pt-BR'>
-        <voice xml:lang='pt-BR' xml:gender='Male' name='pt-BR-AntonioNeural'>
+        <voice xml:lang='pt-BR' xml:gender='Female' name='pt-BR-FranciscaNeural'>
             {text}
         </voice>
     </speak>"""

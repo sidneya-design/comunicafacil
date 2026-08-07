@@ -236,6 +236,10 @@ create table if not exists public.books (
     mime_type text not null default 'application/pdf',
     file_path text not null,
     file_size bigint,
+    genre text,
+    last_page integer,
+    last_location text,
+    last_read_at timestamp with time zone,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
     updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );

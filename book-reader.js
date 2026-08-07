@@ -40,6 +40,13 @@ function deriveCoverPath(filePath) {
   return `covers/${uuid}.jpg`;
 }
 
+// ── Gêneros ────────────────────────────────────────────────
+const GENRES = [
+  'Romance', 'Ficção', 'Fantasia', 'Suspense e Mistério',
+  'Biografia', 'Autoajuda', 'Infantil', 'Poesia', 'Arte e Cultura',
+  'Não-ficção', 'Outros'
+];
+
 // ── UI Elements ─────────────────────────────────────────
 const navUploadBtn = document.getElementById('nav-upload-btn');
 const uploadModal = document.getElementById('upload-modal');
@@ -55,8 +62,8 @@ const backToLibrary = document.getElementById('back-to-library');
 const viewer = document.getElementById('viewer');
 const readerTitle = document.getElementById('reader-title');
 
-const bookListAll = document.getElementById('book-list-all');
-const bookListRecent = document.getElementById('book-list-recent');
+const genreRowsContainer = document.getElementById('genre-rows-container');
+const bookGenreSelect = document.getElementById('book-genre');
 const emptyMsg = document.getElementById('empty-msg');
 
 const listenBtn = document.getElementById('listen-btn');
@@ -214,8 +221,9 @@ async function uploadFile(file) {
 
     // 3. Registrar no banco
     const title = file.name.replace(/\.[^/.]+$/, '');
+    const genre = bookGenreSelect?.value || 'Outros';
     const { error: dbErr } = await supabase.from('books').insert({
-      title, mime_type: mimeType, file_path: filePath, file_size: file.size,
+      title, mime_type: mimeType, file_path: filePath, file_size: file.size, genre,
     });
 
     if (dbErr) return setStatus('❌ Erro ao salvar: ' + dbErr.message, 'error');
@@ -235,12 +243,75 @@ async function uploadFile(file) {
   }
 }
 
+if (bookGenreSelect) {
+  bookGenreSelect.innerHTML = GENRES.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+}
+
 function setStatus(msg, type = '') {
   uploadStatus.textContent = msg;
   uploadStatus.style.color = type === 'error' ? 'var(--accent)' : type === 'success' ? '#46d369' : 'var(--text-muted)';
 }
 
 uploadBtn.addEventListener('click', () => uploadFile(fileInput.files?.[0]));
+
+// ── Editar / Excluir ───────────────────────────────────────
+const editModal = document.getElementById('edit-modal');
+const closeEditModal = document.getElementById('close-edit-modal');
+const editTitleInput = document.getElementById('edit-title-input');
+const editGenreSelect = document.getElementById('edit-genre-select');
+const editSaveBtn = document.getElementById('edit-save-btn');
+const editStatus = document.getElementById('edit-status');
+let editingBookId = null;
+
+if (editGenreSelect) {
+  editGenreSelect.innerHTML = GENRES.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+}
+
+function openEditModal(book) {
+  editingBookId = book.id;
+  editTitleInput.value = book.title || '';
+  editGenreSelect.value = GENRES.includes(book.genre) ? book.genre : 'Outros';
+  editStatus.textContent = '';
+  editModal.style.display = 'flex';
+}
+
+closeEditModal?.addEventListener('click', () => { editModal.style.display = 'none'; });
+
+editSaveBtn?.addEventListener('click', async () => {
+  const title = editTitleInput.value.trim();
+  if (!title) { editStatus.textContent = '⚠️ Informe um título.'; return; }
+
+  editSaveBtn.disabled = true;
+  editStatus.textContent = '⏳ Salvando...';
+
+  const { error } = await supabase.from('books')
+    .update({ title, genre: editGenreSelect.value })
+    .eq('id', editingBookId);
+
+  editSaveBtn.disabled = false;
+  if (error) { editStatus.textContent = '❌ Erro ao salvar: ' + error.message; return; }
+
+  editModal.style.display = 'none';
+  await loadBookList();
+});
+
+async function deleteBook(book) {
+  const title = book.title || 'este livro';
+  if (!confirm(`Apagar "${title}"? Essa ação não pode ser desfeita.`)) return;
+
+  const filePath = (book.file_path || '').replace(/^\/+/, '');
+  const coverPath = deriveCoverPath(book.file_path);
+  const pathsToRemove = [filePath, coverPath].filter(Boolean);
+  if (pathsToRemove.length) {
+    const { error: storageErr } = await supabase.storage.from('books').remove(pathsToRemove);
+    if (storageErr) console.warn('[BookReader] Erro ao remover arquivos do storage:', storageErr.message);
+  }
+
+  const { error: dbErr } = await supabase.from('books').delete().eq('id', book.id);
+  if (dbErr) { alert('Erro ao excluir: ' + dbErr.message); return; }
+
+  await loadBookList();
+}
 
 // ── Book List ────────────────────────────────────────────
 const BOOK_GRADIENTS = [
@@ -289,6 +360,10 @@ function createBookCard(book, index) {
   li.innerHTML = `
     <div class="book-cover-fallback" style="background: ${bgGradient}"></div>
     ${coverUrl ? `<img class="book-cover" src="${coverUrl}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+    <div class="book-card-actions">
+      <button type="button" class="card-action-btn" data-action="edit" title="Editar" aria-label="Editar ${escapeHtml(title)}">✎</button>
+      <button type="button" class="card-action-btn" data-action="delete" title="Excluir" aria-label="Excluir ${escapeHtml(title)}">🗑</button>
+    </div>
     <span class="book-type">${type}</span>
     <div class="book-info-overlay">
       <span class="book-icon" aria-hidden="true">${icon}</span>
@@ -298,39 +373,88 @@ function createBookCard(book, index) {
 
   li.addEventListener('click', () => openReader(book));
   li.addEventListener('keydown', e => {
+    if (e.target !== li) return; // deixa os botões internos tratarem sua própria ativação
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       openReader(book);
     }
   });
 
+  li.querySelector('[data-action="edit"]')?.addEventListener('click', e => {
+    e.stopPropagation();
+    openEditModal(book);
+  });
+  li.querySelector('[data-action="delete"]')?.addEventListener('click', e => {
+    e.stopPropagation();
+    deleteBook(book);
+  });
+
   return li;
 }
 
-function renderRecentRow(data) {
-  bookListRecent.innerHTML = '';
+function createGenreRow(title, items) {
+  const row = document.createElement('div');
+  row.className = 'netflix-row';
+
+  const heading = document.createElement('h3');
+  heading.textContent = title;
+
+  const container = document.createElement('div');
+  container.className = 'row-container';
+
+  const ul = document.createElement('ul');
+  ul.className = 'row-items';
+  items.forEach((book, index) => ul.appendChild(createBookCard(book, index)));
+
+  container.appendChild(ul);
+  row.appendChild(heading);
+  row.appendChild(container);
+  return row;
+}
+
+function renderLibrary(data) {
+  genreRowsContainer.innerHTML = '';
+
   if (!data.length) {
     emptyMsg.style.display = 'block';
     return;
   }
   emptyMsg.style.display = 'none';
-  data.slice(0, 5).forEach((book, index) => bookListRecent.appendChild(createBookCard(book, index)));
+
+  const continuing = data
+    .filter(b => b.last_read_at)
+    .sort((a, b) => new Date(b.last_read_at) - new Date(a.last_read_at))
+    .slice(0, 10);
+  if (continuing.length) genreRowsContainer.appendChild(createGenreRow('Continuar Lendo', continuing));
+
+  const grouped = new Map();
+  GENRES.forEach(g => grouped.set(g, []));
+  data.forEach(book => {
+    const genre = GENRES.includes(book.genre) ? book.genre : 'Outros';
+    grouped.get(genre).push(book);
+  });
+
+  GENRES.forEach(genre => {
+    const items = grouped.get(genre);
+    if (items.length) genreRowsContainer.appendChild(createGenreRow(genre, items));
+  });
 }
 
-function renderAllRow(data) {
-  bookListAll.innerHTML = '';
-  if (!data.length) {
-    bookListAll.innerHTML = '<li class="no-results">Nenhum livro encontrado com esse título.</li>';
+function renderSearchResults(matches) {
+  genreRowsContainer.innerHTML = '';
+  if (!matches.length) {
+    emptyMsg.style.display = 'block';
     return;
   }
-  data.forEach((book, index) => bookListAll.appendChild(createBookCard(book, index)));
+  emptyMsg.style.display = 'none';
+  genreRowsContainer.appendChild(createGenreRow('Resultados da busca', matches));
 }
 
 async function loadBookList() {
   console.log('[BookReader] Carregando lista de livros...');
   const { data, error } = await supabase
     .from('books')
-    .select('id, title, mime_type, file_path')
+    .select('id, title, mime_type, file_path, genre, last_page, last_location, last_read_at')
     .order('created_at', { ascending: false });
 
   if (error) { console.error('[BookReader] Erro na listagem:', error); return; }
@@ -338,15 +462,15 @@ async function loadBookList() {
 
   allBooksCache = data || [];
   coverUrlMap = await resolveCoverUrls(allBooksCache);
-  renderRecentRow(allBooksCache);
-  renderAllRow(allBooksCache);
+  renderLibrary(allBooksCache);
 }
 
 const bookSearchInput = document.getElementById('book-search');
 bookSearchInput?.addEventListener('input', () => {
   const q = bookSearchInput.value.trim().toLowerCase();
-  const filtered = q ? allBooksCache.filter(b => (b.title || '').toLowerCase().includes(q)) : allBooksCache;
-  renderAllRow(filtered);
+  if (!q) { renderLibrary(allBooksCache); return; }
+  const filtered = allBooksCache.filter(b => (b.title || '').toLowerCase().includes(q));
+  renderSearchResults(filtered);
 });
 
 // ── Open Reader ──────────────────────────────────────────
@@ -434,7 +558,32 @@ backToLibrary.addEventListener('click', () => {
   currentBook = null;
   currentViewer = null;
   window.speechSynthesis.cancel();
+  renderLibrary(allBooksCache); // atualiza a fileira "Continuar Lendo" com o progresso recém-salvo
 });
+
+// ── Progresso de leitura ───────────────────────────────────
+let saveProgressTimer = null;
+function saveProgress() {
+  if (!currentBook?.id) return;
+  clearTimeout(saveProgressTimer);
+  saveProgressTimer = setTimeout(async () => {
+    const payload = { last_read_at: new Date().toISOString() };
+    if (currentViewer?.type === 'pdf') {
+      payload.last_page = currentViewer.pageIndex;
+    } else if (currentViewer?.type === 'epub' && currentEpubLocation?.start?.cfi) {
+      payload.last_location = currentEpubLocation.start.cfi;
+    } else {
+      return;
+    }
+    const { error } = await supabase.from('books').update(payload).eq('id', currentBook.id);
+    if (error) {
+      console.warn('[BookReader] Erro ao salvar progresso:', error.message);
+      return;
+    }
+    const cached = allBooksCache.find(b => b.id === currentBook.id);
+    if (cached) Object.assign(cached, payload);
+  }, 600);
+}
 
 // ── Helper para rolar página no PDF ───────────────────────
 function scrollToPdfPage(pageIndex) {
@@ -474,12 +623,15 @@ async function renderPDF(url) {
       viewer.appendChild(canvas);
     }
 
-    currentViewer = { type: 'pdf', pdf, pageIndex: 1, totalPages: pdf.numPages };
+    const resumePage = (currentBook?.last_page >= 1 && currentBook.last_page <= pdf.numPages) ? currentBook.last_page : 1;
+    currentViewer = { type: 'pdf', pdf, pageIndex: resumePage, totalPages: pdf.numPages };
+    if (resumePage > 1) scrollToPdfPage(resumePage);
 
     prevPageBtn.onclick = () => {
       if (currentViewer?.type === 'pdf' && currentViewer.pageIndex > 1) {
         currentViewer.pageIndex--;
         scrollToPdfPage(currentViewer.pageIndex);
+        saveProgress();
         if (ttsState === 'playing' || ttsState === 'paused') readCurrentPage(false);
       }
     };
@@ -488,6 +640,7 @@ async function renderPDF(url) {
       if (currentViewer?.type === 'pdf' && currentViewer.pageIndex < currentViewer.totalPages) {
         currentViewer.pageIndex++;
         scrollToPdfPage(currentViewer.pageIndex);
+        saveProgress();
         if (ttsState === 'playing' || ttsState === 'paused') readCurrentPage(false);
       }
     };
@@ -570,7 +723,7 @@ async function renderEPUB(url) {
     const initialFontSize = localStorage.getItem('fontSize') || '1.15rem';
     rendition.themes.fontSize(initialFontSize);
 
-    await rendition.display();
+    await rendition.display(currentBook?.last_location || undefined);
     currentViewer = { type: 'epub', book, rendition };
 
     const goNext = () => rendition.next();
@@ -585,6 +738,7 @@ async function renderEPUB(url) {
         else if (currentViewer.type === 'pdf' && currentViewer.pageIndex < currentViewer.totalPages) {
           currentViewer.pageIndex++;
           scrollToPdfPage(currentViewer.pageIndex);
+          saveProgress();
         }
       }
       if (e.key === 'ArrowLeft') {
@@ -593,6 +747,7 @@ async function renderEPUB(url) {
         else if (currentViewer.type === 'pdf' && currentViewer.pageIndex > 1) {
           currentViewer.pageIndex--;
           scrollToPdfPage(currentViewer.pageIndex);
+          saveProgress();
         }
       }
     });
@@ -610,6 +765,7 @@ async function renderEPUB(url) {
     rendition.on('relocated', (location) => {
       currentEpubLocation = location;
       stopAudio();
+      saveProgress();
     });
 
     prevPageBtn.onclick = () => { stopAudio(); goPrev(); };

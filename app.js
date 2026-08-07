@@ -1588,15 +1588,23 @@ function prefetchTts(text) {
 
 // Função principal de áudio — usada em todo o app (cards, jogos, compositor).
 // Usa a voz neural FranciscaNeural via edge-tts com fallback para o navegador.
+//
+// ttsRequestId evita que dois cliques em sequência rápida toquem áudio ao mesmo
+// tempo: se a resposta de uma chamada mais antiga chega depois de uma mais nova
+// já ter assumido, ela é descartada em vez de tocar por cima da atual.
+let ttsRequestId = 0;
 async function speakWithAzure(text) {
     if (!text) return;
+    const myRequestId = ++ttsRequestId;
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    if (currentAudio) currentAudio.pause();
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     try {
         const audioBase64 = await getTtsAudio(text);
+        if (myRequestId !== ttsRequestId) return;
         currentAudio = new Audio('data:audio/mp3;base64,' + audioBase64);
         await currentAudio.play();
     } catch (e) {
+        if (myRequestId !== ttsRequestId) return;
         console.warn('TTS via backend indisponível, usando a voz do navegador:', e.message);
         _speakNative(text);
     }
