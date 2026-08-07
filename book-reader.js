@@ -731,11 +731,12 @@ async function renderEPUB(url) {
       flow: 'paginated'
     });
     
+    const epubBodyPadding = window.innerWidth <= 768 ? '1rem 0.6rem !important' : '1.5rem 2rem !important';
     rendition.themes.default({
-      'body': { 
+      'body': {
         'font-family': "'Georgia', 'Times New Roman', serif",
         'color': '#2b2b2b',
-        'padding': '1.5rem 2rem !important',
+        'padding': epubBodyPadding,
         'box-sizing': 'border-box !important',
         'word-wrap': 'break-word !important',
         'overflow-wrap': 'break-word !important'

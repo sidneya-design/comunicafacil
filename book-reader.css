@@ -488,7 +488,7 @@ body {
   .app-header { flex-direction: column; align-items: stretch; gap: 1rem; }
   .device-frame {
     margin: 0;
-    padding: 0;
+    padding: 0 0 3.4rem 0;
     border-radius: 0;
     box-shadow: none;
     max-width: 100%;
@@ -498,17 +498,52 @@ body {
   .device-logo { display: none; }
   .device-screen { border-radius: 0; box-shadow: none; }
   .viewer-wrapper { padding: 0 !important; background: var(--bg) !important; }
+  .viewer-container { padding: 0.6rem 0.4rem; }
   .nav-page-btn {
-    width: 36px; height: 36px; font-size: 1.2rem;
+    width: 40px; height: 40px; font-size: 1.1rem; opacity: 0.7;
+    top: auto;
+    bottom: 0.6rem;
+    transform: none;
+  }
+  .nav-page-btn:active { opacity: 1; }
+  #prev-page-btn { left: 0.6rem !important; }
+  #next-page-btn { right: 0.6rem !important; }
+  .reading-progress {
+    position: absolute;
+    left: 50%;
+    bottom: 1.35rem;
+    transform: translateX(-50%);
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+    z-index: 11;
   }
   .reader-header {
-    flex-direction: column;
-    height: auto;
-    gap: 1rem;
-    padding: 1rem;
-  }
-  .reader-controls {
-    width: 100%;
+    flex-direction: row;
+    flex-wrap: nowrap;
     justify-content: space-between;
+    align-items: center;
+    height: auto;
+    column-gap: 0.4rem;
+    padding: 0.5rem 0.6rem;
   }
+  #back-to-library {
+    order: 1;
+    flex-shrink: 0;
+    padding: 0.32rem 0.5rem;
+    font-size: 0.78rem;
+    gap: 0.3rem;
+  }
+  .reader-controls { display: contents; }
+  .font-size-stepper { order: 2; flex-shrink: 0; margin: 0; padding: 2px; gap: 1px; }
+  .theme-toggle { order: 3; flex-shrink: 0; padding: 2px; gap: 1px; }
+  .reader-header h2 { display: none; }
+  .stepper-label { min-width: 2.5rem; font-size: 0.6rem; }
+  .stepper-btn, .theme-btn { width: 24px; height: 24px; min-width: 24px; font-size: 0.7rem; }
+  .theme-btn { font-size: 0.75rem; }
+  .hero-content h2 { font-size: 1.9rem; }
+  .hero-content p { font-size: 1rem; }
+  .netflix-row, .search-row { padding: 0 5%; }
+  .row-items li { flex-basis: 150px; }
 }
