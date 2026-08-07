@@ -59,10 +59,6 @@ body {
 .logo { font-size: 1.5rem; font-weight: 700; color: var(--accent); cursor: pointer; }
 .logo span { color: var(--text); font-weight: 300; }
 
-.nav-links { display: flex; list-style: none; gap: 1.5rem; }
-.nav-links li { font-size: 0.9rem; cursor: pointer; color: var(--text-muted); transition: color var(--transition); }
-.nav-links li:hover, .nav-links li.active { color: var(--text); font-weight: 500; }
-
 .nav-btn {
   background: var(--accent);
   color: #fff;
@@ -92,7 +88,7 @@ body {
 }
 
 [data-theme="light"] .hero-section {
-  background: radial-gradient(circle at 85% 30%, rgba(229, 9, 20, 0.15) 0%, transparent 60%), linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%);
+  background: linear-gradient(135deg, #ffffff 0%, #f2f2f2 100%);
   border-bottom: 1px solid rgba(0,0,0,0.08);
 }
 
@@ -247,29 +243,38 @@ body {
 }
 
 .book-info-overlay {
-  position: relative;
+  position: absolute;
   z-index: 2;
-  width: 100%;
-  height: 100%;
+  left: 0; right: 0; bottom: 0;
+  height: 60%;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-end;
   align-items: center;
-  padding: 1.2rem;
+  padding: 1rem 0.8rem 0.8rem;
+  background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.55) 45%, transparent 100%);
+}
+
+/* Sem capa real, o card usa gradiente + ícone só como identificador central */
+.row-items li:not(:has(.book-cover)) .book-info-overlay {
+  position: relative;
+  height: 100%;
+  justify-content: center;
   background: rgba(0,0,0,0.25);
 }
 
 .book-icon { font-size: 2.5rem; margin-bottom: 1rem; opacity: 0.8; text-shadow: 0 2px 5px rgba(0,0,0,0.5); }
-.book-title { 
-  font-size: 1.1rem; 
-  font-weight: 600; 
-  display: -webkit-box; 
-  -webkit-line-clamp: 4; 
-  -webkit-box-orient: vertical; 
-  overflow: hidden; 
-  text-shadow: 0 2px 4px rgba(0,0,0,0.8); 
+.book-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
   text-align: center;
-  line-height: 1.4;
+  line-height: 1.35;
+  color: #fff;
 }
 .book-type { position: absolute; top: 0.5rem; right: 0.5rem; font-size: 0.65rem; background: rgba(0,0,0,0.7); padding: 3px 8px; border-radius: 4px; color: #fff; z-index: 3; font-weight: bold; letter-spacing: 1px; }
 
@@ -371,7 +376,53 @@ body {
 }
 .btn-icon:hover { background: var(--text); color: var(--bg); }
 
-.reader-controls { display: flex; gap: 0.5rem; align-items: center; }
+.reader-controls { display: flex; gap: 0.75rem; align-items: center; }
+
+.font-size-stepper,
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  background: var(--surface-hover);
+  border: 1px solid rgba(128,128,128,0.25);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+.stepper-btn,
+.theme-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+.stepper-btn:hover:not(:disabled) { background: var(--accent); color: #fff; }
+.stepper-btn:active:not(:disabled) { transform: scale(0.92); }
+.stepper-btn:disabled { opacity: 0.3; cursor: default; }
+.stepper-btn:focus-visible,
+.theme-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stepper-label {
+  min-width: 4.6rem;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.2px;
+  user-select: none;
+}
+
+.theme-btn { font-size: 1rem; opacity: 0.5; }
+.theme-btn:hover { background: var(--surface); opacity: 1; }
+.theme-btn.active { background: var(--accent); opacity: 1; }
 
 .viewer-container {
   flex: 1;
@@ -460,5 +511,4 @@ body {
     width: 100%;
     justify-content: space-between;
   }
-  .ctrl-select { margin-right: 0 !important; }
 }

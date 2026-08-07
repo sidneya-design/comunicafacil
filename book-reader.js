@@ -71,8 +71,11 @@ const genreRowsContainer = document.getElementById('genre-rows-container');
 const bookGenreSelect = document.getElementById('book-genre');
 const emptyMsg = document.getElementById('empty-msg');
 
-const themeSelect = document.getElementById('theme-select');
-const fontSizeSelect = document.getElementById('font-size-select');
+const themeDarkBtn = document.getElementById('theme-dark-btn');
+const themeLightBtn = document.getElementById('theme-light-btn');
+const fontSizeDecBtn = document.getElementById('font-size-dec');
+const fontSizeIncBtn = document.getElementById('font-size-inc');
+const fontSizeLabel = document.getElementById('font-size-label');
 const prevPageBtn = document.getElementById('prev-page-btn');
 const nextPageBtn = document.getElementById('next-page-btn');
 
@@ -82,33 +85,51 @@ let currentViewer = null;
 let currentEpubLocation = null;
 let utterance = null;
 
+// ── Tamanho da fonte (stepper Aa) ──────────────────────────
+const FONT_SIZES = [
+  { value: '1rem', label: 'Pequeno' },
+  { value: '1.15rem', label: 'Normal' },
+  { value: '1.4rem', label: 'Grande' },
+  { value: '1.8rem', label: 'Gigante' }
+];
+let fontSizeIndex = 1;
+
+function applyFontSize(index, persist = true) {
+  fontSizeIndex = Math.max(0, Math.min(FONT_SIZES.length - 1, index));
+  const { value, label } = FONT_SIZES[fontSizeIndex];
+  if (fontSizeLabel) fontSizeLabel.textContent = label;
+  if (fontSizeDecBtn) fontSizeDecBtn.disabled = fontSizeIndex === 0;
+  if (fontSizeIncBtn) fontSizeIncBtn.disabled = fontSizeIndex === FONT_SIZES.length - 1;
+  if (persist) localStorage.setItem('fontSize', value);
+  if (currentViewer?.type === 'epub' && currentViewer.rendition) {
+    currentViewer.rendition.themes.fontSize(value);
+  }
+}
+
+fontSizeDecBtn?.addEventListener('click', () => applyFontSize(fontSizeIndex - 1));
+fontSizeIncBtn?.addEventListener('click', () => applyFontSize(fontSizeIndex + 1));
+
 // ── Preferences ──────────────────────────────────────────
-function applyPreferences() {
-  const theme = 'dark'; // Force dark mode as requested
+// O tema é aplicado só no #reader-view (leitor), não na página inteira —
+// a biblioteca mantém sempre o visual escuro estilo Netflix.
+function applyTheme(theme) {
+  readerView.setAttribute('data-theme', theme);
   localStorage.setItem('theme', theme);
-  document.documentElement.setAttribute('data-theme', theme);
-  if (themeSelect) themeSelect.value = theme;
-  
+  themeDarkBtn?.classList.toggle('active', theme === 'dark');
+  themeLightBtn?.classList.toggle('active', theme === 'light');
+}
+
+function applyPreferences() {
+  applyTheme('light'); // Tema claro como padrão
+
   const savedFontSize = localStorage.getItem('fontSize') || '1.15rem';
-  if (fontSizeSelect) fontSizeSelect.value = savedFontSize;
+  const savedIndex = FONT_SIZES.findIndex(f => f.value === savedFontSize);
+  applyFontSize(savedIndex >= 0 ? savedIndex : 1, false);
 }
 applyPreferences();
 
-if (fontSizeSelect) {
-  fontSizeSelect.addEventListener('change', () => {
-    const size = fontSizeSelect.value;
-    localStorage.setItem('fontSize', size);
-    if (currentViewer?.type === 'epub' && currentViewer.rendition) {
-      currentViewer.rendition.themes.fontSize(size);
-    }
-  });
-}
-
-themeSelect?.addEventListener('change', () => {
-  const theme = themeSelect.value;
-  document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem('theme', theme);
-});
+themeDarkBtn?.addEventListener('click', () => applyTheme('dark'));
+themeLightBtn?.addEventListener('click', () => applyTheme('light'));
 
 // ── Modal Logic ──────────────────────────────────────────
 navUploadBtn.addEventListener('click', () => {
@@ -379,7 +400,7 @@ function createBookCard(book, index) {
     </div>
     <span class="book-type">${type}</span>
     <div class="book-info-overlay">
-      <span class="book-icon" aria-hidden="true">${icon}</span>
+      ${coverUrl ? '' : `<span class="book-icon" aria-hidden="true">${icon}</span>`}
       <div class="book-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
     </div>
   `;

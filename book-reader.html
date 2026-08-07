@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="dark">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ComunicaFácil · Livros</title>
   <meta name="description" content="Leitor de livros EPUB e PDF" />
-  <link rel="stylesheet" href="book-reader.css?v=9" />
+  <link rel="stylesheet" href="book-reader.css?v=13" />
   <!-- JSZip is required by epub.js when loading from ArrayBuffer -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://unpkg.com/epubjs/dist/epub.min.js"></script>
@@ -17,10 +17,6 @@
 <header class="netflix-nav">
   <div class="nav-left">
     <h1 class="logo">ComunicaFácil <span>Livros</span></h1>
-    <ul class="nav-links">
-      <li class="active">Início</li>
-      <li>Meus Livros</li>
-    </ul>
   </div>
   <div class="nav-right" style="display: flex; gap: 10px;">
     <button id="nav-upload-btn" class="nav-btn">Upload</button>
@@ -91,16 +87,15 @@
     </div>
 
     <div class="reader-controls">
-      <select id="font-size-select" class="ctrl-select" style="margin-right: 1rem;">
-        <option value="1rem">A- (Pequeno)</option>
-        <option value="1.15rem" selected>A (Normal)</option>
-        <option value="1.4rem">A+ (Grande)</option>
-        <option value="1.8rem">A++ (Gigante)</option>
-      </select>
-      <select id="theme-select" class="ctrl-select">
-        <option value="dark" selected>Escuro</option>
-        <option value="light">Claro</option>
-      </select>
+      <div class="font-size-stepper" role="group" aria-label="Tamanho da fonte">
+        <button type="button" id="font-size-dec" class="stepper-btn" aria-label="Diminuir fonte">A−</button>
+        <span id="font-size-label" class="stepper-label">Normal</span>
+        <button type="button" id="font-size-inc" class="stepper-btn" aria-label="Aumentar fonte">A+</button>
+      </div>
+      <div class="theme-toggle" role="group" aria-label="Tema">
+        <button type="button" id="theme-light-btn" class="theme-btn active" aria-label="Tema claro">☀️</button>
+        <button type="button" id="theme-dark-btn" class="theme-btn" aria-label="Tema escuro">🌙</button>
+      </div>
     </div>
   </header>
 
@@ -116,6 +111,6 @@
   </div>
 </div>
 
-<script src="book-reader.js?v=2208" type="module"></script>
+<script src="book-reader.js?v=2212" type="module"></script>
 </body>
 </html>
