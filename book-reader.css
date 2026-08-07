@@ -1,0 +1,457 @@
+/* ============================================================
+   book-reader.css — Netflix Style
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg: #141414;
+  --bg-nav: rgba(20, 20, 20, 0.95);
+  --text: #ffffff;
+  --text-muted: #aaaaaa;
+  --accent: #e50914; /* Red netflix accent */
+  --accent-hover: #f40612;
+  --surface: #181818;
+  --surface-hover: #2f2f2f;
+  --radius: 4px;
+  --transition: 0.3s ease;
+}
+
+[data-theme="light"] {
+  --bg: #f8f8f8;
+  --bg-nav: rgba(255, 255, 255, 0.95);
+  --text: #141414;
+  --text-muted: #555555;
+  --accent: #e50914;
+  --accent-hover: #b81d24;
+  --surface: #ffffff;
+  --surface-hover: #e5e5e5;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0; padding: 0;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  overflow-x: hidden;
+  transition: background var(--transition), color var(--transition);
+}
+
+/* ---------- Navbar ---------- */
+.netflix-nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4%;
+  background: var(--bg-nav);
+  backdrop-filter: blur(10px);
+  z-index: 1000;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.nav-left { display: flex; align-items: center; gap: 2rem; }
+.logo { font-size: 1.5rem; font-weight: 700; color: var(--accent); cursor: pointer; }
+.logo span { color: var(--text); font-weight: 300; }
+
+.nav-links { display: flex; list-style: none; gap: 1.5rem; }
+.nav-links li { font-size: 0.9rem; cursor: pointer; color: var(--text-muted); transition: color var(--transition); }
+.nav-links li:hover, .nav-links li.active { color: var(--text); font-weight: 500; }
+
+.nav-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.nav-btn:hover { background: var(--accent-hover); }
+
+/* ---------- Main Library ---------- */
+.netflix-main {
+  padding-top: 68px;
+  min-height: 100vh;
+}
+
+.hero-section {
+  height: 32vh;
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  padding: 0 4%;
+  background: radial-gradient(circle at 85% 30%, rgba(229, 9, 20, 0.25) 0%, transparent 60%), linear-gradient(135deg, #181818 0%, #0f0f0f 100%);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+[data-theme="light"] .hero-section {
+  background: radial-gradient(circle at 85% 30%, rgba(229, 9, 20, 0.15) 0%, transparent 60%), linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%);
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+}
+
+.hero-content h2 { font-size: 2.8rem; margin-bottom: 0.5rem; letter-spacing: -0.5px; }
+.hero-content p { font-size: 1.1rem; max-width: 550px; color: var(--text-muted); line-height: 1.5; }
+
+/* ---------- Rows ---------- */
+.netflix-row {
+  margin: 2rem 0;
+  padding: 0 4%;
+}
+.netflix-row h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.row-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.book-search {
+  background: var(--surface);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: var(--text);
+  padding: 0.5rem 0.9rem;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  min-width: 220px;
+}
+.book-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.no-results {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  padding: 1rem 0;
+}
+
+.row-container {
+  position: relative;
+}
+
+.row-items {
+  display: flex;
+  gap: 1.2rem;
+  overflow-x: auto;
+  padding: 1rem 0;
+  scroll-behavior: smooth;
+  list-style: none;
+}
+.row-items::-webkit-scrollbar { height: 6px; }
+.row-items::-webkit-scrollbar-track { background: transparent; }
+.row-items::-webkit-scrollbar-thumb { background: var(--surface-hover); border-radius: 4px; }
+
+/* Book Card */
+.row-items li {
+  flex: 0 0 190px;
+  background: var(--surface);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  aspect-ratio: 2/3;
+  justify-content: flex-end;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+}
+
+.row-items li:hover,
+.row-items li:focus-visible {
+  transform: translateY(-6px) scale(1.03);
+  box-shadow: 0 14px 28px rgba(0,0,0,0.6);
+  z-index: 2;
+}
+.row-items li:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.book-cover {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  object-fit: cover;
+  z-index: 1;
+}
+
+.book-cover-fallback {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  z-index: 0;
+  border-left: 6px solid rgba(0,0,0,0.4); /* Simula a lombada do livro */
+  box-shadow: inset 4px 0 10px rgba(255,255,255,0.1);
+}
+
+.book-info-overlay {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 1.2rem;
+  background: rgba(0,0,0,0.25);
+}
+
+.book-icon { font-size: 2.5rem; margin-bottom: 1rem; opacity: 0.8; text-shadow: 0 2px 5px rgba(0,0,0,0.5); }
+.book-title { 
+  font-size: 1.1rem; 
+  font-weight: 600; 
+  display: -webkit-box; 
+  -webkit-line-clamp: 4; 
+  -webkit-box-orient: vertical; 
+  overflow: hidden; 
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8); 
+  text-align: center;
+  line-height: 1.4;
+}
+.book-type { position: absolute; top: 0.5rem; right: 0.5rem; font-size: 0.65rem; background: rgba(0,0,0,0.7); padding: 3px 8px; border-radius: 4px; color: #fff; z-index: 3; font-weight: bold; letter-spacing: 1px; }
+
+/* ---------- Device Frame (Kindle-like) ---------- */
+.device-frame {
+  width: 100%;
+  max-width: 800px;
+  height: 100%;
+  max-height: 95vh;
+  margin: 0 auto;
+  background: #8fa08e; /* Sage green Kindle color */
+  border-radius: 36px;
+  box-shadow: inset -2px -4px 10px rgba(0,0,0,0.1), inset 2px 4px 10px rgba(255,255,255,0.2), 0 20px 50px rgba(0,0,0,0.6);
+  padding: 3rem 1.5rem 4rem 1.5rem; /* top, right, bottom, left */
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 5;
+}
+
+.device-logo {
+  position: absolute;
+  bottom: 1.2rem;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  color: rgba(255,255,255,0.6);
+  font-family: 'Inter', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 500;
+  letter-spacing: 1px;
+}
+
+.device-logo span {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 400;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin-top: 3px;
+}
+
+.device-screen {
+  background: #fbf0d9;
+  flex: 1;
+  border-radius: 4px;
+  box-shadow: inset 0 0 10px rgba(0,0,0,0.15);
+  overflow: hidden;
+  position: relative;
+}
+
+/* ---------- Reader View ---------- */
+.reader-view {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--bg);
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+}
+
+.reader-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2rem;
+  background: var(--surface);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.reader-header h2 { font-size: 1.1rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+
+.btn-icon {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--text-muted);
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.btn-icon:hover { background: var(--text); color: var(--bg); }
+
+.reader-controls { display: flex; gap: 0.5rem; align-items: center; }
+
+.viewer-container {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem;
+  background: var(--bg);
+}
+
+.viewer-container canvas { margin-bottom: 1rem; max-width: 100%; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+.viewer-container iframe { width: 100%; height: 100%; border: none; }
+
+.loading-spinner { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--accent); }
+.spinner { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.1); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 1rem; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.nav-page-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  border: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: var(--transition);
+}
+.nav-page-btn:hover { background: var(--accent); }
+
+/* ---------- Modal ---------- */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.8);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 3000;
+  backdrop-filter: blur(5px);
+}
+.modal-content {
+  background: var(--surface);
+  padding: 2rem;
+  border-radius: 8px;
+  width: 90%; max-width: 500px;
+  position: relative;
+}
+.close-btn { position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 1.5rem; color: var(--text); cursor: pointer; }
+.upload-dropzone { border: 2px dashed var(--text-muted); border-radius: 8px; padding: 2rem; text-align: center; margin: 1.5rem 0; cursor: pointer; position: relative; }
+.upload-dropzone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.btn-primary { background: var(--accent); color: #fff; width: 100%; padding: 0.8rem; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 1rem; }
+.btn-primary:hover { background: var(--accent-hover); }
+.upload-status { margin-top: 1rem; text-align: center; font-size: 0.9rem; }
+
+/* ---------- TTS Player ---------- */
+.tts-player {
+  position: absolute;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20, 20, 20, 0.95);
+  backdrop-filter: blur(10px);
+  padding: 0.8rem 2rem;
+  border-radius: 50px;
+  display: flex;
+  align-items: center;
+  gap: 2.5rem;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  z-index: 50;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+.tts-player.hidden {
+  transform: translate(-50%, 100px);
+  opacity: 0;
+  pointer-events: none;
+}
+.tts-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, color 0.2s;
+}
+.tts-btn:hover { color: var(--accent); transform: scale(1.1); }
+.tts-play-pause {
+  background: #fff;
+  color: #000;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  font-size: 1.5rem;
+  padding-left: 4px; /* visually center play icon */
+}
+.tts-play-pause.playing {
+  padding-left: 0; /* pause icon is already centered */
+}
+.tts-play-pause:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.tts-speed {
+  font-size: 1rem;
+  font-weight: bold;
+  opacity: 0.8;
+}
+
+/* ---------- Responsividade (Mobile) ---------- */
+@media (max-width: 768px) {
+  .app-header { flex-direction: column; align-items: stretch; gap: 1rem; }
+  .device-frame {
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    max-width: 100%;
+    max-height: 100%;
+    background: transparent;
+  }
+  .device-logo { display: none; }
+  .device-screen { border-radius: 0; box-shadow: none; }
+  .viewer-wrapper { padding: 0 !important; background: var(--bg) !important; }
+  .nav-page-btn {
+    width: 36px; height: 36px; font-size: 1.2rem;
+  }
+  .reader-header {
+    flex-direction: column;
+    height: auto;
+    gap: 1rem;
+    padding: 1rem;
+  }
+  .reader-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .ctrl-select { margin-right: 0 !important; }
+}
