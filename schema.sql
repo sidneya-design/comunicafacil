@@ -247,11 +247,18 @@ create table if not exists public.books (
 -- Habilitar RLS
 alter table public.books enable row level security;
 
--- Qualquer usuário autenticado pode listar e ler os livros
-create policy "Leitura de livros para usuários públicos" on public.books
+-- Qualquer pessoa pode listar e ler os livros
+create policy "Leitura pública de books" on public.books
     for select using (true);
 
--- Apenas usuários autenticados podem inserir/atualizar/deletar livros
-create policy "Escrita de livros para admins autenticados" on public.books
-    for all to authenticated using (true) with check (true);
+-- Qualquer pessoa pode inserir (upload) livros
+create policy "Escrita pública de books" on public.books
+    for insert with check (true);
+
+-- Apenas usuários autenticados podem editar/excluir livros
+create policy "Atualização de books para autenticados" on public.books
+    for update to authenticated using (true) with check (true);
+
+create policy "Exclusão de books para autenticados" on public.books
+    for delete to authenticated using (true);
 

@@ -123,8 +123,26 @@ def clean_text_for_tts(text):
 # O fluxo do chat com IA continua usando o Azure TTS oficial (synthesize_text) abaixo.
 EDGE_TTS_VOICE = "pt-BR-FranciscaNeural"
 
-def synthesize_text_edge(text, voice=EDGE_TTS_VOICE, rate="-12%", pitch="-2Hz"):
-    print(f"[TTS-DEBUG] voice={voice!r} rate={rate!r} text={text[:40]!r}", flush=True)
+def synthesize_text_edge(text):
+    text = clean_text_for_tts(text)
+    async def _run():
+        communicate = edge_tts.Communicate(text, EDGE_TTS_VOICE)
+        chunks = []
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                chunks.append(chunk["data"])
+        return b"".join(chunks)
+    audio_bytes = asyncio.run(_run())
+    if not audio_bytes:
+        raise Exception("edge-tts nao retornou audio")
+    return base64.b64encode(audio_bytes).decode('utf-8')
+
+# Narração de livros (aba Livros): função própria, separada de synthesize_text_edge,
+# porque o leitor deixa a pessoa escolher a voz do narrador — synthesize_text_edge
+# continua fixo em EDGE_TTS_VOICE e é usado por todo o resto do app (Carômetro,
+# Jogos, Essenciais). Nunca dar a synthesize_text_edge um parâmetro de voz de novo:
+# foi exatamente isso que vazou a voz do livro pro app inteiro da última vez.
+def synthesize_text_edge_voiced(text, voice="pt-BR-AntonioNeural", rate="-12%", pitch="-2Hz"):
     text = clean_text_for_tts(text)
     if not text:
         return None
@@ -161,6 +179,9 @@ def synthesize_text(text):
 
 @app.route('/tts', methods=['POST'])
 def tts_route():
+    # Usado somente pela aba Livros (book-reader.js) para narração com voz
+    # selecionável. Não confundir com o TTS de ttsText da rota /chat abaixo,
+    # que serve o resto do app e é sempre FranciscaNeural.
     try:
         data = request.json or {}
         text = (data.get('text') or '').strip()
@@ -169,7 +190,7 @@ def tts_route():
         pitch = data.get('pitch') or '-2Hz'
         if not text:
             return jsonify({"error": "Texto para leitura não fornecido"}), 400
-        audio_b64 = synthesize_text_edge(text, voice, rate, pitch)
+        audio_b64 = synthesize_text_edge_voiced(text, voice, rate, pitch)
         return jsonify({"audio": audio_b64})
     except Exception as e:
         print(f"Erro na rota /tts: {e}")
