@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import requests
 import os
@@ -9,7 +9,7 @@ import re
 from xml.sax.saxutils import escape as xml_escape
 import edge_tts
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='.', static_url_path='')  # serve static files from project root
 CORS(app)  # Permite que o app.js local faça requisições para este servidor
 
 # Configurações do Azure
@@ -137,6 +137,27 @@ def synthesize_text_edge(text):
         raise Exception("edge-tts nao retornou audio")
     return base64.b64encode(audio_bytes).decode('utf-8')
 
+# Narração de livros (aba Livros): função própria, separada de synthesize_text_edge,
+# porque o leitor deixa a pessoa escolher a voz do narrador — synthesize_text_edge
+# continua fixo em EDGE_TTS_VOICE e é usado por todo o resto do app (Carômetro,
+# Jogos, Essenciais). Nunca dar a synthesize_text_edge um parâmetro de voz de novo:
+# foi exatamente isso que vazou a voz do livro pro app inteiro da última vez.
+def synthesize_text_edge_voiced(text, voice="pt-BR-AntonioNeural", rate="-12%", pitch="-2Hz"):
+    text = clean_text_for_tts(text)
+    if not text:
+        return None
+    async def _run():
+        communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
+        chunks = []
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                chunks.append(chunk["data"])
+        return b"".join(chunks)
+    audio_bytes = asyncio.run(_run())
+    if not audio_bytes:
+        raise Exception("edge-tts nao retornou audio")
+    return base64.b64encode(audio_bytes).decode('utf-8')
+
 def synthesize_text(text):
     text = xml_escape(clean_text_for_tts(text))  # escape: um '&' na resposta quebrava o SSML
     url = f"https://{AZURE_SPEECH_REGION}.tts.speech.microsoft.com/cognitiveservices/v1"
@@ -155,6 +176,25 @@ def synthesize_text(text):
     if response.status_code != 200:
         raise Exception(f"Erro no Azure TTS ({response.status_code}): {response.text}")
     return base64.b64encode(response.content).decode('utf-8')
+
+@app.route('/tts', methods=['POST'])
+def tts_route():
+    # Usado somente pela aba Livros (book-reader.js) para narração com voz
+    # selecionável. Não confundir com o TTS de ttsText da rota /chat abaixo,
+    # que serve o resto do app e é sempre FranciscaNeural.
+    try:
+        data = request.json or {}
+        text = (data.get('text') or '').strip()
+        voice = data.get('voice') or 'pt-BR-AntonioNeural'
+        rate = data.get('rate') or '-12%'
+        pitch = data.get('pitch') or '-2Hz'
+        if not text:
+            return jsonify({"error": "Texto para leitura não fornecido"}), 400
+        audio_b64 = synthesize_text_edge_voiced(text, voice, rate, pitch)
+        return jsonify({"audio": audio_b64})
+    except Exception as e:
+        print(f"Erro na rota /tts: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -225,4 +265,26 @@ if __name__ == '__main__':
     print("🚀 Servidor IA do Comunica Fácil Iniciado!")
     print("URL do Backend: http://127.0.0.1:5001")
     print("="*50 + "\n")
+    # Adicionar rotas estáticas antes de iniciar o servidor
+    # Serve index.html na raiz
+    @app.route('/')
+    def serve_index():
+        return send_from_directory('.', 'index.html')
+
+    # Serve quaisquer outros arquivos HTML estáticos (ex.: login.html, complete-frase.html)
+    @app.route('/<path:filename>')
+    def serve_file(filename):
+        # Evita servir arquivos fora do diretório do projeto
+        if os.path.isfile(filename):
+            return send_from_directory('.', filename)
+        else:
+            return jsonify({"error": "Arquivo não encontrado"}), 404
+
+    @app.after_request
+    def add_no_cache_headers(response):
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+
     app.run(host='0.0.0.0', port=5001, debug=True)

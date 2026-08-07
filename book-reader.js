@@ -1,9 +1,51 @@
 // book-reader.js — ComunicaFácil Netflix-Style Library Module
 
-import { supabase } from './supabase.js';
+import { supabase } from './supabase.js?v=2';
 
 // ── Config ──────────────────────────────────────────────
 const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB
+
+// ── Auth guard (mesmo padrão usado em app.js) ─────────────
+// Quando embutida como aba do app (iframe em app.html), o próprio app.html
+// já exige login antes de tornar essa aba acessível — então o redirect
+// próprio só se aplica quando a página é acessada isoladamente pela URL.
+function isLocalAppHost() {
+  return ['localhost', '127.0.0.1'].includes(window.location.hostname) || window.location.protocol === 'file:';
+}
+const isEmbedded = window.self !== window.top;
+
+supabase.auth.getSession().then(({ data }) => {
+  if (!data?.session && !isLocalAppHost() && !isEmbedded) {
+    window.location.href = 'index.html';
+  }
+});
+
+supabase.auth.onAuthStateChange((event) => {
+  if (event === 'SIGNED_OUT' && !isLocalAppHost() && !isEmbedded) {
+    window.location.href = 'index.html';
+  }
+});
+
+// ── Helpers ────────────────────────────────────────────────
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+function deriveCoverPath(filePath) {
+  if (!filePath) return null;
+  const filename = filePath.split('/').pop();
+  const uuid = filename.replace(/\.[^/.]+$/, '');
+  return `covers/${uuid}.jpg`;
+}
+
+// ── Gêneros ────────────────────────────────────────────────
+const GENRES = [
+  'Romance', 'Ficção', 'Fantasia', 'Suspense e Mistério',
+  'Biografia', 'Autoajuda', 'Infantil', 'Poesia', 'Arte e Cultura',
+  'Não-ficção', 'Outros'
+];
 
 // ── UI Elements ─────────────────────────────────────────
 const navUploadBtn = document.getElementById('nav-upload-btn');
@@ -19,12 +61,16 @@ const readerView = document.getElementById('reader-view');
 const backToLibrary = document.getElementById('back-to-library');
 const viewer = document.getElementById('viewer');
 const readerTitle = document.getElementById('reader-title');
+const readingProgressEl = document.getElementById('reading-progress');
 
-const bookListAll = document.getElementById('book-list-all');
-const bookListRecent = document.getElementById('book-list-recent');
+function updateReadingProgress(text) {
+  if (readingProgressEl) readingProgressEl.textContent = text || '';
+}
+
+const genreRowsContainer = document.getElementById('genre-rows-container');
+const bookGenreSelect = document.getElementById('book-genre');
 const emptyMsg = document.getElementById('empty-msg');
 
-const listenBtn = document.getElementById('listen-btn');
 const themeSelect = document.getElementById('theme-select');
 const fontSizeSelect = document.getElementById('font-size-select');
 const prevPageBtn = document.getElementById('prev-page-btn');
@@ -33,6 +79,7 @@ const nextPageBtn = document.getElementById('next-page-btn');
 // ── State ────────────────────────────────────────────────
 let currentBook = null;
 let currentViewer = null;
+let currentEpubLocation = null;
 let utterance = null;
 
 // ── Preferences ──────────────────────────────────────────
@@ -129,7 +176,8 @@ async function extractCover(file, mimeType) {
            coverItem = manifest.find(item => item.type && item.type.startsWith('image/'));
         }
         if (coverItem) {
-           coverUrl = await book.archive.createUrl(coverItem.href);
+           const resolvedPath = book.path ? book.path.resolve(coverItem.href) : coverItem.href;
+           coverUrl = await book.archive.createUrl(resolvedPath);
         }
       }
       
@@ -177,8 +225,9 @@ async function uploadFile(file) {
 
     // 3. Registrar no banco
     const title = file.name.replace(/\.[^/.]+$/, '');
+    const genre = bookGenreSelect?.value || 'Outros';
     const { error: dbErr } = await supabase.from('books').insert({
-      title, mime_type: mimeType, file_path: filePath, file_size: file.size,
+      title, mime_type: mimeType, file_path: filePath, file_size: file.size, genre,
     });
 
     if (dbErr) return setStatus('❌ Erro ao salvar: ' + dbErr.message, 'error');
@@ -198,6 +247,10 @@ async function uploadFile(file) {
   }
 }
 
+if (bookGenreSelect) {
+  bookGenreSelect.innerHTML = GENRES.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+}
+
 function setStatus(msg, type = '') {
   uploadStatus.textContent = msg;
   uploadStatus.style.color = type === 'error' ? 'var(--accent)' : type === 'success' ? '#46d369' : 'var(--text-muted)';
@@ -205,62 +258,233 @@ function setStatus(msg, type = '') {
 
 uploadBtn.addEventListener('click', () => uploadFile(fileInput.files?.[0]));
 
-// ── Book List ────────────────────────────────────────────
-async function loadBookList() {
-  const { data, error } = await supabase
-    .from('books')
-    .select('id, title, mime_type, file_path')
-    .order('created_at', { ascending: false });
+// ── Editar / Excluir ───────────────────────────────────────
+const editModal = document.getElementById('edit-modal');
+const closeEditModal = document.getElementById('close-edit-modal');
+const editTitleInput = document.getElementById('edit-title-input');
+const editGenreSelect = document.getElementById('edit-genre-select');
+const editSaveBtn = document.getElementById('edit-save-btn');
+const editStatus = document.getElementById('edit-status');
+let editingBookId = null;
 
-  if (error) { console.error('List error:', error); return; }
+if (editGenreSelect) {
+  editGenreSelect.innerHTML = GENRES.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+}
 
-  bookListAll.innerHTML = '';
-  bookListRecent.innerHTML = '';
+function openEditModal(book) {
+  editingBookId = book.id;
+  editTitleInput.value = book.title || '';
+  editGenreSelect.value = GENRES.includes(book.genre) ? book.genre : 'Outros';
+  editStatus.textContent = '';
+  editModal.style.display = 'flex';
+}
 
+closeEditModal?.addEventListener('click', () => { editModal.style.display = 'none'; });
+
+editSaveBtn?.addEventListener('click', async () => {
+  const title = editTitleInput.value.trim();
+  if (!title) { editStatus.textContent = '⚠️ Informe um título.'; return; }
+
+  editSaveBtn.disabled = true;
+  editStatus.textContent = '⏳ Salvando...';
+
+  const { data, error } = await supabase.from('books')
+    .update({ title, genre: editGenreSelect.value })
+    .eq('id', editingBookId)
+    .select();
+
+  editSaveBtn.disabled = false;
+  if (error) { editStatus.textContent = '❌ Erro ao salvar: ' + error.message; return; }
   if (!data || data.length === 0) {
+    editStatus.textContent = '❌ Não foi possível salvar (sessão sem permissão para editar). Tente sair e entrar de novo.';
+    return;
+  }
+
+  editModal.style.display = 'none';
+  await loadBookList();
+});
+
+async function deleteBook(book) {
+  const title = book.title || 'este livro';
+  if (!confirm(`Apagar "${title}"? Essa ação não pode ser desfeita.`)) return;
+
+  const filePath = (book.file_path || '').replace(/^\/+/, '');
+  const coverPath = deriveCoverPath(book.file_path);
+  const pathsToRemove = [filePath, coverPath].filter(Boolean);
+  if (pathsToRemove.length) {
+    const { error: storageErr } = await supabase.storage.from('books').remove(pathsToRemove);
+    if (storageErr) console.warn('[BookReader] Erro ao remover arquivos do storage:', storageErr.message);
+  }
+
+  const { data: dbData, error: dbErr } = await supabase.from('books').delete().eq('id', book.id).select();
+  if (dbErr) { alert('Erro ao excluir: ' + dbErr.message); return; }
+  if (!dbData || dbData.length === 0) {
+    alert('Não foi possível excluir (sessão sem permissão). Tente sair e entrar de novo.');
+    return;
+  }
+
+  await loadBookList();
+}
+
+// ── Book List ────────────────────────────────────────────
+const BOOK_GRADIENTS = [
+  'linear-gradient(135deg, #1f1c2c 0%, #928dab 100%)',
+  'linear-gradient(135deg, #2b5876 0%, #4e4376 100%)',
+  'linear-gradient(135deg, #141e30 0%, #243b55 100%)',
+  'linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)',
+  'linear-gradient(135deg, #3a1c71 0%, #d76d77 50%, #ffaf7b 100%)',
+  'linear-gradient(135deg, #4568dc 0%, #b06ab3 100%)'
+];
+
+let allBooksCache = [];
+let coverUrlMap = {};
+
+async function resolveCoverUrls(books) {
+  const paths = [...new Set(books.map(b => deriveCoverPath(b.file_path)).filter(Boolean))];
+  if (!paths.length) return {};
+  const { data, error } = await supabase.storage.from('books').createSignedUrls(paths, 3600);
+  if (error || !data) {
+    console.warn('[BookReader] Erro ao gerar signed URLs das capas:', error?.message);
+    return {};
+  }
+  const map = {};
+  data.forEach(entry => {
+    if (entry.signedUrl && !entry.error) map[entry.path] = entry.signedUrl;
+  });
+  return map;
+}
+
+function createBookCard(book, index) {
+  const isPdf = book.mime_type?.includes('pdf');
+  const icon = isPdf ? '📄' : '📗';
+  const type = isPdf ? 'PDF' : 'EPUB';
+  const title = book.title || book.file_path.split('/').pop();
+
+  const bgGradient = BOOK_GRADIENTS[index % BOOK_GRADIENTS.length];
+  const li = document.createElement('li');
+  li.dataset.id = book.id;
+  li.tabIndex = 0;
+  li.setAttribute('role', 'button');
+  li.setAttribute('aria-label', `Abrir livro ${title}`);
+
+  const coverPath = deriveCoverPath(book.file_path);
+  const coverUrl = coverPath ? coverUrlMap[coverPath] : null;
+
+  li.innerHTML = `
+    <div class="book-cover-fallback" style="background: ${bgGradient}"></div>
+    ${coverUrl ? `<img class="book-cover" src="${coverUrl}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+    <div class="book-card-actions">
+      <button type="button" class="card-action-btn" data-action="edit" title="Editar" aria-label="Editar ${escapeHtml(title)}">✎</button>
+      <button type="button" class="card-action-btn" data-action="delete" title="Excluir" aria-label="Excluir ${escapeHtml(title)}">🗑</button>
+    </div>
+    <span class="book-type">${type}</span>
+    <div class="book-info-overlay">
+      <span class="book-icon" aria-hidden="true">${icon}</span>
+      <div class="book-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+    </div>
+  `;
+
+  li.addEventListener('click', () => openReader(book));
+  li.addEventListener('keydown', e => {
+    if (e.target !== li) return; // deixa os botões internos tratarem sua própria ativação
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openReader(book);
+    }
+  });
+
+  li.querySelector('[data-action="edit"]')?.addEventListener('click', e => {
+    e.stopPropagation();
+    openEditModal(book);
+  });
+  li.querySelector('[data-action="delete"]')?.addEventListener('click', e => {
+    e.stopPropagation();
+    deleteBook(book);
+  });
+
+  return li;
+}
+
+function createGenreRow(title, items) {
+  const row = document.createElement('div');
+  row.className = 'netflix-row';
+
+  const heading = document.createElement('h3');
+  heading.textContent = title;
+
+  const container = document.createElement('div');
+  container.className = 'row-container';
+
+  const ul = document.createElement('ul');
+  ul.className = 'row-items';
+  items.forEach((book, index) => ul.appendChild(createBookCard(book, index)));
+
+  container.appendChild(ul);
+  row.appendChild(heading);
+  row.appendChild(container);
+  return row;
+}
+
+function renderLibrary(data) {
+  genreRowsContainer.innerHTML = '';
+
+  if (!data.length) {
     emptyMsg.style.display = 'block';
     return;
   }
   emptyMsg.style.display = 'none';
 
-  // Obter URLs das capas em lote
-  const coverPaths = data.map(b => b.file_path.replace('uploads/', 'covers/').replace(/\.(epub|pdf)$/i, '.jpg'));
-  const { data: urlsData } = await supabase.storage.from('books').createSignedUrls(coverPaths, 60 * 60);
-  const coverUrlMap = {};
-  if (urlsData) {
-    urlsData.forEach((u, i) => { if (!u.error) coverUrlMap[data[i].id] = u.signedUrl; });
-  }
+  const continuing = data
+    .filter(b => b.last_read_at)
+    .sort((a, b) => new Date(b.last_read_at) - new Date(a.last_read_at))
+    .slice(0, 10);
+  if (continuing.length) genreRowsContainer.appendChild(createGenreRow('Continuar Lendo', continuing));
 
-  data.forEach((book, index) => {
-    const isPdf = book.mime_type?.includes('pdf');
-    const icon = isPdf ? '📄' : '📗';
-    const type = isPdf ? 'PDF' : 'EPUB';
-    const coverUrl = coverUrlMap[book.id];
+  const grouped = new Map();
+  GENRES.forEach(g => grouped.set(g, []));
+  data.forEach(book => {
+    const genre = GENRES.includes(book.genre) ? book.genre : 'Outros';
+    grouped.get(genre).push(book);
+  });
 
-    const li = document.createElement('li');
-    li.dataset.id = book.id;
-    
-    // Fallback de capa ou imagem real. O onerror remove a imagem quebrada e deixa o fallback aparecer (que ficará embaixo do overlay)
-    li.innerHTML = `
-      <div class="book-cover-fallback"></div>
-      ${coverUrl ? `<img src="${coverUrl}" class="book-cover" alt="Capa" onerror="this.style.display='none';">` : ''}
-      <span class="book-type">${type}</span>
-      <div class="book-info-overlay">
-        <span class="book-icon">${icon}</span>
-        <div class="book-title" title="${book.title}">${book.title || book.file_path.split('/').pop()}</div>
-      </div>
-    `;
-
-    li.addEventListener('click', () => openReader(book));
-
-    bookListAll.appendChild(li);
-    if (index < 5) {
-      const recentLi = li.cloneNode(true);
-      recentLi.addEventListener('click', () => openReader(book));
-      bookListRecent.appendChild(recentLi);
-    }
+  GENRES.forEach(genre => {
+    const items = grouped.get(genre);
+    if (items.length) genreRowsContainer.appendChild(createGenreRow(genre, items));
   });
 }
+
+function renderSearchResults(matches) {
+  genreRowsContainer.innerHTML = '';
+  if (!matches.length) {
+    emptyMsg.style.display = 'block';
+    return;
+  }
+  emptyMsg.style.display = 'none';
+  genreRowsContainer.appendChild(createGenreRow('Resultados da busca', matches));
+}
+
+async function loadBookList() {
+  console.log('[BookReader] Carregando lista de livros...');
+  const { data, error } = await supabase
+    .from('books')
+    .select('id, title, mime_type, file_path, genre, last_page, last_location, last_read_at')
+    .order('created_at', { ascending: false });
+
+  if (error) { console.error('[BookReader] Erro na listagem:', error); return; }
+  console.log('[BookReader] Livros encontrados:', data?.length);
+
+  allBooksCache = data || [];
+  coverUrlMap = await resolveCoverUrls(allBooksCache);
+  renderLibrary(allBooksCache);
+}
+
+const bookSearchInput = document.getElementById('book-search');
+bookSearchInput?.addEventListener('input', () => {
+  const q = bookSearchInput.value.trim().toLowerCase();
+  if (!q) { renderLibrary(allBooksCache); return; }
+  const filtered = allBooksCache.filter(b => (b.title || '').toLowerCase().includes(q));
+  renderSearchResults(filtered);
+});
 
 // ── Open Reader ──────────────────────────────────────────
 async function openReader(book) {
@@ -273,20 +497,57 @@ async function openReader(book) {
     viewer.innerHTML = `
       <div class="loading-spinner">
         <div class="spinner"></div>
-        <span>Carregando ${book.title}...</span>
+        <span>Carregando ${escapeHtml(book.title)}...</span>
       </div>`;
 
-    const { data, error } = await supabase.storage
-      .from('books')
-      .createSignedUrl(book.file_path, 60 * 60);
+    let url = null;
+    const cleanPath = (book.file_path || '').replace(/^\/+/, '');
 
-    if (error) {
-      viewer.innerHTML = `<div class="loading-spinner">❌ Erro ao carregar: ${error.message}</div>`;
-      console.error('Erro Signed URL:', error);
+    try {
+      const { data: signedData, error: signErr } = await supabase.storage
+        .from('books')
+        .createSignedUrl(cleanPath, 60 * 60);
+      if (signedData?.signedUrl) {
+        url = signedData.signedUrl;
+      } else if (signErr) {
+        console.warn('[BookReader] Erro createSignedUrl:', signErr.message);
+      }
+    } catch (e) {
+      console.warn('[BookReader] SignedUrl falhou, tentando PublicUrl:', e);
+    }
+
+    if (!url) {
+      const { data: pubData } = supabase.storage.from('books').getPublicUrl(cleanPath);
+      url = pubData?.publicUrl;
+    }
+
+    // Verificar se a URL responde 200 antes de renderizar
+    if (url) {
+      try {
+        const checkRes = await fetch(url, { method: 'HEAD' });
+        if (!checkRes.ok && checkRes.status === 404) {
+          url = null;
+        }
+      } catch (e) {
+        console.warn('[BookReader] Erro ao verificar HEAD da URL:', e);
+      }
+    }
+
+    if (!url) {
+      viewer.innerHTML = `
+        <div class="loading-spinner" style="flex-direction: column; gap: 1rem; color: #ff4d4d; text-align: center; padding: 2rem;">
+          <span style="font-size: 2.5rem;">⚠️</span>
+          <span style="font-size: 1.2rem; font-weight: bold;">Arquivo do livro não encontrado no servidor</span>
+          <span style="font-size: 0.95rem; color: var(--text-muted); max-width: 450px;">O arquivo correspondente a este livro ("${escapeHtml(book.title)}") não existe mais no Supabase Storage. Envie o livro novamente clicando no botão Upload.</span>
+          <button id="error-back-btn" class="nav-btn" style="background: var(--accent); margin-top: 1rem; cursor: pointer;">Voltar para Biblioteca</button>
+        </div>`;
+
+      document.getElementById('error-back-btn')?.addEventListener('click', () => {
+        backToLibrary.click();
+      });
       return;
     }
 
-    const url = data.signedUrl;
     currentBook = { ...book, url };
     viewer.innerHTML = '';
 
@@ -297,7 +558,7 @@ async function openReader(book) {
     }
   } catch (err) {
     console.error('Erro fatal em openReader:', err);
-    alert('Erro ao tentar abrir o leitor: ' + err.message);
+    viewer.innerHTML = `<div class="loading-spinner">❌ Erro ao abrir o livro: ${err.message}</div>`;
   }
 }
 
@@ -309,30 +570,118 @@ backToLibrary.addEventListener('click', () => {
   nextPageBtn.style.display = 'none';
   currentBook = null;
   currentViewer = null;
-  window.speechSynthesis.cancel();
+  updateReadingProgress('');
+  renderLibrary(allBooksCache); // atualiza a fileira "Continuar Lendo" com o progresso recém-salvo
 });
+
+// ── Progresso de leitura ───────────────────────────────────
+let saveProgressTimer = null;
+function saveProgress() {
+  if (!currentBook?.id) return;
+  clearTimeout(saveProgressTimer);
+  saveProgressTimer = setTimeout(async () => {
+    const payload = { last_read_at: new Date().toISOString() };
+    if (currentViewer?.type === 'pdf') {
+      payload.last_page = currentViewer.pageIndex;
+    } else if (currentViewer?.type === 'epub' && currentEpubLocation?.start?.cfi) {
+      payload.last_location = currentEpubLocation.start.cfi;
+    } else {
+      return;
+    }
+    const { error } = await supabase.from('books').update(payload).eq('id', currentBook.id);
+    if (error) {
+      console.warn('[BookReader] Erro ao salvar progresso:', error.message);
+      return;
+    }
+    const cached = allBooksCache.find(b => b.id === currentBook.id);
+    if (cached) Object.assign(cached, payload);
+  }, 600);
+}
+
+// ── Helper para rolar página no PDF ───────────────────────
+function scrollToPdfPage(pageIndex) {
+  const canvases = viewer.querySelectorAll('canvas');
+  if (canvases[pageIndex - 1]) {
+    canvases[pageIndex - 1].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+function updatePdfProgressLabel() {
+  if (currentViewer?.type !== 'pdf') return;
+  const { pageIndex, totalPages } = currentViewer;
+  const pct = Math.round((pageIndex / totalPages) * 100);
+  updateReadingProgress(`Página ${pageIndex} de ${totalPages} · ${pct}%`);
+}
+
+// EPUB é texto fluido — não tem "página" fixa como um livro impresso (muda
+// com o tamanho da fonte). Por isso, igual ao Kindle, mostramos "Local X de Y"
+// a partir do índice de localizações gerado por book.locations.generate().
+function updateEpubProgressLabel(location) {
+  if (currentViewer?.type !== 'epub' || !currentViewer.book?.locations?.length()) return;
+  const cfi = location?.start?.cfi;
+  if (!cfi) return;
+  const total = currentViewer.book.locations.length();
+  const idx = currentViewer.book.locations.locationFromCfi(cfi);
+  if (idx == null || idx < 0) return;
+  const pct = Math.round(currentViewer.book.locations.percentageFromCfi(cfi) * 100);
+  updateReadingProgress(`Local ${idx + 1} de ${total} · ${pct}%`);
+}
 
 // ── PDF Renderer ─────────────────────────────────────────
 async function renderPDF(url) {
   try {
     console.log('Renderizando PDF...');
+    viewer.innerHTML = '';
     const loadingTask = pdfjsLib.getDocument({ url, rangeChunkSize: 1024 * 1024 });
     const pdf = await loadingTask.promise;
-    const pages = Array.from({ length: pdf.numPages }, (_, i) => i + 1);
 
-    for (const pageNum of pages) {
+    const containerWidth = (viewer.clientWidth || 800) - 32;
+    const containerHeight = (viewer.clientHeight || 600) - 32;
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: 1.5 });
+      const unscaledViewport = page.getViewport({ scale: 1.0 });
+
+      // Scale ideal para caber na largura e altura do leitor
+      const scaleX = containerWidth / unscaledViewport.width;
+      const scaleY = containerHeight / unscaledViewport.height;
+      const scale = Math.min(scaleX, scaleY, 2.0);
+
+      const viewport = page.getViewport({ scale });
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       canvas.height = viewport.height;
       canvas.width = viewport.width;
-      canvas.style.cssText = 'margin: 0 auto 1rem; display: block; max-width: 100%; height: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.5);';
+      canvas.style.cssText = 'margin: 0 auto 1.5rem; display: block; max-width: 100%; height: auto; border-radius: 4px; box-shadow: 0 4px 15px rgba(0,0,0,0.4);';
       await page.render({ canvasContext: ctx, viewport }).promise;
       viewer.appendChild(canvas);
     }
 
-    currentViewer = { type: 'pdf', pdf, pageIndex: 1 };
+    const resumePage = (currentBook?.last_page >= 1 && currentBook.last_page <= pdf.numPages) ? currentBook.last_page : 1;
+    currentViewer = { type: 'pdf', pdf, pageIndex: resumePage, totalPages: pdf.numPages };
+    if (resumePage > 1) scrollToPdfPage(resumePage);
+    updatePdfProgressLabel();
+
+    prevPageBtn.onclick = () => {
+      if (currentViewer?.type === 'pdf' && currentViewer.pageIndex > 1) {
+        currentViewer.pageIndex--;
+        scrollToPdfPage(currentViewer.pageIndex);
+        updatePdfProgressLabel();
+        saveProgress();
+      }
+    };
+
+    nextPageBtn.onclick = () => {
+      if (currentViewer?.type === 'pdf' && currentViewer.pageIndex < currentViewer.totalPages) {
+        currentViewer.pageIndex++;
+        scrollToPdfPage(currentViewer.pageIndex);
+        updatePdfProgressLabel();
+        saveProgress();
+      }
+    };
+
+    prevPageBtn.style.display = 'flex';
+    nextPageBtn.style.display = 'flex';
   } catch (err) {
     console.error('Erro PDF.js:', err);
     viewer.innerHTML = `<div class="loading-spinner">❌ Erro no PDF: ${err.message}</div>`;
@@ -349,7 +698,6 @@ async function renderEPUB(url) {
 
     console.log('Renderizando EPUB...');
     const epubContainer = document.createElement('div');
-    // Cores e medidas estilo Kindle
     epubContainer.style.cssText = 'width: 100%; max-width: 800px; height: 100%; margin: 0 auto; background: #fbf0d9; border-radius: 4px; overflow: hidden; box-shadow: 0 0 15px rgba(0,0,0,0.5);';
     epubContainer.id = 'epub-viewer';
     viewer.appendChild(epubContainer);
@@ -359,41 +707,92 @@ async function renderEPUB(url) {
       width: '100%',
       height: '100%',
       spread: 'none',
-      manager: 'continuous',
       flow: 'paginated'
     });
     
-    // Tipografia estilo Kindle (respeitando a formatação original do livro)
     rendition.themes.default({
       'body': { 
-        'font-family': 'Georgia, serif',
-        'color': '#333'
+        'font-family': "'Georgia', 'Times New Roman', serif",
+        'color': '#2b2b2b',
+        'padding': '1.5rem 2rem !important',
+        'box-sizing': 'border-box !important',
+        'word-wrap': 'break-word !important',
+        'overflow-wrap': 'break-word !important'
       },
       'p': { 
         'line-height': '1.6',
         'text-align': 'justify',
-        'margin-bottom': '1em'
+        'margin-bottom': '1em',
+        'max-width': '100% !important'
       },
-      'h1, h2, h3, h4': {
-        'font-family': 'Georgia, serif',
-        'color': '#111'
+      '*:first-letter, p::first-letter, span::first-letter, .dropcap, .initial, [class*="dropcap"], [class*="initial"]': {
+        'margin-left': '0 !important',
+        'padding-left': '0 !important',
+        'position': 'relative !important',
+        'left': '0 !important'
+      },
+      'h1, h2, h3, h4, h5, h6': {
+        'font-family': "'Georgia', serif",
+        'color': '#111',
+        'text-align': 'center',
+        'margin-left': '0 !important',
+        'margin-right': '0 !important',
+        'padding-left': '0 !important',
+        'padding-right': '0 !important',
+        'max-width': '100% !important',
+        'word-break': 'break-word !important',
+        'overflow-wrap': 'break-word !important',
+        'line-height': '1.2'
+      },
+      'h1': { 'font-size': '1.8rem !important' },
+      'h2': { 'font-size': '1.5rem !important' },
+      'h3': { 'font-size': '1.3rem !important' },
+      'img': {
+        'max-width': '100% !important',
+        'height': 'auto !important',
+        'display': 'block',
+        'margin': '1em auto'
       }
     });
 
     const initialFontSize = localStorage.getItem('fontSize') || '1.15rem';
     rendition.themes.fontSize(initialFontSize);
 
-    await rendition.display();
+    await rendition.display(currentBook?.last_location || undefined);
     currentViewer = { type: 'epub', book, rendition };
+
+    // Localizações estilo Kindle: precisa gerar um índice do livro inteiro,
+    // então roda em segundo plano sem travar a exibição da página atual.
+    updateReadingProgress('Calculando localização...');
+    book.locations.generate(1600).then(() => {
+      const loc = currentEpubLocation || currentViewer?.rendition?.currentLocation();
+      updateEpubProgressLabel(loc);
+    }).catch(err => console.warn('[BookReader] Erro ao gerar localizações do EPUB:', err));
 
     const goNext = () => rendition.next();
     const goPrev = () => rendition.prev();
 
-    // Navegação por teclado
+    // Navegação por teclado (Seta Direita / Seta Esquerda)
     document.addEventListener('keydown', e => {
-      if (currentViewer?.type !== 'epub') return;
-      if (e.key === 'ArrowRight') goNext();
-      if (e.key === 'ArrowLeft') goPrev();
+      if (!currentViewer) return;
+      if (e.key === 'ArrowRight') {
+        if (currentViewer.type === 'epub') goNext();
+        else if (currentViewer.type === 'pdf' && currentViewer.pageIndex < currentViewer.totalPages) {
+          currentViewer.pageIndex++;
+          scrollToPdfPage(currentViewer.pageIndex);
+          updatePdfProgressLabel();
+          saveProgress();
+        }
+      }
+      if (e.key === 'ArrowLeft') {
+        if (currentViewer.type === 'epub') goPrev();
+        else if (currentViewer.type === 'pdf' && currentViewer.pageIndex > 1) {
+          currentViewer.pageIndex--;
+          scrollToPdfPage(currentViewer.pageIndex);
+          updatePdfProgressLabel();
+          saveProgress();
+        }
+      }
     });
 
     // Navegação por clique na tela (estilo Kindle)
@@ -401,19 +800,19 @@ async function renderEPUB(url) {
       const x = e.clientX || (e.changedTouches && e.changedTouches[0].clientX);
       if (!x) return;
       const width = window.innerWidth;
-      if (x < width * 0.3) goPrev();       // Clicou na esquerda (voltar)
-      else if (x > width * 0.7) goNext();  // Clicou na direita (avançar)
+      if (x < width * 0.3) { goPrev(); }
+      else if (x > width * 0.7) { goNext(); }
     });
 
-    // Quando mudar de página, se o TTS estiver ativo, ler a nova página automaticamente
-    rendition.on('relocated', () => {
-      if (typeof ttsState !== 'undefined' && ttsState === 'playing') {
-        setTimeout(() => readCurrentPage(false), 500); // 500ms delay para garantir renderização
-      }
+    // Quando mudar de página no EPUB, salva a localização exata
+    rendition.on('relocated', (location) => {
+      currentEpubLocation = location;
+      updateEpubProgressLabel(location);
+      saveProgress();
     });
 
-    prevPageBtn.onclick = goPrev;
-    nextPageBtn.onclick = goNext;
+    prevPageBtn.onclick = () => goPrev();
+    nextPageBtn.onclick = () => goNext();
     prevPageBtn.style.display = 'flex';
     nextPageBtn.style.display = 'flex';
   } catch (err) {
@@ -421,161 +820,6 @@ async function renderEPUB(url) {
     viewer.innerHTML = `<div class="loading-spinner">❌ Erro no EPUB: ${err.message}</div>`;
   }
 }
-
-// ── TTS Player ────────────────────────────────────────────
-const ttsPlayer = document.getElementById('tts-player');
-const ttsPlayPauseBtn = document.getElementById('tts-play-pause-btn');
-const ttsStopBtn = document.getElementById('tts-stop-btn');
-const ttsSpeedBtn = document.getElementById('tts-speed-btn');
-const ttsRewindBtn = document.getElementById('tts-rewind-btn');
-const ttsVoiceSelect = document.getElementById('tts-voice-select');
-
-let ttsState = 'stopped'; // 'stopped', 'playing', 'paused'
-let currentText = '';
-let currentRate = 1.0;
-let availableVoices = [];
-let isCancelled = false;
-let currentUtterance = null;
-
-function loadVoices() {
-  if (!('speechSynthesis' in window)) return;
-  availableVoices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('pt'));
-  if (ttsVoiceSelect) {
-    ttsVoiceSelect.innerHTML = availableVoices.map((v, i) => `<option value="${i}">${v.name}</option>`).join('');
-  }
-}
-window.speechSynthesis.onvoiceschanged = loadVoices;
-loadVoices();
-
-function speakText(text) {
-  if (!('speechSynthesis' in window)) return alert('TTS não suportado no seu navegador.');
-  
-  if (currentUtterance) {
-    currentUtterance.onend = null; // Evita disparo de eventos assíncronos do áudio anterior
-  }
-  window.speechSynthesis.cancel();
-  
-  if (!text || text.trim() === '') {
-    // If no text on this page, just go to next page automatically if playing
-    if (ttsState === 'playing' && currentViewer && currentViewer.type === 'epub') {
-      setTimeout(() => currentViewer.rendition.next(), 500);
-    }
-    return;
-  }
-  
-  currentUtterance = new SpeechSynthesisUtterance(text);
-  currentUtterance.lang = 'pt-BR';
-  currentUtterance.rate = currentRate;
-  
-  if (ttsVoiceSelect && availableVoices[ttsVoiceSelect.value]) {
-    currentUtterance.voice = availableVoices[ttsVoiceSelect.value];
-  }
-  
-  currentUtterance.onend = () => {
-    // Auto-advance to next page when finished reading!
-    if (ttsState === 'playing' && currentViewer && currentViewer.type === 'epub') {
-      currentViewer.rendition.next();
-    } else {
-      ttsState = 'stopped';
-      updateTTSUI();
-    }
-  };
-  
-  window.speechSynthesis.speak(currentUtterance);
-  ttsState = 'playing';
-  updateTTSUI();
-}
-
-function updateTTSUI() {
-  if (ttsState === 'stopped') {
-    ttsPlayer.classList.add('hidden');
-    ttsPlayPauseBtn.innerHTML = '▶';
-    ttsPlayPauseBtn.classList.remove('playing');
-  } else {
-    ttsPlayer.classList.remove('hidden');
-    if (ttsState === 'playing') {
-      ttsPlayPauseBtn.innerHTML = '⏸';
-      ttsPlayPauseBtn.classList.add('playing');
-    } else {
-      ttsPlayPauseBtn.innerHTML = '▶';
-      ttsPlayPauseBtn.classList.remove('playing');
-    }
-  }
-}
-
-async function readCurrentPage(showError = false) {
-  if (!currentViewer) return;
-  try {
-    let text = '';
-    if (currentViewer.type === 'pdf') {
-      const page = await currentViewer.pdf.getPage(currentViewer.pageIndex || 1);
-      const tc = await page.getTextContent();
-      text = tc.items.map(i => i.str).join(' ');
-    } else if (currentViewer.type === 'epub') {
-      const loc = currentViewer.rendition.currentLocation();
-      if (!loc || !loc.start) {
-        if (showError) alert('A página ainda está carregando internamente.');
-        return;
-      }
-      const range = await currentViewer.book.getRange(loc.start.cfi);
-      text = range ? range.toString().trim() : '';
-      
-      if (!text) {
-        const contents = currentViewer.rendition.getContents();
-        if (contents && contents.length > 0) {
-          text = contents[0].document.body.innerText;
-        }
-      }
-    }
-    currentText = text;
-    speakText(text);
-  } catch(err) {
-    console.error('Erro no TTS:', err);
-    if (showError) alert('Ocorreu um erro ao tentar preparar o texto: ' + err.message);
-  }
-}
-
-listenBtn.addEventListener('click', () => {
-  readCurrentPage(true);
-});
-
-ttsPlayPauseBtn.addEventListener('click', () => {
-  if (ttsState === 'playing') {
-    window.speechSynthesis.pause();
-    ttsState = 'paused';
-  } else if (ttsState === 'paused') {
-    window.speechSynthesis.resume();
-    ttsState = 'playing';
-  } else {
-    readCurrentPage(true);
-  }
-  updateTTSUI();
-});
-
-ttsStopBtn.addEventListener('click', () => {
-  if (currentUtterance) currentUtterance.onend = null;
-  window.speechSynthesis.cancel();
-  ttsState = 'stopped';
-  updateTTSUI();
-});
-
-ttsSpeedBtn.addEventListener('click', () => {
-  currentRate = currentRate >= 2.0 ? 0.75 : currentRate + 0.25;
-  ttsSpeedBtn.textContent = currentRate.toFixed(1) + 'x';
-  if (ttsState === 'playing') {
-    if (currentUtterance) currentUtterance.onend = null;
-    window.speechSynthesis.cancel();
-    speakText(currentText);
-  }
-});
-
-ttsRewindBtn.addEventListener('click', () => {
-  if (ttsState !== 'stopped') {
-    if (currentUtterance) currentUtterance.onend = null;
-    window.speechSynthesis.cancel();
-    speakText(currentText);
-  }
-});
 
 // ── Init ─────────────────────────────────────────────────
 loadBookList();

@@ -1415,7 +1415,7 @@ function setupNavigation() {
             
             // Oculta a barra de mensagens nas telas que não usam composição de frases.
             if (messageBar) {
-                if (targetView === 'view-topics' || targetView === 'view-virtues' || targetView === 'view-media' || targetView === 'view-ia' || targetView === 'view-exercises' || targetView === 'view-games' || targetView === 'view-admin') {
+                if (targetView === 'view-topics' || targetView === 'view-virtues' || targetView === 'view-media' || targetView === 'view-ia' || targetView === 'view-exercises' || targetView === 'view-games' || targetView === 'view-admin' || targetView === 'view-books') {
                     messageBar.style.display = 'none';
                 } else {
                     messageBar.style.display = 'flex';
@@ -1424,6 +1424,11 @@ function setupNavigation() {
 
             if (targetView === 'view-admin') {
                 renderUsageDashboard();
+            }
+
+            if (targetView === 'view-books') {
+                const booksFrame = document.getElementById('books-frame');
+                if (booksFrame && !booksFrame.src) booksFrame.src = booksFrame.dataset.src;
             }
         });
     });
@@ -1583,15 +1588,23 @@ function prefetchTts(text) {
 
 // Função principal de áudio — usada em todo o app (cards, jogos, compositor).
 // Usa a voz neural FranciscaNeural via edge-tts com fallback para o navegador.
+//
+// ttsRequestId evita que dois cliques em sequência rápida toquem áudio ao mesmo
+// tempo: se a resposta de uma chamada mais antiga chega depois de uma mais nova
+// já ter assumido, ela é descartada em vez de tocar por cima da atual.
+let ttsRequestId = 0;
 async function speakWithAzure(text) {
     if (!text) return;
+    const myRequestId = ++ttsRequestId;
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    if (currentAudio) currentAudio.pause();
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     try {
         const audioBase64 = await getTtsAudio(text);
+        if (myRequestId !== ttsRequestId) return;
         currentAudio = new Audio('data:audio/mp3;base64,' + audioBase64);
         await currentAudio.play();
     } catch (e) {
+        if (myRequestId !== ttsRequestId) return;
         console.warn('TTS via backend indisponível, usando a voz do navegador:', e.message);
         _speakNative(text);
     }
