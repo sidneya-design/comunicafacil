@@ -346,10 +346,21 @@ body {
 .reader-view {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
+  height: 100vh;
+  height: 100dvh; /* viewport real em mobile, sem cortar atrás da barra do navegador */
   background: var(--bg);
   z-index: 2000;
   display: flex;
   flex-direction: column;
+}
+
+/* Quando o leitor entra em tela cheia (Fullscreen API), ocupa 100% do dispositivo */
+.reader-view:fullscreen,
+.reader-view:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .reader-header {

@@ -507,8 +507,46 @@ bookSearchInput?.addEventListener('input', () => {
   renderSearchResults(filtered);
 });
 
+// ── Fullscreen (leitor maximizado no celular, estilo Kindle) ──
+// iOS Safari não implementa Fullscreen API para elementos arbitrários (só <video>),
+// então lá o leitor fica limitado ao CSS edge-to-edge já existente. Em Android/desktop
+// isso faz o iframe #books-frame tomar a tela toda, escondendo o chrome do app.html.
+const isTouchDevice = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+
+// Avisa o app.html (mesma origem) para esconder sua barra de abas — cobre o iOS Safari,
+// que ignora silenciosamente o requestFullscreen() abaixo.
+function setParentImmersive(value) {
+  if (!isTouchDevice || window.parent === window) return;
+  try {
+    window.parent.postMessage({ type: 'book-reader:immersive', value }, window.location.origin);
+  } catch (e) { /* ignora se não estiver embutido */ }
+}
+
+function requestReaderFullscreen() {
+  if (!isTouchDevice) return;
+  const el = readerView;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req) return;
+  try {
+    const result = req.call(el);
+    if (result?.catch) result.catch(() => {});
+  } catch (e) { /* ignora — segue no modo maximizado via CSS */ }
+}
+
+function exitReaderFullscreen() {
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  const exit = document.exitFullscreen || document.webkitExitFullscreen;
+  if (!fsEl || !exit) return;
+  try {
+    const result = exit.call(document);
+    if (result?.catch) result.catch(() => {});
+  } catch (e) { /* já não está em fullscreen */ }
+}
+
 // ── Open Reader ──────────────────────────────────────────
 async function openReader(book) {
+  requestReaderFullscreen(); // primeiro passo síncrono: preserva o gesto do usuário (clique/tap)
+  setParentImmersive(true);
   try {
     console.log('Abrindo leitor para:', book.title);
     libraryView.style.display = 'none';
@@ -584,6 +622,8 @@ async function openReader(book) {
 }
 
 backToLibrary.addEventListener('click', () => {
+  exitReaderFullscreen();
+  setParentImmersive(false);
   readerView.style.display = 'none';
   libraryView.style.display = 'block';
   viewer.innerHTML = '';
@@ -817,13 +857,65 @@ async function renderEPUB(url) {
       }
     });
 
-    // Navegação por clique na tela (estilo Kindle)
-    rendition.on('click', e => {
-      const x = e.clientX || (e.changedTouches && e.changedTouches[0].clientX);
-      if (!x) return;
-      const width = window.innerWidth;
-      if (x < width * 0.3) { goPrev(); }
-      else if (x > width * 0.7) { goNext(); }
+    // Navegação por toque/clique/arrastar — camada transparente por cima do
+    // conteúdo do EPUB, no nosso próprio documento (não dentro do iframe que o
+    // epub.js cria para o texto). O epub.js renderiza o livro num iframe com
+    // sandbox restrito (sem allow-scripts); o repasse de eventos internos dele
+    // (rendition.on('click'/'touchstart'/...)) depende dessa cadeia e não se
+    // mostrou confiável no Safari/Chrome do iPhone (WebKit). Capturando aqui
+    // fora, o gesto funciona em qualquer navegador.
+    const touchLayer = document.createElement('div');
+    touchLayer.id = 'epub-touch-layer';
+    touchLayer.style.cssText = 'position: absolute; inset: 0; z-index: 4; background: transparent; touch-action: pan-y;';
+    viewer.appendChild(touchLayer);
+
+    let touchStartX = null;
+    let touchStartY = null;
+
+    const handleTapOrSwipe = (endX, endY) => {
+      const deltaX = endX - touchStartX;
+      const deltaY = endY - touchStartY;
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+
+      if (absX >= 40 && absX > absY) {
+        // Arrastar/deslizar horizontal: vira a página, igual às setas
+        if (deltaX > 0) { goPrev(); } else { goNext(); }
+        return;
+      }
+
+      if (absX < 10 && absY < 10) {
+        // Toque simples: zonas nas bordas viram página (estilo Kindle)
+        const width = touchLayer.clientWidth || window.innerWidth;
+        if (endX < width * 0.3) { goPrev(); }
+        else if (endX > width * 0.7) { goNext(); }
+      }
+    };
+
+    touchLayer.addEventListener('touchstart', e => {
+      const t = e.changedTouches[0];
+      touchStartX = t.clientX;
+      touchStartY = t.clientY;
+    }, { passive: true });
+
+    touchLayer.addEventListener('touchend', e => {
+      if (touchStartX === null) return;
+      const t = e.changedTouches[0];
+      handleTapOrSwipe(t.clientX, t.clientY);
+      touchStartX = null;
+      touchStartY = null;
+    });
+
+    // Mouse (desktop): clique nas zonas ou arrastar com o botão pressionado
+    touchLayer.addEventListener('mousedown', e => {
+      touchStartX = e.clientX;
+      touchStartY = e.clientY;
+    });
+    touchLayer.addEventListener('mouseup', e => {
+      if (touchStartX === null) return;
+      handleTapOrSwipe(e.clientX, e.clientY);
+      touchStartX = null;
+      touchStartY = null;
     });
 
     // Quando mudar de página no EPUB, salva a localização exata

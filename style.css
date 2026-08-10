@@ -49,6 +49,12 @@ body {
 
 .app-layout { display: flex; height: 100vh; height: 100dvh; width: 100vw; }
 
+/* Modo imersivo: leitor de livros pede (via postMessage) para esconder o chrome do app
+   e ocupar a tela toda — necessário no iOS Safari, que não suporta Fullscreen API para
+   elementos genéricos (só <video>), então o iframe não consegue se maximizar sozinho. */
+.app-layout.reader-immersive .sidebar { display: none; }
+.app-layout.reader-immersive .main-content { padding: 0; gap: 0; }
+
 /* Sidebar */
 .sidebar {
     width: 120px; background-color: var(--sidebar-bg); display: flex; flex-direction: column;

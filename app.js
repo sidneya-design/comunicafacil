@@ -10093,6 +10093,15 @@ function setupCardEditor() {
     });
 }
 
+// Leitor de livros (iframe #books-frame) pede modo imersivo via postMessage quando abre um
+// livro no celular — necessário porque o iOS Safari não suporta Fullscreen API para
+// elementos genéricos, então o iframe não consegue se maximizar sozinho.
+window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) return;
+    if (event.data?.type !== 'book-reader:immersive') return;
+    document.querySelector('.app-layout')?.classList.toggle('reader-immersive', !!event.data.value);
+});
+
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initApp);
 } else {
