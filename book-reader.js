@@ -1,6 +1,6 @@
 // book-reader.js — ComunicaFácil Netflix-Style Library Module
 
-import { supabase } from './supabase.js?v=2';
+import { supabase } from './supabase.js?v=3';
 
 // ── Config ──────────────────────────────────────────────
 const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB
@@ -13,6 +13,14 @@ function isLocalAppHost() {
   return ['localhost', '127.0.0.1'].includes(window.location.hostname) || window.location.protocol === 'file:';
 }
 const isEmbedded = window.self !== window.top;
+
+// Contexto de médico "dentro" de um paciente (Fase 6c) — app.html passa
+// esses parâmetros na URL do iframe quando o médico clica "Livros" na tela
+// de pacientes (ver enterPatientContext/buildBooksFrameUrl em app.js).
+const urlParams = new URLSearchParams(window.location.search);
+const doctorPatientContext = urlParams.get('patientId')
+  ? { id: urlParams.get('patientId'), name: urlParams.get('patientName') || '' }
+  : null;
 
 supabase.auth.getSession().then(({ data }) => {
   if (!data?.session && !isLocalAppHost() && !isEmbedded) {
@@ -315,6 +323,7 @@ async function uploadFile(file) {
     const genre = bookGenreSelect?.value || 'Outros';
     const { error: dbErr } = await supabase.from('books').insert({
       title, mime_type: mimeType, file_path: filePath, file_size: file.size, genre,
+      ...(doctorPatientContext ? { patient_id: doctorPatientContext.id } : {}),
     });
 
     if (dbErr) return setStatus('❌ Erro ao salvar: ' + dbErr.message, 'error');
@@ -584,13 +593,20 @@ async function loadBookList() {
   console.log('[BookReader] Carregando lista de livros...');
   const { data, error } = await supabase
     .from('books')
-    .select('id, title, mime_type, file_path, genre, last_page, last_location, last_read_at')
+    .select('id, title, mime_type, file_path, genre, last_page, last_location, last_read_at, patient_id')
     .order('created_at', { ascending: false });
 
   if (error) { console.error('[BookReader] Erro na listagem:', error); return; }
   console.log('[BookReader] Livros encontrados:', data?.length);
 
-  allBooksCache = data || [];
+  // Médico "dentro" de um paciente (Fase 6c): mostra só os livros globais +
+  // os daquele paciente — nunca a mistura de vários pacientes que a RLS
+  // deixaria o médico ler (mesmo cuidado das Fases 5b/6b em app.js).
+  const filtered = doctorPatientContext
+    ? (data || []).filter(b => !b.patient_id || b.patient_id === doctorPatientContext.id)
+    : (data || []);
+
+  allBooksCache = filtered;
   coverUrlMap = await resolveCoverUrls(allBooksCache);
   renderLibrary(allBooksCache);
 }
@@ -1032,4 +1048,12 @@ async function renderEPUB(url) {
 }
 
 // ── Init ─────────────────────────────────────────────────
+if (doctorPatientContext) {
+  const banner = document.getElementById('patient-context-banner');
+  const bannerText = document.getElementById('patient-context-banner-text');
+  if (banner && bannerText) {
+    bannerText.textContent = `Enviando livros para: ${doctorPatientContext.name}`;
+    banner.style.display = 'flex';
+  }
+}
 loadBookList();

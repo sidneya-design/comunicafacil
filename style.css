@@ -333,6 +333,9 @@ body {
 }
 .native-keyboard-actions .action-btn { width: 200px; height: 60px; font-size: 24px; border-radius: 12px;}
 .media-header { display: flex; align-items: center; gap: 20px; padding: 15px; background: white; border-radius: var(--radius); margin-bottom: 15px;}
+/* Mesmo visual do .media-header, mas fora do seletor global de showEditBars() —
+   o cabeçalho de "Meus Pacientes" precisa ficar visível pra isDoctor, não isAdmin. */
+.doctor-patients-header { display: flex; align-items: center; gap: 20px; padding: 15px; background: white; border-radius: var(--radius); margin-bottom: 15px;}
 .memory-header { display: flex; align-items: center; gap: 20px; padding: 15px; background: white; border-radius: var(--radius); margin-bottom: 15px;}
 .add-media-btn { background: #4CAF50; color: white; border: none; padding: 15px 25px; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 10px; }
 

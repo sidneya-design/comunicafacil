@@ -11,3 +11,5 @@ node_modules/
 *.xlsx
 *.csv
 scripts/
+.env.staging
+.env.production

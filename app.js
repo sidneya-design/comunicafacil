@@ -81,8 +81,16 @@ const localForcesImages = {
     'transcendência': 'img/forcas/apreciacao-da-beleza.png'
 };
 // CONFIGURAÇÃO SUPABASE
-const supabaseUrl = 'https://rrubmvykindvilptjhma.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJydWJtdnlraW5kdmlscHRqaG1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0ODE2OTksImV4cCI6MjA5ODA1NzY5OX0.4eKcRhUReuaKaaq4ftIOWe6vvB9qxL4Sjiii-3QX5eM';
+// Override opt-in só-localhost (?sb=staging) para apontar pro projeto de staging
+// durante o desenvolvimento do modelo multi-tenant (empresa/médico/paciente),
+// sem tocar nos valores de produção usados por qualquer outro acesso.
+const useStagingSupabase = isLocalAppHost() && new URLSearchParams(window.location.search).get('sb') === 'staging';
+const supabaseUrl = useStagingSupabase
+    ? 'https://iqiiilddodttvrxodwbd.supabase.co'
+    : 'https://rrubmvykindvilptjhma.supabase.co';
+const supabaseKey = useStagingSupabase
+    ? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxaWlpbGRkb2R0dHZyeG9kd2JkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYzNjg4NjEsImV4cCI6MjEwMTk0NDg2MX0.Po7_bLntUw-RFt92Lw2WIsrJoasrrg1VBWl7zm1vDSM'
+    : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJydWJtdnlraW5kdmlscHRqaG1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0ODE2OTksImV4cCI6MjA5ODA1NzY5OX0.4eKcRhUReuaKaaq4ftIOWe6vvB9qxL4Sjiii-3QX5eM';
 const supabaseClient = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
 
 // Reduz fotos grandes antes do upload (celular manda imagem de vários MB, que depois
@@ -166,7 +174,8 @@ const USAGE_VIEW_LABELS = {
     'view-exercises': 'Exercícios',
     'view-games': 'Jogos',
     'view-ia': 'IA',
-    'view-admin': 'Admin'
+    'view-admin': 'Admin',
+    'view-doctor-patients': 'Meus Pacientes'
 };
 const usageCatalog = { views: new Map(), activities: new Map() };
 let usageState = null;
@@ -587,6 +596,7 @@ function getSectionLabel(sectionId) {
         'view-games': 'Tela: Jogos',
         'view-ia': 'Tela: Assistente IA',
         'view-admin': 'Tela: Admin',
+        'view-doctor-patients': 'Tela: Meus Pacientes',
         'game:memory': 'Jogo: Jogo da Memória',
         'game:memory-alphabet': 'Jogo: Memória do Alfabeto',
         'game:jogo2': 'Jogo: Trilha de Aprendizado de Forças',
@@ -1326,7 +1336,7 @@ function clearLocalUsageData() {
 }
 
 function setAdminTab(tabName) {
-    const tabs = ['users', 'usage', 'modules'];
+    const tabs = ['users', 'companies', 'usage', 'modules'];
     
     tabs.forEach(tab => {
         const btn = document.getElementById(`btn-admin-tab-${tab}`);
@@ -1343,6 +1353,8 @@ function setAdminTab(tabName) {
 
     if (tabName === 'users') {
         loadAdminUsers();
+    } else if (tabName === 'companies') {
+        loadCompanies();
     } else if (tabName === 'usage') {
         renderUsageDashboard();
     } else if (tabName === 'modules') {
@@ -1415,7 +1427,7 @@ function setupNavigation() {
             
             // Oculta a barra de mensagens nas telas que não usam composição de frases.
             if (messageBar) {
-                if (targetView === 'view-topics' || targetView === 'view-virtues' || targetView === 'view-media' || targetView === 'view-ia' || targetView === 'view-exercises' || targetView === 'view-games' || targetView === 'view-admin' || targetView === 'view-books') {
+                if (targetView === 'view-topics' || targetView === 'view-virtues' || targetView === 'view-media' || targetView === 'view-ia' || targetView === 'view-exercises' || targetView === 'view-games' || targetView === 'view-admin' || targetView === 'view-books' || targetView === 'view-doctor-patients') {
                     messageBar.style.display = 'none';
                 } else {
                     messageBar.style.display = 'flex';
@@ -1426,9 +1438,12 @@ function setupNavigation() {
                 renderUsageDashboard();
             }
 
+            if (targetView === 'view-doctor-patients') {
+                loadDoctorPatients();
+            }
+
             if (targetView === 'view-books') {
-                const booksFrame = document.getElementById('books-frame');
-                if (booksFrame && !booksFrame.src) booksFrame.src = booksFrame.dataset.src;
+                refreshBooksFrameSrc();
             }
         });
     });
@@ -1831,16 +1846,26 @@ async function seedLocalPracticeExercises() {
     });
 }
 
-async function saveMediaToDB(title, fileBlob, mimeType, colorClass, mediaUrl) {
+async function saveMediaToDB(title, fileBlob, mimeType, colorClass, mediaUrl, patientId = null) {
     const isLink = !!mediaUrl;
     const isVideo = isLink ? true : mimeType.startsWith('video');
+    // Mídia de médico já nasce visível pro paciente dele (sem o fluxo de
+    // publicar/despublicar do admin, que é só pra conteúdo global). A policy
+    // de escrita de "medias" (pré-existente, fora do nosso controle) exige
+    // user_id = auth.uid() pra quem não é editor/admin — sem isso o insert
+    // do médico é rejeitado pela RLS (403).
+    let extraFields = { visible: false };
+    if (patientId) {
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        extraFields = { visible: true, patient_id: patientId, user_id: sessionData?.session?.user?.id };
+    }
     if (supabaseClient) {
         try {
             if (isLink) {
-                await supabaseClient.from('medias').insert([{ title, is_video: isVideo, color_class: colorClass, media_url: mediaUrl, visible: false }]);
+                await supabaseClient.from('medias').insert([{ title, is_video: isVideo, color_class: colorClass, media_url: mediaUrl, ...extraFields }]);
             } else {
                 const url = await uploadToSupabaseStorage('media_uploads', 'medias', fileBlob);
-                await supabaseClient.from('medias').insert([{ title, is_video: isVideo, color_class: colorClass, media_url: url, visible: false }]);
+                await supabaseClient.from('medias').insert([{ title, is_video: isVideo, color_class: colorClass, media_url: url, ...extraFields }]);
             }
             loadMediaCards();
             return;
@@ -1876,7 +1901,7 @@ async function loadMediaCards() {
             if (!error) {
                 currentMedias = data.map(m => ({
                     id: m.id, title: m.title, isVideo: m.is_video, colorClass: m.color_class, media_url: m.media_url,
-                    visible: m.visible !== false, fromSupabase: true
+                    visible: m.visible !== false, fromSupabase: true, patientId: m.patient_id || null
                 }));
             }
         } catch(e) {}
@@ -1893,7 +1918,16 @@ function renderMediaCards(mediasArray) {
     const container = document.getElementById('grid-media');
     if (!container) return;
     container.innerHTML = '';
-    const cardsToRender = isAdmin ? mediasArray : mediasArray.filter(m => m.visible !== false);
+
+    // Médico "dentro" de um paciente (Fase 6b): vê só as mídias daquele
+    // paciente, mais as globais como referência — mesmo cuidado de
+    // renderExerciseCards, pra não misturar mídias de vários pacientes.
+    const inDoctorPatientContext = isDoctor && activePatientContext;
+    const canEditHere = isAdmin || inDoctorPatientContext;
+    const baseMedias = inDoctorPatientContext
+        ? mediasArray.filter(m => !m.patientId || m.patientId === activePatientContext.id)
+        : mediasArray;
+    const cardsToRender = canEditHere ? baseMedias : baseMedias.filter(m => m.visible !== false);
     cardsToRender.forEach(media => {
         const btn = document.createElement('button');
         btn.className = `word-btn border-${media.colorClass}` + (isAdmin && media.visible === false ? ' card-hidden' : '');
@@ -1999,6 +2033,19 @@ function renderMediaCards(mediasArray) {
                 }
             };
             btn.appendChild(delBtn);
+        } else if (inDoctorPatientContext && media.patientId === activePatientContext.id) {
+            // Médico só apaga as mídias do próprio paciente — as globais
+            // aparecem como referência, sem esse botão.
+            const delBtn = document.createElement('button');
+            delBtn.className = 'delete-media-btn'; delBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>'; delBtn.setAttribute('aria-label', 'Excluir');
+            delBtn.onclick = async (ev) => {
+                ev.stopPropagation();
+                if (confirm('Apagar?')) {
+                    await supabaseClient.from('medias').delete().eq('id', media.id);
+                    loadMediaCards();
+                }
+            };
+            btn.appendChild(delBtn);
         }
         btn.addEventListener('click', () => playMedia(media));
         container.appendChild(btn);
@@ -2012,7 +2059,7 @@ let currentEditingBlobs = {};
 let currentEditingImageUrls = {};
 let exerciseBlockCounter = 0;
 
-async function saveExercisePlaylistToDB(title, itemsArray) {
+async function saveExercisePlaylistToDB(title, itemsArray, doctorUserId = null) {
     // Exercícios só-locais (ex.: os semeados por seedLocalPracticeExercises) têm um id
     // de IndexedDB, não um id do Supabase. Se tentássemos o caminho do Supabase pra eles,
     // o update/delete usaria esse id local contra a tabela real e não bateria com nada —
@@ -2039,7 +2086,12 @@ async function saveExercisePlaylistToDB(title, itemsArray) {
                 }));
                 await supabaseClient.from('exercise_items').insert(dbItems);
             } else {
-                const { data: exData } = await supabaseClient.from('exercises').insert([{ title, visible: false }]).select().single();
+                // Exercício de médico entra direto no banco dele (ninguém mais vê até
+                // ele liberar por paciente em "Meus Pacientes" — patient_exercise_flags).
+                const newExercisePayload = doctorUserId
+                    ? { title, visible: true, doctor_user_id: doctorUserId }
+                    : { title, visible: false };
+                const { data: exData } = await supabaseClient.from('exercises').insert([newExercisePayload]).select().single();
                 if (exData) {
                     const dbItems = uploadedItems.map(item => ({
                         exercise_id: exData.id,
@@ -2157,7 +2209,9 @@ async function loadExerciseCards() {
                         items,
                         visible: inferredVisible,
                         seedKey: inferredSeedKey,
-                        fromSupabase: true
+                        fromSupabase: true,
+                        patientId: ex.patient_id || null,
+                        doctorUserId: ex.doctor_user_id || null
                     };
                 });
             }
@@ -2187,7 +2241,14 @@ function renderExerciseCards(exercisesArray) {
     // O container "Cartas do Jogo da Memória" (seedKey MEMORY_CARDS_SEED_KEY) é armazenamento
     // interno do Jogo da Memória — nunca deve aparecer como um card de exercício, nem para o admin.
     const realExercises = exercisesArray.filter(ex => ex.seedKey !== MEMORY_CARDS_SEED_KEY && ex.seedKey !== NAMING_SEED_KEY && ex.seedKey !== ALPHABET_MEMORY_SEED_KEY && ex.seedKey !== AFASIA_SEED_KEY);
-    const cardsToRender = isAdmin ? realExercises : realExercises.filter(ex => ex.visible !== false);
+
+    // Médico vê o próprio "banco" de exercícios (Fase 7) — os que ele criou,
+    // ainda que não liberados pra nenhum paciente — mais os globais, como
+    // referência. A liberação por paciente acontece na tela "Meus Pacientes"
+    // (openPatientExercisesModal), não aqui.
+    const isOwnBankExercise = ex => ex.doctorUserId && ex.doctorUserId === currentUserId;
+    const canEditHere = isAdmin || isDoctor;
+    const cardsToRender = canEditHere ? realExercises : realExercises.filter(ex => ex.visible !== false);
     cardsToRender.forEach(ex => {
         const parts = (ex.title || '').split('|');
         const displayTitle = parts[0];
@@ -2243,6 +2304,30 @@ function renderExerciseCards(exercisesArray) {
                     } else {
                         db.transaction(['exercises'], 'readwrite').objectStore('exercises').delete(ex.id).onsuccess = () => loadExerciseCards();
                     }
+                }
+            };
+            btn.appendChild(delBtn);
+
+            const editBtn = document.createElement('button');
+            editBtn.className = 'edit-media-btn'; editBtn.innerHTML = '<i class="fas fa-pencil-alt" aria-hidden="true"></i>'; editBtn.setAttribute('aria-label', 'Editar');
+            editBtn.onclick = (ev) => {
+                ev.stopPropagation();
+                openEditExercise(ex);
+            };
+            btn.appendChild(editBtn);
+        } else if (isDoctor && isOwnBankExercise(ex)) {
+            // Médico só edita/apaga os exercícios do próprio banco — os
+            // globais aparecem como referência, mas ficam sem esses botões
+            // (a RLS rejeitaria a escrita mesmo se o botão aparecesse).
+            // Liberar/tirar de um paciente específico é na tela "Meus
+            // Pacientes" (openPatientExercisesModal), não aqui.
+            const delBtn = document.createElement('button');
+            delBtn.className = 'delete-media-btn'; delBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>'; delBtn.setAttribute('aria-label', 'Excluir');
+            delBtn.onclick = async (ev) => {
+                ev.stopPropagation();
+                if (confirm(`Apagar exercício "${displayTitle}"?`)) {
+                    await supabaseClient.from('exercises').delete().eq('id', ex.id);
+                    loadExerciseCards();
                 }
             };
             btn.appendChild(delBtn);
@@ -2687,7 +2772,7 @@ function setupModals() {
     });
 
     document.getElementById('btn-open-upload').addEventListener('click', () => {
-        if (!isAdmin) return;
+        if (!isAdmin && !(isDoctor && activePatientContext)) return;
         document.getElementById('upload-modal').style.display = 'flex';
     });
     const closeUpload = () => { document.getElementById('upload-modal').style.display = 'none'; document.getElementById('upload-form').reset(); };
@@ -2713,14 +2798,15 @@ function setupModals() {
 
     document.getElementById('upload-form').addEventListener('submit', (e) => {
         e.preventDefault();
-        if (!isAdmin) {
-            alert('Apenas administradores podem adicionar mídia.');
+        if (!isAdmin && !(isDoctor && activePatientContext)) {
+            alert('Apenas administradores ou médicos (com um paciente selecionado) podem adicionar mídia.');
             return;
         }
 
         const title = document.getElementById('media-title').value.trim();
         const color = document.getElementById('media-color').value.split('-')[1];
         const source = document.querySelector('input[name="media-source"]:checked').value;
+        const targetPatientId = (isDoctor && activePatientContext) ? activePatientContext.id : null;
 
         if (!title) {
             alert('Por favor informe um título para a mídia.');
@@ -2733,14 +2819,14 @@ function setupModals() {
                 alert('Informe o link do YouTube, Vimeo ou Google Drive.');
                 return;
             }
-            saveMediaToDB(title, null, '', color, link);
+            saveMediaToDB(title, null, '', color, link, targetPatientId);
         } else {
             const file = document.getElementById('media-file').files[0];
             if (!file) {
                 alert('Selecione um arquivo de áudio ou vídeo.');
                 return;
             }
-            saveMediaToDB(title, file, file.type, color, null);
+            saveMediaToDB(title, file, file.type, color, null, targetPatientId);
         }
 
         closeUpload();
@@ -2768,6 +2854,13 @@ function setupModals() {
     };
 
     document.getElementById('btn-open-exercise-upload').addEventListener('click', () => {
+        if (isDoctor) {
+            // Médico só cria "Exercício com Slides" pro próprio banco (os
+            // outros tipos usam tabelas/fluxos próprios) — pula direto pro
+            // criador, sem passar pelo seletor de tipo do admin.
+            openSlidesExerciseCreator();
+            return;
+        }
         if (!isAdmin) return;
         document.getElementById('exercise-type-modal').style.display = 'flex';
     });
@@ -2822,8 +2915,8 @@ function setupModals() {
 
     document.getElementById('upload-exercise-form').addEventListener('submit', (e) => {
         e.preventDefault();
-        if (!isAdmin) {
-            alert('Apenas administradores podem salvar exercícios.');
+        if (!isAdmin && !isDoctor) {
+            alert('Apenas administradores ou médicos podem salvar exercícios.');
             return;
         }
         const titleVal = document.getElementById('exercise-title').value.trim();
@@ -2862,7 +2955,8 @@ function setupModals() {
             });
         });
 
-        saveExercisePlaylistToDB(finalTitle, itemsArray);
+        const targetDoctorUserId = isDoctor ? currentUserId : null;
+        saveExercisePlaylistToDB(finalTitle, itemsArray, targetDoctorUserId);
         closeExerciseUpload();
     });
 
@@ -3130,11 +3224,28 @@ async function toggleModuleVisibility(moduleId, currentVisible) {
 
 async function applyModuleVisibility() {
     const flags = await loadModuleFlags();
+
+    // Paciente: sobrepõe a flag global com o que o médico configurou
+    // especificamente pra ele (Fase 5a) — sem registro pra um módulo, o
+    // paciente cai na flag global de sempre (comportamento de hoje intacto).
+    if (currentPatientId && supabaseClient) {
+        try {
+            const { data: patientFlags } = await supabaseClient
+                .from('patient_module_flags').select('module_id, visible').eq('patient_id', currentPatientId);
+            (patientFlags || []).forEach(row => { flags[row.module_id] = row.visible; });
+        } catch (e) {
+            console.warn('Erro ao carregar módulos do paciente:', e);
+        }
+    }
+
     const navButtons = document.querySelectorAll('.sidebar .nav-btn[data-view]');
     
     navButtons.forEach(btn => {
         const viewId = btn.dataset.view;
-        if (viewId === 'view-admin' || viewId === 'view-core') return;
+        // view-carometro agora é controlado por patient_id (Fase 4 do modelo médico→
+        // paciente), não pelo toggle genérico de módulos — sem isso, esta função
+        // reexibia a aba pra todo mundo toda vez que rodava (ex: a cada login).
+        if (viewId === 'view-admin' || viewId === 'view-core' || viewId === 'view-doctor-patients' || viewId === 'view-carometro') return;
         
         if (flags[viewId] === false) {
             if (isAdmin) {
@@ -3158,7 +3269,8 @@ function renderAdminModulesPanel(flags) {
     if (!container) return;
     
     const modules = [
-        { id: 'view-carometro', name: 'Carômetro', icon: 'fa-id-card' },
+        // view-carometro fica fora: visibilidade agora é por paciente (Fase 4 do
+        // modelo médico→paciente), não um liga/desliga geral pra todo mundo.
         { id: 'view-topics', name: 'Tópicos', icon: 'fa-folder-open' },
         { id: 'view-virtues', name: 'Fomes e Forças', icon: 'fa-star' },
         { id: 'view-keyboard', name: 'Teclado', icon: 'fa-keyboard' },
@@ -3390,7 +3502,7 @@ function closeGame() {
     if (elExercisesBack) elExercisesBack.style.display = 'none';
 
     const elExercisesHeader = document.getElementById('exercises-header');
-    if (elExercisesHeader) elExercisesHeader.style.display = isAdmin ? 'flex' : 'none';
+    if (elExercisesHeader) elExercisesHeader.style.display = (isAdmin || isDoctor) ? 'flex' : 'none';
 
     const elMemory = document.getElementById('game-memory-container');
     if (elMemory) elMemory.style.display = 'none';
@@ -8538,6 +8650,10 @@ function afasiaSkip() {
 // exclusivamente admin (gerenciar usuários), usado só pela aba Admin.
 let isAdmin = false; // Bloqueado por padrão (Apenas fala)
 let canManageUsers = false;
+let isDoctor = false; // Papel "doctor": gerencia só os próprios pacientes, não conteúdo geral
+let currentPatientId = null; // Preenchido quando o papel logado é "patient"
+let currentUserId = null; // uuid do usuário logado, pra saber "isso é meu?" (banco de exercícios do médico)
+let activePatientContext = null; // { id, name } — médico "entrou" no paciente pra editar Carômetro/Livros/Mídias dele
 
 function isCompleteSentenceLocalDemo() {
     const localHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
@@ -8582,6 +8698,7 @@ if (supabaseClient) {
 
         // Se chegou aqui, a pessoa fez login.
         const userId = data.session.user.id;
+        currentUserId = userId;
 
         try {
             const { data: roleData, error } = await supabaseClient
@@ -8593,6 +8710,13 @@ if (supabaseClient) {
             const role = roleData?.role || 'viewer';
             isAdmin = isCompleteSentenceLocalDemo() || role === 'editor' || role === 'admin';
             canManageUsers = role === 'admin';
+            isDoctor = role === 'doctor'; // Não entra em isAdmin: médico não deve editar conteúdo geral
+
+            if (role === 'patient') {
+                const { data: patientRow } = await supabaseClient
+                    .from('patients').select('id').eq('user_id', userId).maybeSingle();
+                currentPatientId = patientRow?.id || null;
+            }
             startUsageSession({
                 id: userId,
                 email: data.session.user.email || 'sem e-mail',
@@ -8609,6 +8733,9 @@ if (supabaseClient) {
             const adminNavBtn = document.getElementById('btn-nav-admin');
             if (adminNavBtn) adminNavBtn.style.display = canManageUsers ? 'flex' : 'none';
 
+            const doctorNavBtn = document.getElementById('btn-nav-doctor-patients');
+            if (doctorNavBtn) doctorNavBtn.style.display = isDoctor ? 'flex' : 'none';
+
             if (isAdmin) {
                 // Re-render grids to show edit buttons se editor/admin
                 loadCoreAndRender();
@@ -8619,9 +8746,10 @@ if (supabaseClient) {
             }
             
             // Mostra/oculta o botão Editar do Carômetro conforme papel do usuário
+            // (médico só quando "dentro" de um paciente — Fase 5c)
             const btnEditCarometro = document.getElementById('btn-edit-carometro');
             if (btnEditCarometro) {
-                btnEditCarometro.style.display = isAdmin ? '' : 'none';
+                btnEditCarometro.style.display = (isAdmin || (isDoctor && activePatientContext)) ? '' : 'none';
             }
 
             applyModuleVisibility(); // Aplica visibilidade de módulos (para ambos admin e usuário)
@@ -8868,19 +8996,505 @@ document.getElementById('btn-nav-admin')?.addEventListener('click', async () => 
     await loadAdminUsers();
 });
 document.getElementById('btn-admin-tab-users')?.addEventListener('click', () => setAdminTab('users'));
+document.getElementById('btn-admin-tab-companies')?.addEventListener('click', () => setAdminTab('companies'));
 document.getElementById('btn-admin-tab-usage')?.addEventListener('click', () => setAdminTab('usage'));
 document.getElementById('btn-admin-tab-modules')?.addEventListener('click', () => setAdminTab('modules'));
+
+// =============================================
+// PAINEL ADMIN — Empresas (Fase 1 do modelo médico→paciente)
+// =============================================
+let companiesCache = [];
+
+async function loadCompanies() {
+    const tbody = document.getElementById('companies-tbody');
+    if (!tbody || !canManageUsers) return;
+    tbody.innerHTML = '<tr><td colspan="4">Carregando...</td></tr>';
+
+    try {
+        const [{ companies }, { users }] = await Promise.all([
+            callAdminUsersFn('listCompanies'),
+            callAdminUsersFn('list'),
+        ]);
+        companiesCache = companies || [];
+
+        const doctorCountByCompany = new Map();
+        (users || []).forEach(u => {
+            if (u.role === 'doctor' && u.companyId) {
+                doctorCountByCompany.set(u.companyId, (doctorCountByCompany.get(u.companyId) || 0) + 1);
+            }
+        });
+
+        tbody.innerHTML = '';
+        if (!companiesCache.length) {
+            tbody.innerHTML = '<tr><td colspan="4">Nenhuma empresa cadastrada ainda.</td></tr>';
+        }
+        companiesCache.forEach(c => {
+            const tr = document.createElement('tr');
+            const tdName = document.createElement('td');
+            tdName.textContent = c.name;
+            const tdDoctors = document.createElement('td');
+            tdDoctors.textContent = String(doctorCountByCompany.get(c.id) || 0);
+            const tdPatients = document.createElement('td');
+            tdPatients.textContent = '—'; // Fase 2 traz a contagem real de pacientes
+            const tdCreated = document.createElement('td');
+            tdCreated.textContent = formatAdminDate(c.created_at);
+            tr.append(tdName, tdDoctors, tdPatients, tdCreated);
+            tbody.appendChild(tr);
+        });
+
+        populateCompanySelect();
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="4">Erro ao carregar empresas: ${err.message}</td></tr>`;
+    }
+}
+
+function populateCompanySelect() {
+    const select = document.getElementById('new-user-company');
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = companiesCache.map(c => `<option value="${c.id}">${c.name}</option>`).join('')
+        || '<option value="">Nenhuma empresa cadastrada</option>';
+    if (current && companiesCache.some(c => c.id === current)) select.value = current;
+}
+
+document.getElementById('new-company-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('new-company-name');
+    const name = input.value.trim();
+    const submitBtn = document.getElementById('btn-submit-new-company');
+    const feedback = document.getElementById('companies-feedback');
+
+    submitBtn.disabled = true;
+    try {
+        await callAdminUsersFn('createCompany', { name });
+        input.value = '';
+        if (feedback) {
+            feedback.textContent = `Empresa "${name}" criada.`;
+            feedback.classList.remove('error');
+            feedback.style.display = 'block';
+            setTimeout(() => { feedback.style.display = 'none'; }, 4000);
+        }
+        await loadCompanies();
+    } catch (err) {
+        if (feedback) {
+            feedback.textContent = err.message || 'Erro ao criar empresa.';
+            feedback.classList.add('error');
+            feedback.style.display = 'block';
+        }
+    } finally {
+        submitBtn.disabled = false;
+    }
+});
 document.getElementById('btn-refresh-usage')?.addEventListener('click', renderUsageDashboard);
 document.getElementById('btn-clear-usage')?.addEventListener('click', clearLocalUsageData);
+
+// =============================================
+// TELA "MEUS PACIENTES" (papel doctor) — Fase 2 do modelo médico→paciente
+// =============================================
+const DOCTOR_PATIENTS_FN_URL = `${supabaseUrl}/functions/v1/doctor-patients`;
+
+async function callDoctorPatientsFn(action, payload) {
+    const { data } = await supabaseClient.auth.getSession();
+    const token = data?.session?.access_token;
+    if (!token) throw new Error('Sessão expirada. Faça login novamente.');
+
+    const res = await fetch(DOCTOR_PATIENTS_FN_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ action, payload })
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Erro ${res.status}`);
+    return body;
+}
+
+function showDoctorPatientsFeedback(message, isError = false) {
+    const box = document.getElementById('doctor-patients-feedback');
+    if (!box) return;
+    box.textContent = message;
+    box.classList.toggle('error', isError);
+    box.style.display = 'block';
+    setTimeout(() => { box.style.display = 'none'; }, 5000);
+}
+
+async function loadDoctorPatients() {
+    const tbody = document.getElementById('doctor-patients-tbody');
+    if (!tbody || !isDoctor) return;
+    tbody.innerHTML = '<tr><td colspan="6">Carregando...</td></tr>';
+
+    try {
+        const { patients } = await callDoctorPatientsFn('list');
+        tbody.innerHTML = '';
+        if (!patients || !patients.length) {
+            tbody.innerHTML = '<tr><td colspan="6">Nenhum paciente cadastrado ainda.</td></tr>';
+            return;
+        }
+
+        patients.forEach(p => {
+            const tr = document.createElement('tr');
+
+            const tdName = document.createElement('td');
+            tdName.textContent = p.name || '-';
+
+            const tdEmail = document.createElement('td');
+            tdEmail.textContent = p.email || '-';
+
+            const tdStatus = document.createElement('td');
+            tdStatus.textContent = p.active ? 'Ativo' : 'Desativado';
+
+            const tdCreated = document.createElement('td');
+            tdCreated.textContent = formatAdminDate(p.createdAt);
+
+            const tdLastSignIn = document.createElement('td');
+            tdLastSignIn.textContent = p.lastSignInAt ? formatAdminDate(p.lastSignInAt) : 'Nunca';
+
+            const tdActions = document.createElement('td');
+            tdActions.className = 'admin-actions-cell';
+
+            const btnPassword = document.createElement('button');
+            btnPassword.innerHTML = '<i class="fas fa-key" aria-hidden="true"></i>';
+            btnPassword.title = 'Redefinir senha';
+            btnPassword.className = 'admin-edit-password-btn';
+            btnPassword.addEventListener('click', async () => {
+                const newPassword = prompt(`Nova senha para ${p.email}:`);
+                if (!newPassword) return;
+                try {
+                    await callDoctorPatientsFn('setPassword', { patientId: p.id, userId: p.userId, password: newPassword });
+                    showDoctorPatientsFeedback('Senha atualizada.');
+                } catch (err) {
+                    showDoctorPatientsFeedback(err.message, true);
+                }
+            });
+
+            const btnToggleActive = document.createElement('button');
+            btnToggleActive.innerHTML = p.active
+                ? '<i class="fas fa-user-slash" aria-hidden="true"></i>'
+                : '<i class="fas fa-user-check" aria-hidden="true"></i>';
+            btnToggleActive.title = p.active ? 'Desativar paciente' : 'Reativar paciente';
+            btnToggleActive.className = p.active ? 'admin-delete-user-btn' : 'admin-edit-password-btn';
+            btnToggleActive.addEventListener('click', async () => {
+                const confirmMsg = p.active
+                    ? `Desativar ${p.name || p.email}? Ele não poderá mais entrar, mas os dados continuam salvos.`
+                    : `Reativar ${p.name || p.email}?`;
+                if (!confirm(confirmMsg)) return;
+                try {
+                    await callDoctorPatientsFn('setActive', { patientId: p.id, userId: p.userId, active: !p.active });
+                    showDoctorPatientsFeedback(p.active ? 'Paciente desativado.' : 'Paciente reativado.');
+                    loadDoctorPatients();
+                } catch (err) {
+                    showDoctorPatientsFeedback(err.message, true);
+                }
+            });
+
+            const btnModules = document.createElement('button');
+            btnModules.innerHTML = '<i class="fas fa-sliders" aria-hidden="true"></i>';
+            btnModules.title = 'Módulos liberados para este paciente';
+            btnModules.className = 'admin-edit-password-btn';
+            btnModules.addEventListener('click', () => openPatientModulesModal(p));
+
+            const btnExercises = document.createElement('button');
+            btnExercises.innerHTML = '<i class="fas fa-dumbbell" aria-hidden="true"></i>';
+            btnExercises.title = 'Exercícios liberados para este paciente';
+            btnExercises.className = 'admin-edit-password-btn';
+            btnExercises.addEventListener('click', () => openPatientExercisesModal(p));
+
+            const btnCarometro = document.createElement('button');
+            btnCarometro.innerHTML = '<i class="fas fa-id-card" aria-hidden="true"></i>';
+            btnCarometro.title = 'Carômetro deste paciente';
+            btnCarometro.className = 'admin-edit-password-btn';
+            btnCarometro.addEventListener('click', () => enterPatientContext(p, 'view-carometro'));
+
+            const btnBooks = document.createElement('button');
+            btnBooks.innerHTML = '<i class="fas fa-book" aria-hidden="true"></i>';
+            btnBooks.title = 'Livros deste paciente';
+            btnBooks.className = 'admin-edit-password-btn';
+            btnBooks.addEventListener('click', () => enterPatientContext(p, 'view-books'));
+
+            const btnMedias = document.createElement('button');
+            btnMedias.innerHTML = '<i class="fas fa-play-circle" aria-hidden="true"></i>';
+            btnMedias.title = 'Mídias deste paciente';
+            btnMedias.className = 'admin-edit-password-btn';
+            btnMedias.addEventListener('click', () => enterPatientContext(p, 'view-media'));
+
+            tdActions.append(btnPassword, btnModules, btnExercises, btnCarometro, btnBooks, btnMedias, btnToggleActive);
+            tr.append(tdName, tdEmail, tdStatus, tdCreated, tdLastSignIn, tdActions);
+            tbody.appendChild(tr);
+        });
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6">Erro ao carregar pacientes: ${err.message}</td></tr>`;
+    }
+}
+
+const newPatientModal = document.getElementById('new-patient-modal');
+const newPatientForm = document.getElementById('new-patient-form');
+const newPatientError = document.getElementById('new-patient-error');
+
+// Módulos por paciente (Fase 5a) — usa a mesma lista de módulos do painel
+// admin (sem Carômetro, que tem mecanismo próprio desde a Fase 4).
+const PATIENT_TOGGLABLE_MODULES = [
+    { id: 'view-topics', name: 'Tópicos' },
+    { id: 'view-virtues', name: 'Fomes e Forças' },
+    { id: 'view-keyboard', name: 'Teclado' },
+    { id: 'view-media', name: 'Mídias' },
+    { id: 'view-books', name: 'Livros' },
+    { id: 'view-exercises', name: 'Exercícios' },
+    { id: 'view-games', name: 'Jogos' },
+    { id: 'view-ia', name: 'Assistente IA' }
+];
+
+const patientModulesModal = document.getElementById('patient-modules-modal');
+
+async function openPatientModulesModal(patient) {
+    document.getElementById('patient-modules-subtitle').textContent = patient.name || patient.email;
+    const list = document.getElementById('patient-modules-list');
+    list.innerHTML = 'Carregando...';
+    if (patientModulesModal) patientModulesModal.style.display = 'flex';
+
+    const globalFlags = await loadModuleFlags();
+    const { data: overrides } = await supabaseClient
+        .from('patient_module_flags').select('module_id, visible').eq('patient_id', patient.id);
+    const overrideMap = new Map((overrides || []).map(r => [r.module_id, r.visible]));
+
+    list.innerHTML = '';
+    PATIENT_TOGGLABLE_MODULES.forEach(mod => {
+        const isVisible = overrideMap.has(mod.id) ? overrideMap.get(mod.id) : (globalFlags[mod.id] !== false);
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:#f5f5f5; border-radius:8px;';
+
+        const label = document.createElement('span');
+        label.textContent = mod.name;
+
+        const toggleWrap = document.createElement('div');
+        toggleWrap.style.cssText = 'position:relative; width:32px; height:18px;';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'visibility-toggle-btn ' + (isVisible ? 'is-visible' : 'is-hidden');
+        toggleBtn.style.cssText = 'position:absolute; top:0; left:0;';
+        toggleBtn.setAttribute('role', 'switch');
+        toggleBtn.setAttribute('aria-checked', String(isVisible));
+        toggleBtn.setAttribute('aria-label', `Liberar ${mod.name} para ${patient.name || patient.email}`);
+        toggleBtn.addEventListener('click', async () => {
+            const newVisible = !isVisible;
+            try {
+                await supabaseClient.from('patient_module_flags')
+                    .upsert({ patient_id: patient.id, module_id: mod.id, visible: newVisible, updated_at: new Date().toISOString() });
+                openPatientModulesModal(patient); // recarrega a lista com o novo estado
+            } catch (err) {
+                showDoctorPatientsFeedback('Erro ao salvar módulo: ' + err.message, true);
+            }
+        });
+
+        toggleWrap.appendChild(toggleBtn);
+        row.append(label, toggleWrap);
+        list.appendChild(row);
+    });
+}
+
+document.getElementById('btn-close-patient-modules')?.addEventListener('click', () => {
+    if (patientModulesModal) patientModulesModal.style.display = 'none';
+});
+
+// Exercícios liberados por paciente (Fase 7) — mesmo padrão de
+// openPatientModulesModal, mas a lista vem do banco de exercícios do
+// próprio médico (exercises.doctor_user_id), não de uma lista fixa.
+const patientExercisesModal = document.getElementById('patient-exercises-modal');
+
+async function openPatientExercisesModal(patient) {
+    document.getElementById('patient-exercises-subtitle').textContent = patient.name || patient.email;
+    const list = document.getElementById('patient-exercises-list');
+    list.innerHTML = 'Carregando...';
+    if (patientExercisesModal) patientExercisesModal.style.display = 'flex';
+
+    const { data: myExercises } = await supabaseClient
+        .from('exercises').select('id, title').eq('doctor_user_id', currentUserId).order('title');
+    const { data: overrides } = await supabaseClient
+        .from('patient_exercise_flags').select('exercise_id, visible').eq('patient_id', patient.id);
+    const overrideMap = new Map((overrides || []).map(r => [r.exercise_id, r.visible]));
+
+    list.innerHTML = '';
+    if (!myExercises || !myExercises.length) {
+        list.innerHTML = '<p class="media-hint">Você ainda não criou nenhum exercício. Crie em "Exercícios" na barra lateral.</p>';
+        return;
+    }
+
+    myExercises.forEach(ex => {
+        const displayTitle = (ex.title || '').split('|')[0];
+        const isVisible = overrideMap.has(ex.id) ? overrideMap.get(ex.id) : false; // opt-in: começa desligado
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:#f5f5f5; border-radius:8px;';
+
+        const label = document.createElement('span');
+        label.textContent = displayTitle;
+
+        const toggleWrap = document.createElement('div');
+        toggleWrap.style.cssText = 'position:relative; width:32px; height:18px;';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'visibility-toggle-btn ' + (isVisible ? 'is-visible' : 'is-hidden');
+        toggleBtn.style.cssText = 'position:absolute; top:0; left:0;';
+        toggleBtn.setAttribute('role', 'switch');
+        toggleBtn.setAttribute('aria-checked', String(isVisible));
+        toggleBtn.setAttribute('aria-label', `Liberar ${displayTitle} para ${patient.name || patient.email}`);
+        toggleBtn.addEventListener('click', async () => {
+            const newVisible = !isVisible;
+            try {
+                await supabaseClient.from('patient_exercise_flags')
+                    .upsert({ patient_id: patient.id, exercise_id: ex.id, visible: newVisible, updated_at: new Date().toISOString() });
+                openPatientExercisesModal(patient); // recarrega com o novo estado
+            } catch (err) {
+                showDoctorPatientsFeedback('Erro ao liberar exercício: ' + err.message, true);
+            }
+        });
+
+        toggleWrap.appendChild(toggleBtn);
+        row.append(label, toggleWrap);
+        list.appendChild(row);
+    });
+}
+
+document.getElementById('btn-close-patient-exercises')?.addEventListener('click', () => {
+    if (patientExercisesModal) patientExercisesModal.style.display = 'none';
+});
+
+// Monta a URL do iframe de Livros: propaga ?sb=staging (senão o iframe
+// sempre falaria com produção, mesmo testando o resto do app no staging) e,
+// quando o médico está "dentro" de um paciente, ?patientId/&patientName
+// (book-reader.js usa isso pra filtrar a biblioteca e escopar os uploads).
+function buildBooksFrameUrl() {
+    const params = new URLSearchParams({ embedded: '1' });
+    if (typeof useStagingSupabase !== 'undefined' && useStagingSupabase) params.set('sb', 'staging');
+    if (isDoctor && activePatientContext) {
+        params.set('patientId', activePatientContext.id);
+        params.set('patientName', activePatientContext.name);
+    }
+    return 'book-reader.html?' + params.toString();
+}
+
+function refreshBooksFrameSrc() {
+    const booksFrame = document.getElementById('books-frame');
+    if (!booksFrame) return;
+    const desiredSrc = new URL(buildBooksFrameUrl(), window.location.href).href;
+    // Só recarrega se o alvo realmente mudou (entrar/sair de contexto de
+    // paciente) — evita perder o estado da biblioteca a cada troca de aba.
+    if (booksFrame.src !== desiredSrc) booksFrame.src = desiredSrc;
+}
+
+// "Entra" no paciente pra editar Carômetro/Livros/Mídias dele (Fases 5c/6b/6c).
+// Exercícios NÃO usa mais esse mecanismo (Fase 7): o médico cria no próprio
+// banco e libera por paciente via openPatientExercisesModal, sem precisar
+// "entrar" em ninguém primeiro.
+// targetView: 'view-carometro', 'view-books' ou 'view-media'.
+function enterPatientContext(patient, targetView) {
+    activePatientContext = { id: patient.id, name: patient.name || patient.email };
+    updatePatientContextBanners();
+    updateCarometroEditButtonVisibility();
+    showEditBars();
+    if (targetView === 'view-carometro' && typeof reloadCarometroState === 'function') reloadCarometroState();
+    if (targetView === 'view-media') loadMediaCards();
+    document.querySelector(`.nav-btn[data-view="${targetView}"]`)?.click();
+    if (targetView === 'view-books') refreshBooksFrameSrc();
+}
+
+function exitPatientContext() {
+    activePatientContext = null;
+    updatePatientContextBanners();
+    updateCarometroEditButtonVisibility();
+    showEditBars();
+    loadMediaCards();
+    if (typeof reloadCarometroState === 'function') reloadCarometroState();
+    if (document.querySelector('.nav-btn[data-view="view-books"]')?.classList.contains('active')) refreshBooksFrameSrc();
+}
+
+function updateCarometroEditButtonVisibility() {
+    const btnEditCarometro = document.getElementById('btn-edit-carometro');
+    if (btnEditCarometro) {
+        btnEditCarometro.style.display = (isAdmin || (isDoctor && activePatientContext)) ? '' : 'none';
+    }
+}
+
+function updatePatientContextBanners() {
+    const label = activePatientContext ? `Editando conteúdo de: ${activePatientContext.name}` : '';
+    const show = Boolean(isDoctor && activePatientContext);
+
+    const caBanner = document.getElementById('patient-context-banner-carometro');
+    const caText = document.getElementById('patient-context-banner-carometro-text');
+    if (caBanner && caText) {
+        caText.textContent = label;
+        caBanner.style.display = show ? 'flex' : 'none';
+    }
+
+    const meBanner = document.getElementById('patient-context-banner-media');
+    const meText = document.getElementById('patient-context-banner-media-text');
+    if (meBanner && meText) {
+        meText.textContent = `Editando mídias de: ${activePatientContext?.name || ''}`;
+        meBanner.style.display = show ? 'flex' : 'none';
+    }
+}
+
+document.getElementById('btn-clear-patient-context-carometro')?.addEventListener('click', exitPatientContext);
+document.getElementById('btn-clear-patient-context-media')?.addEventListener('click', exitPatientContext);
+
+document.getElementById('btn-open-new-patient')?.addEventListener('click', () => {
+    newPatientForm?.reset();
+    if (newPatientError) newPatientError.style.display = 'none';
+    if (newPatientModal) newPatientModal.style.display = 'flex';
+});
+
+function closeNewPatientModal() {
+    if (newPatientModal) newPatientModal.style.display = 'none';
+}
+document.getElementById('btn-close-new-patient')?.addEventListener('click', closeNewPatientModal);
+document.getElementById('btn-cancel-new-patient')?.addEventListener('click', closeNewPatientModal);
+
+newPatientForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('new-patient-email').value.trim();
+    const name = document.getElementById('new-patient-name').value.trim();
+    const password = document.getElementById('new-patient-password').value;
+    const submitBtn = document.getElementById('btn-submit-new-patient');
+
+    if (newPatientError) newPatientError.style.display = 'none';
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Criando...';
+
+    try {
+        await callDoctorPatientsFn('create', { email, password, name });
+        closeNewPatientModal();
+        showDoctorPatientsFeedback(`Paciente ${email} criado.`);
+        loadDoctorPatients();
+    } catch (err) {
+        if (newPatientError) {
+            newPatientError.textContent = err.message || 'Erro ao criar paciente.';
+            newPatientError.style.display = 'block';
+        }
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Criar paciente';
+    }
+});
 
 const newUserModal = document.getElementById('new-user-modal');
 const newUserForm = document.getElementById('new-user-form');
 const newUserError = document.getElementById('new-user-error');
 
+const newUserCompanyGroup = document.getElementById('new-user-company-group');
+
 document.getElementById('btn-open-new-user')?.addEventListener('click', () => {
     newUserForm?.reset();
     if (newUserError) newUserError.style.display = 'none';
+    if (newUserCompanyGroup) newUserCompanyGroup.style.display = 'none';
     if (newUserModal) newUserModal.style.display = 'flex';
+    if (!companiesCache.length) loadCompanies(); else populateCompanySelect();
+});
+
+document.getElementById('new-user-role')?.addEventListener('change', (e) => {
+    if (newUserCompanyGroup) newUserCompanyGroup.style.display = e.target.value === 'doctor' ? 'block' : 'none';
 });
 
 function closeNewUserModal() {
@@ -8895,6 +9509,7 @@ newUserForm?.addEventListener('submit', async (e) => {
     const name = document.getElementById('new-user-name')?.value.trim();
     const password = document.getElementById('new-user-password').value;
     const role = document.getElementById('new-user-role').value;
+    const companyId = role === 'doctor' ? document.getElementById('new-user-company')?.value : undefined;
     const submitBtn = document.getElementById('btn-submit-new-user');
 
     if (newUserError) newUserError.style.display = 'none';
@@ -8902,7 +9517,7 @@ newUserForm?.addEventListener('submit', async (e) => {
     submitBtn.textContent = 'Criando...';
 
     try {
-        await callAdminUsersFn('create', { email, password, role, name });
+        await callAdminUsersFn('create', { email, password, role, name, companyId });
         closeNewUserModal();
         showAdminFeedback(`Usuário ${email} criado com papel ${role}.`);
         loadAdminUsers();
@@ -8977,8 +9592,21 @@ function showEditBars() {
         if (btn) btn.style.display = isAdmin ? 'inline-block' : 'none';
     });
     document.querySelectorAll('.media-header').forEach(header => {
+        // #exercises-header/#media-upload-header têm sua própria regra logo
+        // abaixo (também visíveis pro médico dentro do contexto de um
+        // paciente, Fases 5b/6b) — sem essa exceção, este laço reesconderia
+        // os botões de "Novo Exercício"/"Adicionar Mídia" deles.
+        if (header.id === 'exercises-header' || header.id === 'media-upload-header') return;
         header.style.display = isAdmin ? 'flex' : 'none';
     });
+    const canCreateForPatient = isAdmin || (isDoctor && activePatientContext);
+    // exercises-header fica liberado pro médico sempre (não só depois de
+    // entrar via "Meus Pacientes") — o paciente é escolhido dentro do
+    // próprio formulário de "Novo Exercício".
+    const exercisesHeader = document.getElementById('exercises-header');
+    if (exercisesHeader) exercisesHeader.style.display = (isAdmin || isDoctor) ? 'flex' : 'none';
+    const mediaHeader = document.getElementById('media-upload-header');
+    if (mediaHeader) mediaHeader.style.display = canCreateForPatient ? 'flex' : 'none';
     const completeSentenceManager = document.getElementById('btn-manage-complete-sentence');
     if (completeSentenceManager) completeSentenceManager.style.display = isAdmin ? 'flex' : 'none';
     const completeSentenceNotify = document.getElementById('btn-notify-complete-sentence');
@@ -10570,9 +11198,25 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadState() {
         if (supabaseClient) {
             try {
-                const { data: dbSectors, error: secErr } = await supabaseClient.from('carometro_sectors').select('*').order('order_index', { ascending: true });
+                // Médico "dentro" de um paciente (Fase 5c): carrega só o Carômetro
+                // daquele paciente — nunca a mistura de vários pacientes que a RLS
+                // deixaria ele ler (o mesmo cuidado que renderExerciseCards toma).
+                let sectorsQuery = supabaseClient.from('carometro_sectors').select('*').order('order_index', { ascending: true });
+                if (isDoctor && activePatientContext) {
+                    sectorsQuery = sectorsQuery.eq('patient_id', activePatientContext.id);
+                }
+                const { data: dbSectors, error: secErr } = await sectorsQuery;
                 if (secErr) throw secErr;
-                
+
+                // RLS agora filtra por paciente (Fase 4 do modelo médico→paciente):
+                // "tem alguma linha visível" == "deve ver a aba". Setado aqui pois
+                // essa busca é assíncrona e roda depois do primeiro toggle do botão.
+                window.__carometroHasVisibleContent = (dbSectors?.length ?? 0) > 0;
+                const carometroNavBtn = document.getElementById('btn-nav-carometro');
+                if (carometroNavBtn) {
+                    carometroNavBtn.style.display = (isAdmin || window.__carometroHasVisibleContent) ? 'flex' : 'none';
+                }
+
                 const { data: dbPeople, error: peoErr } = await supabaseClient.from('carometro_people').select('*').order('order_index', { ascending: true });
                 if (peoErr) throw peoErr;
 
@@ -10628,7 +11272,11 @@ document.addEventListener('DOMContentLoaded', () => {
             dbSectors.push({
                 id: sectorId,
                 title_html: titleEl.innerHTML,
-                order_index: sectorOrder++
+                order_index: sectorOrder++,
+                // Setor criado/editado por um médico "dentro" de um paciente (Fase
+                // 5c) já nasce escopado pra ele — sem isso, a RLS de escrita do
+                // médico (que exige patient_id preenchido) rejeitaria o insert.
+                ...(isDoctor && activePatientContext ? { patient_id: activePatientContext.id } : {})
             });
             
             const cards = sec.querySelectorAll('.carometro-card');
@@ -10662,12 +11310,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (supabaseClient) {
             try {
+                // ⚠️ Risco crítico (Fase 5c): sem filtrar por paciente aqui, um médico
+                // editando o Carômetro de UM paciente apagaria o Carômetro global e o
+                // de outros pacientes — a RLS deixa ele LER tudo isso (pra dar
+                // contexto), mas o DOM só mostra o paciente ativo, então a diff
+                // "sumiu do DOM" apagaria tudo que não é daquele paciente.
+                const inDoctorPatientContext = isDoctor && activePatientContext;
+
                 // Sync Sectors
-                const { data: existingSectors } = await supabaseClient.from('carometro_sectors').select('id');
+                let existingSectorsQuery = supabaseClient.from('carometro_sectors').select('id');
+                if (inDoctorPatientContext) existingSectorsQuery = existingSectorsQuery.eq('patient_id', activePatientContext.id);
+                const { data: existingSectors } = await existingSectorsQuery;
                 const existingSectorIds = (existingSectors || []).map(s => s.id);
                 const newSectorIds = dbSectors.map(s => s.id);
                 const sectorsToDelete = existingSectorIds.filter(id => !newSectorIds.includes(id));
-                
+
                 if (sectorsToDelete.length > 0) {
                     await supabaseClient.from('carometro_sectors').delete().in('id', sectorsToDelete);
                 }
@@ -10675,12 +11332,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     await supabaseClient.from('carometro_sectors').upsert(dbSectors);
                 }
 
-                // Sync People
-                const { data: existingPeople } = await supabaseClient.from('carometro_people').select('id');
+                // Sync People — mesmo cuidado: filtra pelos setores do paciente ativo.
+                let existingPeopleQuery = supabaseClient.from('carometro_people').select('id');
+                if (inDoctorPatientContext) existingPeopleQuery = existingPeopleQuery.in('sector_id', newSectorIds);
+                const { data: existingPeople } = await existingPeopleQuery;
                 const existingPeopleIds = (existingPeople || []).map(p => p.id);
                 const newPeopleIds = dbPeople.map(p => p.id);
                 const peopleToDelete = existingPeopleIds.filter(id => !newPeopleIds.includes(id));
-                
+
                 if (peopleToDelete.length > 0) {
                     await supabaseClient.from('carometro_people').delete().in('id', peopleToDelete);
                 }
@@ -10956,6 +11615,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Inicializar a renderização da primeira vez
         renderCarometro(false);
+
+        // Exposto pro escopo global: enterPatientContext/exitPatientContext (Fase
+        // 5c) precisam re-renderizar o Carômetro já filtrado/desfiltrado pelo
+        // paciente ativo, mas loadState/renderCarometro são locais a esta IIFE.
+        window.reloadCarometroState = () => renderCarometro(isEditingCarometro);
 
         // Toggle do Modo de Edição
         btnEditCarometro.addEventListener('click', async () => {

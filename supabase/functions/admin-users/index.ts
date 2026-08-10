@@ -10,7 +10,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-const VALID_ROLES = ["viewer", "editor", "admin"];
+const VALID_ROLES = ["viewer", "editor", "admin", "doctor"];
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -65,7 +65,11 @@ Deno.serve(async (req) => {
         const { data: roles, error: rolesErr } = await admin.from("user_roles").select("user_id, role");
         if (rolesErr) throw rolesErr;
 
+        const { data: members, error: membersErr } = await admin.from("company_members").select("user_id, company_id");
+        if (membersErr) throw membersErr;
+
         const roleMap = new Map((roles ?? []).map((r: { user_id: string; role: string }) => [r.user_id, r.role]));
+        const companyMap = new Map((members ?? []).map((m: { user_id: string; company_id: string }) => [m.user_id, m.company_id]));
         const users = usersPage.users.map((u) => ({
           id: u.id,
           email: u.email,
@@ -73,16 +77,22 @@ Deno.serve(async (req) => {
           created_at: u.created_at,
           last_sign_in_at: u.last_sign_in_at,
           role: roleMap.get(u.id) ?? "viewer",
+          companyId: companyMap.get(u.id) ?? null,
+          // banned_until vem preenchido (data futura) quando setActive(false) foi usado.
+          active: !u.banned_until || new Date(u.banned_until) <= new Date(),
         }));
 
         return json({ users });
       }
 
       case "create": {
-        const { email, password, role, name } = payload ?? {};
+        const { email, password, role, name, companyId } = payload ?? {};
         if (!email || !password) return json({ error: "E-mail e senha são obrigatórios." }, 400);
         if (String(password).length < 6) return json({ error: "A senha precisa ter ao menos 6 caracteres." }, 400);
         const finalRole = VALID_ROLES.includes(role) ? role : "viewer";
+        if (finalRole === "doctor" && !companyId) {
+          return json({ error: "Selecione a empresa do médico." }, 400);
+        }
 
         const { data: created, error } = await admin.auth.admin.createUser({
           email,
@@ -96,6 +106,13 @@ Deno.serve(async (req) => {
           .from("user_roles")
           .upsert({ user_id: created.user!.id, role: finalRole });
         if (roleErr) throw roleErr;
+
+        if (finalRole === "doctor") {
+          const { error: memberErr } = await admin
+            .from("company_members")
+            .upsert({ user_id: created.user!.id, company_id: companyId });
+          if (memberErr) throw memberErr;
+        }
 
         return json({ user: { id: created.user!.id, email: created.user!.email, role: finalRole } });
       }
@@ -143,6 +160,41 @@ Deno.serve(async (req) => {
         if (error) throw error;
 
         return json({ ok: true });
+      }
+
+      // Desativa/reativa sem apagar (médico/paciente removido não pode logar, mas
+      // os dados e o conteúdo vinculado a ele continuam íntegros no banco).
+      case "setActive": {
+        const { userId, active } = payload ?? {};
+        if (!userId) return json({ error: "userId é obrigatório." }, 400);
+        if (userId === caller.id) return json({ error: "Você não pode desativar a própria conta." }, 400);
+
+        const { error } = await admin.auth.admin.updateUserById(userId, {
+          ban_duration: active ? "none" : "876000h",
+        });
+        if (error) throw error;
+
+        return json({ ok: true });
+      }
+
+      case "listCompanies": {
+        const { data, error } = await admin.from("companies").select("*").order("name");
+        if (error) throw error;
+        return json({ companies: data });
+      }
+
+      case "createCompany": {
+        const { name } = payload ?? {};
+        if (!name || !String(name).trim()) return json({ error: "Nome da empresa é obrigatório." }, 400);
+
+        const { data, error } = await admin
+          .from("companies")
+          .insert({ name: String(name).trim(), created_by: caller.id })
+          .select()
+          .single();
+        if (error) throw error;
+
+        return json({ company: data });
       }
 
       default:

@@ -69,6 +69,11 @@
                 <span>Admin</span>
             </button>
 
+            <button class="nav-btn" data-view="view-doctor-patients" id="btn-nav-doctor-patients" aria-pressed="false" style="display:none;">
+                <i class="fas fa-user-nurse" aria-hidden="true"></i>
+                <span>Meus Pacientes</span>
+            </button>
+
             <div class="sidebar-spacer"></div>
 
             <button class="nav-btn btn-login" id="btn-login-logout">
@@ -144,11 +149,15 @@
 
                 <!-- Tela: Mídias Simples -->
                 <main class="view-section" id="view-media">
-                    <div class="media-header">
+                    <div class="media-header" id="media-upload-header">
                         <button class="add-media-btn" id="btn-open-upload">
                             <i class="fas fa-plus-circle" aria-hidden="true"></i> Adicionar Mídia
                         </button>
                         <p class="media-hint">Adicione seus próprios vídeos ou áudios aqui.</p>
+                    </div>
+                    <div id="patient-context-banner-media" style="display:none; background:#fff3cd; color:#664d03; padding:10px 16px; border-radius:8px; margin-bottom:10px; align-items:center; justify-content:space-between; gap:10px;">
+                        <span id="patient-context-banner-media-text"></span>
+                        <button type="button" id="btn-clear-patient-context-media" class="btn-secondary" style="padding:4px 10px;">Sair do modo paciente</button>
                     </div>
                     <div class="grid-container" id="grid-media"></div>
                 </main>
@@ -628,6 +637,7 @@
                 <main class="view-section" id="view-admin">
                     <div class="admin-tabbar" role="tablist" aria-label="Painel administrativo">
                         <button class="admin-tab active" id="btn-admin-tab-users" data-admin-tab="users" type="button" role="tab" aria-selected="true">Usuários</button>
+                        <button class="admin-tab" id="btn-admin-tab-companies" data-admin-tab="companies" type="button" role="tab" aria-selected="false">Empresas</button>
                         <button class="admin-tab" id="btn-admin-tab-usage" data-admin-tab="usage" type="button" role="tab" aria-selected="false">Uso e insights</button>
                         <button class="admin-tab" id="btn-admin-tab-modules" data-admin-tab="modules" type="button" role="tab" aria-selected="false">Módulos</button>
                     </div>
@@ -654,6 +664,33 @@
                                 </thead>
                                 <tbody id="admin-users-tbody">
                                     <tr><td colspan="6">Carregando...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section class="admin-tab-panel" id="admin-companies-panel" role="tabpanel" aria-labelledby="btn-admin-tab-companies">
+                        <div class="media-header">
+                            <form id="new-company-form" style="display:flex; gap:10px; align-items:center; flex:1;">
+                                <input type="text" id="new-company-name" required placeholder="Nome da empresa (ex: Clínica Vida Nova)" style="flex:1; max-width:360px;">
+                                <button type="submit" class="add-media-btn" id="btn-submit-new-company">
+                                    <i class="fas fa-plus" aria-hidden="true"></i> Criar empresa
+                                </button>
+                            </form>
+                        </div>
+                        <div id="companies-feedback" class="admin-feedback" role="status" aria-live="polite" style="display:none;"></div>
+                        <div class="admin-table-wrapper">
+                            <table class="admin-users-table">
+                                <thead>
+                                    <tr>
+                                        <th>Empresa</th>
+                                        <th>Médicos</th>
+                                        <th>Pacientes</th>
+                                        <th>Criada em</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="companies-tbody">
+                                    <tr><td colspan="4">Carregando...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -795,6 +832,87 @@
                     </section>
                 </main>
 
+                <!-- Tela: Meus Pacientes (papel "doctor") -->
+                <main class="view-section" id="view-doctor-patients">
+                    <div class="doctor-patients-header">
+                        <button class="add-media-btn" id="btn-open-new-patient">
+                            <i class="fas fa-user-plus" aria-hidden="true"></i> Novo paciente
+                        </button>
+                        <p class="media-hint">Crie contas de pacientes e gerencie o acesso deles.</p>
+                    </div>
+                    <div id="doctor-patients-feedback" class="admin-feedback" role="status" aria-live="polite" style="display:none;"></div>
+                    <div class="admin-table-wrapper">
+                        <table class="admin-users-table">
+                            <thead>
+                                <tr>
+                                    <th>Nome</th>
+                                    <th>E-mail</th>
+                                    <th>Status</th>
+                                    <th>Criado em</th>
+                                    <th>Último acesso</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="doctor-patients-tbody">
+                                <tr><td colspan="6">Carregando...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </main>
+
+                <!-- Modal: Módulos por Paciente -->
+                <div class="modal-overlay" id="patient-modules-modal" role="dialog" aria-modal="true" aria-labelledby="patient-modules-modal-title">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 id="patient-modules-modal-title">Módulos liberados</h2>
+                            <button class="close-modal-btn" id="btn-close-patient-modules" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+                        </div>
+                        <p class="media-hint" id="patient-modules-subtitle" style="margin-bottom: 1rem;"></p>
+                        <div id="patient-modules-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+                    </div>
+                </div>
+
+                <!-- Modal: Exercícios liberados por Paciente -->
+                <div class="modal-overlay" id="patient-exercises-modal" role="dialog" aria-modal="true" aria-labelledby="patient-exercises-modal-title">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 id="patient-exercises-modal-title">Exercícios liberados</h2>
+                            <button class="close-modal-btn" id="btn-close-patient-exercises" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+                        </div>
+                        <p class="media-hint" id="patient-exercises-subtitle" style="margin-bottom: 1rem;"></p>
+                        <div id="patient-exercises-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+                    </div>
+                </div>
+
+                <!-- Modal: Novo Paciente -->
+                <div class="modal-overlay" id="new-patient-modal" role="dialog" aria-modal="true" aria-labelledby="new-patient-modal-title">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 id="new-patient-modal-title">Novo paciente</h2>
+                            <button class="close-modal-btn" id="btn-close-new-patient" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+                        </div>
+                        <form id="new-patient-form">
+                            <div class="form-group">
+                                <label for="new-patient-name">Nome</label>
+                                <input type="text" id="new-patient-name" required placeholder="Ex: Maria Souza">
+                            </div>
+                            <div class="form-group">
+                                <label for="new-patient-email">E-mail</label>
+                                <input type="email" id="new-patient-email" required placeholder="paciente@exemplo.com">
+                            </div>
+                            <div class="form-group">
+                                <label for="new-patient-password">Senha temporária</label>
+                                <input type="text" id="new-patient-password" required minlength="6" placeholder="Mínimo de 6 caracteres">
+                            </div>
+                            <div id="new-patient-error" class="admin-feedback error" style="display:none;"></div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn-secondary" id="btn-cancel-new-patient">Cancelar</button>
+                                <button type="submit" class="btn-primary" id="btn-submit-new-patient">Criar paciente</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
                 <!-- Tela: Carômetro -->
                 <main class="view-section" id="view-carometro">
                     <!-- Barra flutuante de edição de texto -->
@@ -834,6 +952,10 @@
                     <input type="file" id="carometro-file-input" accept="image/*" style="display:none;">
 
                     <div class="carometro-container" style="display: flex; flex-direction: column;">
+                        <div id="patient-context-banner-carometro" style="display:none; background:#fff3cd; color:#664d03; padding:10px 16px; border-radius:8px; margin-bottom:16px; align-items:center; justify-content:space-between; gap:10px;">
+                            <span id="patient-context-banner-carometro-text"></span>
+                            <button type="button" id="btn-clear-patient-context-carometro" class="btn-secondary" style="padding:4px 10px;">Sair do modo paciente</button>
+                        </div>
                         <div class="section-edit-bar" style="padding: 0; background: transparent; border: none; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; gap: 12px; overflow: hidden;">
                             <div class="carometro-tabs-wrapper" style="display: flex; align-items: center; background: #f8fafc; border-radius: 16px; padding: 5px; flex: 1; min-width: 0; overflow: hidden; box-shadow: inset 0 2px 5px rgba(0,0,0,0.03);">
                                 <div id="carometro-tabs-bar" class="carometro-tabs-bar" style="margin-bottom: 0; padding: 5px; background: transparent; box-shadow: none; flex-grow: 1; width: 100%;"></div>
@@ -1269,7 +1391,12 @@
                         <option value="viewer">Visualizar (só usa o app)</option>
                         <option value="editor">Editar conteúdo</option>
                         <option value="admin">Admin (gerencia usuários)</option>
+                        <option value="doctor">Médico (gerencia pacientes de uma empresa)</option>
                     </select>
+                </div>
+                <div class="form-group" id="new-user-company-group" style="display:none;">
+                    <label for="new-user-company">Empresa</label>
+                    <select id="new-user-company"></select>
                 </div>
                 <div id="new-user-error" class="admin-feedback error" style="display:none;"></div>
                 <div class="modal-footer">
@@ -1361,12 +1488,12 @@
         }
     </style>
 
-    <link rel="stylesheet" href="style.css?v=23">
+    <link rel="stylesheet" href="style.css?v=24">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script defer src="app.js?v=23"></script>
+    <script defer src="app.js?v=33"></script>
 </body>
 
 

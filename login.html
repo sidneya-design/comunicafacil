@@ -372,9 +372,18 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-        const supabaseUrl = 'https://rrubmvykindvilptjhma.supabase.co';
-        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJydWJtdnlraW5kdmlscHRqaG1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0ODE2OTksImV4cCI6MjA5ODA1NzY5OX0.4eKcRhUReuaKaaq4ftIOWe6vvB9qxL4Sjiii-3QX5eM';
+        // Override opt-in só-localhost (?sb=staging) para testar contra o projeto de
+        // staging do modelo multi-tenant, sem afetar login de produção.
+        const isLocalAppHost = ['localhost', '127.0.0.1'].includes(window.location.hostname) || window.location.protocol === 'file:';
+        const useStagingSupabase = isLocalAppHost && new URLSearchParams(window.location.search).get('sb') === 'staging';
+        const supabaseUrl = useStagingSupabase
+            ? 'https://iqiiilddodttvrxodwbd.supabase.co'
+            : 'https://rrubmvykindvilptjhma.supabase.co';
+        const supabaseKey = useStagingSupabase
+            ? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxaWlpbGRkb2R0dHZyeG9kd2JkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYzNjg4NjEsImV4cCI6MjEwMTk0NDg2MX0.Po7_bLntUw-RFt92Lw2WIsrJoasrrg1VBWl7zm1vDSM'
+            : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJydWJtdnlraW5kdmlscHRqaG1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0ODE2OTksImV4cCI6MjA5ODA1NzY5OX0.4eKcRhUReuaKaaq4ftIOWe6vvB9qxL4Sjiii-3QX5eM';
         const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+        const appRedirectUrl = 'app.html' + (useStagingSupabase ? '?sb=staging' : '');
 
         const form = document.getElementById('login-form');
         const submitBtn = document.getElementById('btn-login-submit');
@@ -429,7 +438,7 @@
 
             const { data } = await supabaseClient.auth.getSession();
             if (data?.session) {
-                window.location.href = 'app.html';
+                window.location.href = appRedirectUrl;
             }
         }
         checkSession();
@@ -493,7 +502,7 @@
 
                     showStatus('Senha atualizada com sucesso. Redirecionando...', false);
                     setTimeout(() => {
-                        window.location.href = 'app.html';
+                        window.location.href = appRedirectUrl;
                     }, 900);
                     return;
                 }
@@ -506,7 +515,7 @@
                 if (error) throw error;
 
                 if (data?.session) {
-                    window.location.href = 'app.html';
+                    window.location.href = appRedirectUrl;
                 }
             } catch (err) {
                 console.error(err);
