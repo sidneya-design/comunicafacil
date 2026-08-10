@@ -70,6 +70,15 @@
             100% { transform: translateY(30px) scale(1.1); }
         }
 
+        @media (max-width: 640px), (prefers-reduced-motion: reduce) {
+            /* Bolhas com blur animando sem parar pesam na GPU de celular e travam
+               o primeiro carregamento. No celular ficam paradas e com menos desfoque. */
+            .orb {
+                animation: none;
+                filter: blur(40px);
+            }
+        }
+
         /* Container do Card de Login (Glassmorphism Claro) */
         .login-card {
             background: var(--card-bg);

@@ -810,6 +810,11 @@
             }
         }
 
+        @media (prefers-reduced-motion: reduce) {
+            .orb { animation: none; }
+            .fade-up { animation: none; opacity: 1; transform: none; }
+        }
+
         /* Responsividade */
         @media (max-width: 980px) {
             .hero {
@@ -863,6 +868,15 @@
         }
 
         @media (max-width: 640px) {
+            /* As 3 bolhas de fundo (position:fixed + filter:blur(100px)) animando sem
+               parar são pesadas para a GPU de celular e causam engasgo/travamento no
+               primeiro carregamento, quando concorrem com as animações de entrada do
+               texto. No celular elas ficam paradas e com menos desfoque. */
+            .orb {
+                animation: none;
+                filter: blur(50px);
+            }
+
             .topbar {
                 flex-direction: column;
                 align-items: center;
