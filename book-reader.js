@@ -46,6 +46,72 @@ const GENRES = [
   'Biografia', 'Autoajuda', 'Infantil', 'Poesia', 'Arte e Cultura',
   'Não-ficção', 'Outros'
 ];
+const NEW_GENRE_VALUE = '__new_genre__';
+const CUSTOM_GENRES_KEY = 'comunicafacil_custom_book_genres';
+
+function loadCustomGenres() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_GENRES_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveCustomGenres(list) {
+  localStorage.setItem(CUSTOM_GENRES_KEY, JSON.stringify(list));
+}
+
+// Gêneros fixos + os cadastrados pelo usuário, sempre com "Outros" por último.
+function getAllGenres() {
+  const custom = loadCustomGenres();
+  const base = GENRES.filter(g => g !== 'Outros');
+  return [...base, ...custom, 'Outros'];
+}
+
+// Adiciona um gênero novo (evita duplicar, ignorando maiúsc./minúsc.) e devolve o nome final.
+function addCustomGenre(rawName) {
+  const name = (rawName || '').trim();
+  if (!name) return null;
+  const existing = getAllGenres();
+  const match = existing.find(g => g.toLowerCase() === name.toLowerCase());
+  if (match) return match;
+  const custom = loadCustomGenres();
+  custom.push(name);
+  saveCustomGenres(custom);
+  return name;
+}
+
+function genreOptionsHtml() {
+  const options = getAllGenres().map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`);
+  options.push(`<option value="${NEW_GENRE_VALUE}">+ Novo gênero...</option>`);
+  return options.join('');
+}
+
+// Se o usuário escolher "+ Novo gênero...", pede o nome e seleciona o gênero criado.
+// Retorna false (e volta o select para o valor anterior) se o usuário cancelar.
+function handleGenreSelectChange(selectEl, previousValue) {
+  if (selectEl.value !== NEW_GENRE_VALUE) return true;
+  const name = prompt('Nome do novo gênero:');
+  const created = addCustomGenre(name);
+  refreshGenreSelects();
+  if (created) {
+    selectEl.value = created;
+  } else {
+    selectEl.value = previousValue;
+  }
+  return Boolean(created);
+}
+
+function refreshGenreSelects() {
+  [bookGenreSelect, editGenreSelect].forEach(select => {
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = genreOptionsHtml();
+    if (current && current !== NEW_GENRE_VALUE) select.value = current;
+  });
+}
 
 // ── UI Elements ─────────────────────────────────────────
 const navUploadBtn = document.getElementById('nav-upload-btn');
@@ -269,7 +335,11 @@ async function uploadFile(file) {
 }
 
 if (bookGenreSelect) {
-  bookGenreSelect.innerHTML = GENRES.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+  bookGenreSelect.innerHTML = genreOptionsHtml();
+  let lastBookGenre = bookGenreSelect.value;
+  bookGenreSelect.addEventListener('change', () => {
+    if (handleGenreSelectChange(bookGenreSelect, lastBookGenre)) lastBookGenre = bookGenreSelect.value;
+  });
 }
 
 function setStatus(msg, type = '') {
@@ -288,14 +358,19 @@ const editSaveBtn = document.getElementById('edit-save-btn');
 const editStatus = document.getElementById('edit-status');
 let editingBookId = null;
 
+let lastEditGenre = 'Outros';
 if (editGenreSelect) {
-  editGenreSelect.innerHTML = GENRES.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+  editGenreSelect.innerHTML = genreOptionsHtml();
+  editGenreSelect.addEventListener('change', () => {
+    if (handleGenreSelectChange(editGenreSelect, lastEditGenre)) lastEditGenre = editGenreSelect.value;
+  });
 }
 
 function openEditModal(book) {
   editingBookId = book.id;
   editTitleInput.value = book.title || '';
-  editGenreSelect.value = GENRES.includes(book.genre) ? book.genre : 'Outros';
+  editGenreSelect.value = getAllGenres().includes(book.genre) ? book.genre : 'Outros';
+  lastEditGenre = editGenreSelect.value;
   editStatus.textContent = '';
   editModal.style.display = 'flex';
 }
@@ -375,7 +450,7 @@ async function resolveCoverUrls(books) {
   return map;
 }
 
-function createBookCard(book, index) {
+function createBookCard(book, index, opts = {}) {
   const isPdf = book.mime_type?.includes('pdf');
   const icon = isPdf ? '📄' : '📗';
   const type = isPdf ? 'PDF' : 'EPUB';
@@ -395,6 +470,7 @@ function createBookCard(book, index) {
     <div class="book-cover-fallback" style="background: ${bgGradient}"></div>
     ${coverUrl ? `<img class="book-cover" src="${coverUrl}" alt="" loading="lazy" onerror="this.remove()">` : ''}
     <div class="book-card-actions">
+      ${opts.showRemoveProgress ? `<button type="button" class="card-action-btn" data-action="remove-progress" title="Remover de Continuar Lendo" aria-label="Remover ${escapeHtml(title)} de Continuar Lendo">↩</button>` : ''}
       <button type="button" class="card-action-btn" data-action="edit" title="Editar" aria-label="Editar ${escapeHtml(title)}">✎</button>
       <button type="button" class="card-action-btn" data-action="delete" title="Excluir" aria-label="Excluir ${escapeHtml(title)}">🗑</button>
     </div>
@@ -422,11 +498,30 @@ function createBookCard(book, index) {
     e.stopPropagation();
     deleteBook(book);
   });
+  li.querySelector('[data-action="remove-progress"]')?.addEventListener('click', e => {
+    e.stopPropagation();
+    removeFromContinueReading(book);
+  });
 
   return li;
 }
 
-function createGenreRow(title, items) {
+// Tira o livro da fileira "Continuar Lendo" zerando o progresso salvo, sem apagar o livro.
+async function removeFromContinueReading(book) {
+  const { data, error } = await supabase
+    .from('books')
+    .update({ last_read_at: null, last_page: null, last_location: null })
+    .eq('id', book.id)
+    .select();
+  if (error) { alert('Erro ao remover de Continuar Lendo: ' + error.message); return; }
+  if (!data || data.length === 0) {
+    alert('Não foi possível remover (sessão sem permissão). Tente sair e entrar de novo.');
+    return;
+  }
+  await loadBookList();
+}
+
+function createGenreRow(title, items, cardOpts = {}) {
   const row = document.createElement('div');
   row.className = 'netflix-row';
 
@@ -438,7 +533,7 @@ function createGenreRow(title, items) {
 
   const ul = document.createElement('ul');
   ul.className = 'row-items';
-  items.forEach((book, index) => ul.appendChild(createBookCard(book, index)));
+  items.forEach((book, index) => ul.appendChild(createBookCard(book, index, cardOpts)));
 
   container.appendChild(ul);
   row.appendChild(heading);
@@ -459,16 +554,17 @@ function renderLibrary(data) {
     .filter(b => b.last_read_at)
     .sort((a, b) => new Date(b.last_read_at) - new Date(a.last_read_at))
     .slice(0, 10);
-  if (continuing.length) genreRowsContainer.appendChild(createGenreRow('Continuar Lendo', continuing));
+  if (continuing.length) genreRowsContainer.appendChild(createGenreRow('Continuar Lendo', continuing, { showRemoveProgress: true }));
 
+  const allGenres = getAllGenres();
   const grouped = new Map();
-  GENRES.forEach(g => grouped.set(g, []));
+  allGenres.forEach(g => grouped.set(g, []));
   data.forEach(book => {
-    const genre = GENRES.includes(book.genre) ? book.genre : 'Outros';
+    const genre = allGenres.includes(book.genre) ? book.genre : 'Outros';
     grouped.get(genre).push(book);
   });
 
-  GENRES.forEach(genre => {
+  allGenres.forEach(genre => {
     const items = grouped.get(genre);
     if (items.length) genreRowsContainer.appendChild(createGenreRow(genre, items));
   });
