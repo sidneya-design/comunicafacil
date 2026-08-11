@@ -1,3 +1,10 @@
+import { supabase } from './supabase.js?v=3';
+
+// Escondido por padrão; só reaparece se applyManagerAccessGuard() (mais
+// abaixo) confirmar que quem está logado é admin. Some antes de qualquer
+// outra coisa rodar, pra não piscar visível pra quem não pode gerenciar.
+document.getElementById('open-manager')?.style.setProperty('display', 'none');
+
 const levels = {
     1: [
         { sentence: ["Eu quero beber", null, "."], answers: ["água"], options: ["água", "cadeira"], icon: "💧" },
@@ -114,6 +121,124 @@ function currentExercise() { return levels[state.level][state.round]; }
 // Mesma voz neural usada na interface principal: pt-BR-FranciscaNeural via edge-tts.
 // O cache também é compartilhado com app.js para evitar baixar o mesmo áudio novamente.
 const isLocalhost = ["localhost", "127.0.0.1"].includes(window.location.hostname) || window.location.protocol === "file:";
+
+// ── Auth guard (mesmo padrão de book-reader.js) ──────────────────────────
+// Fora do iframe embutido do app (uso isolado direto pela URL), exige sessão.
+// "Gerenciar frases" reaparece pra admin (biblioteca global) ou médico
+// (banco próprio, Fase 13) — as duas checagens de verdade continuam sendo
+// as policies de RLS em exercises/exercise_items (Fase 10-13, mesma que já
+// protege naming/afasia/jogo2), isso aqui só evita mostrar um botão morto.
+let canManageQuestions = false;
+let isDoctorRole = false;
+let currentUserId = null;
+let currentPatientDoctorUserId = null; // médico do paciente logado, pra achar o container certo na hora de jogar
+
+async function applyManagerAccessGuard() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+        if (!isLocalhost && !embeddedMode) window.location.href = "index.html";
+        return;
+    }
+    currentUserId = session.user.id;
+    const { data: roleRow } = await supabase
+        .from("user_roles").select("role").eq("user_id", session.user.id).maybeSingle();
+    const role = roleRow?.role;
+    isDoctorRole = role === "doctor";
+    canManageQuestions = role === "admin" || isDoctorRole;
+    if (canManageQuestions) document.getElementById("open-manager")?.style.removeProperty("display");
+
+    if (role === "patient") {
+        const { data: patientRow } = await supabase
+            .from("patients").select("doctor_user_id").eq("user_id", session.user.id).maybeSingle();
+        currentPatientDoctorUserId = patientRow?.doctor_user_id || null;
+    }
+
+    await loadRemoteCustomQuestions();
+}
+applyManagerAccessGuard();
+
+supabase.auth.onAuthStateChange((event) => {
+    if (event === "SIGNED_OUT" && !isLocalhost && !embeddedMode) window.location.href = "index.html";
+});
+
+// ── Perguntas compartilhadas (Fase 13) ────────────────────────────────────
+// Mesmo padrão de container por seed_key + doctor_user_id usado por
+// naming/afasia/jogo2 em app.js (Fases 10-12), reimplementado aqui porque
+// este arquivo roda isolado num iframe, sem acesso ao escopo de app.js.
+// Os 5 níveis fixos em `levels` continuam sendo o conteúdo de "fábrica";
+// só perguntas customizadas por médico/admin entram no Supabase — o
+// fallback em localStorage (customQuestions) continua existindo do jeito
+// que sempre existiu, sem nenhuma mudança de comportamento pra quem não
+// está online ou não tem papel de médico/admin.
+const COMPLETE_FRASE_SEED_KEY = "complete-frase-container";
+const COMPLETE_FRASE_TITLE = "Complete a Frase|orange";
+const COMPLETE_FRASE_CARD_ROLE = "complete-frase-card";
+
+function doctorScopedSeedKey(baseSeedKey, doctorUserId) {
+    return `${baseSeedKey}:doctor:${doctorUserId}`;
+}
+
+let remoteCustomQuestions = []; // entradas vindas do Supabase — nunca somadas em customQuestions/localStorage
+
+function parseCompleteFraseItem(item) {
+    try {
+        const payload = JSON.parse(item.link || "{}");
+        if (!payload.level || !payload.question) return null;
+        return { id: `remote-${item.id}`, level: payload.level, question: payload.question, remoteItemId: item.id };
+    } catch (e) {
+        return null;
+    }
+}
+
+async function fetchCompleteFraseContainerItems(seedKey) {
+    const { data: container } = await supabase.from("exercises").select("id").eq("seed_key", seedKey).maybeSingle();
+    if (!container) return [];
+    const { data: items } = await supabase
+        .from("exercise_items").select("*").eq("exercise_id", container.id).eq("role", COMPLETE_FRASE_CARD_ROLE);
+    return (items || []).map(parseCompleteFraseItem).filter(Boolean);
+}
+
+// Container de quem está autorando: médico usa só o próprio; admin usa o
+// global — cria se ainda não existir (mesmo padrão de
+// getOrCreateGameContainer em app.js, sem o fallback legado por título, que
+// é só pra containers antigos do admin sem seed_key).
+async function getOrCreateOwnCompleteFraseContainer() {
+    const seedKey = isDoctorRole ? doctorScopedSeedKey(COMPLETE_FRASE_SEED_KEY, currentUserId) : COMPLETE_FRASE_SEED_KEY;
+    const { data: existing } = await supabase.from("exercises").select("id").eq("seed_key", seedKey).maybeSingle();
+    if (existing) return existing.id;
+    const insertPayload = { title: COMPLETE_FRASE_TITLE, visible: false, seed_key: seedKey };
+    if (isDoctorRole) insertPayload.doctor_user_id = currentUserId;
+    const { data: created, error } = await supabase.from("exercises").insert([insertPayload]).select().single();
+    if (error) throw error;
+    return created.id;
+}
+
+async function loadRemoteCustomQuestions() {
+    try {
+        let items = [];
+        if (canManageQuestions) {
+            // Autoria: só o próprio container (médico) ou o global (admin).
+            const seedKey = isDoctorRole ? doctorScopedSeedKey(COMPLETE_FRASE_SEED_KEY, currentUserId) : COMPLETE_FRASE_SEED_KEY;
+            items = await fetchCompleteFraseContainerItems(seedKey);
+        } else if (currentPatientDoctorUserId) {
+            // Paciente jogando: tenta o container do próprio médico; se ele
+            // não tiver nada customizado ainda, cai pro global do admin —
+            // exatamente o comportamento de hoje preservado por padrão.
+            items = await fetchCompleteFraseContainerItems(doctorScopedSeedKey(COMPLETE_FRASE_SEED_KEY, currentPatientDoctorUserId));
+            if (items.length === 0) items = await fetchCompleteFraseContainerItems(COMPLETE_FRASE_SEED_KEY);
+        } else {
+            items = await fetchCompleteFraseContainerItems(COMPLETE_FRASE_SEED_KEY);
+        }
+        remoteCustomQuestions = items;
+        items.forEach(entry => {
+            if (levels[entry.level]) levels[entry.level].push({ ...entry.question, customId: entry.id });
+        });
+        if (items.length > 0) renderQuestionLibrary();
+    } catch (e) {
+        console.warn("Não foi possível carregar perguntas compartilhadas:", e);
+    }
+}
+
 const SUPABASE_TTS_ENDPOINT = "https://rrubmvykindvilptjhma.supabase.co/functions/v1/chat";
 const LOCAL_TTS_ENDPOINT = "http://127.0.0.1:5001/chat";
 const TTS_STORAGE_PREFIX = "comunica_tts_v1:";
@@ -503,6 +628,7 @@ const questionIcon = document.getElementById("question-icon");
 const formError = document.getElementById("form-error");
 
 function openManager() {
+    if (!canManageQuestions) return;
     managerOverlay.classList.add("open");
     managerOverlay.setAttribute("aria-hidden", "false");
     document.body.style.overflow = "hidden";
@@ -712,11 +838,12 @@ function showSavedToast(message) {
 
 function renderQuestionLibrary() {
     const list = document.getElementById("question-list");
-    document.getElementById("question-count").textContent = customQuestions.length;
+    const allCustomQuestions = [...customQuestions, ...remoteCustomQuestions];
+    document.getElementById("question-count").textContent = allCustomQuestions.length;
     const standardCount = Object.values(levels).flat().filter(question => !question.customId).length;
     document.getElementById("standard-question-count").textContent = `${standardCount} perguntas prontas`;
     list.innerHTML = "";
-    if (!customQuestions.length) {
+    if (!allCustomQuestions.length) {
         const empty = document.createElement("div");
         empty.className = "question-empty";
         empty.innerHTML = `<i class="fas fa-inbox" aria-hidden="true"></i><strong>Nenhuma pergunta personalizada</strong><span>As ${standardCount} perguntas padrão já estão disponíveis para jogar.</span>`;
@@ -724,7 +851,7 @@ function renderQuestionLibrary() {
         return;
     }
 
-    [...customQuestions].reverse().forEach(entry => {
+    [...allCustomQuestions].reverse().forEach(entry => {
         const item = document.createElement("article");
         item.className = "question-item";
         const top = document.createElement("div");
@@ -754,30 +881,73 @@ function renderQuestionLibrary() {
 }
 
 function deleteCustomQuestion(id) {
-    const entry = customQuestions.find(item => item.id === id);
-    if (!entry) return;
-    customQuestions = customQuestions.filter(item => item.id !== id);
-    levels[entry.level] = levels[entry.level].filter(question => question.customId !== id);
-    saveCustomQuestions();
+    const localEntry = customQuestions.find(item => item.id === id);
+    if (localEntry) {
+        customQuestions = customQuestions.filter(item => item.id !== id);
+        levels[localEntry.level] = levels[localEntry.level].filter(question => question.customId !== id);
+        saveCustomQuestions();
+        renderQuestionLibrary();
+        if (state.level === Number(localEntry.level)) {
+            state.round = 0;
+            state.score = 0;
+            renderExercise();
+        }
+        showSavedToast("Pergunta excluída.");
+        return;
+    }
+
+    const remoteEntry = remoteCustomQuestions.find(item => item.id === id);
+    if (!remoteEntry) return;
+    remoteCustomQuestions = remoteCustomQuestions.filter(item => item.id !== id);
+    levels[remoteEntry.level] = levels[remoteEntry.level].filter(question => question.customId !== id);
     renderQuestionLibrary();
-    if (state.level === Number(entry.level)) {
+    if (state.level === Number(remoteEntry.level)) {
         state.round = 0;
         state.score = 0;
         renderExercise();
     }
     showSavedToast("Pergunta excluída.");
+    supabase.from("exercise_items").delete().eq("id", remoteEntry.remoteItemId).then(({ error }) => {
+        if (error) console.warn("Erro ao excluir pergunta compartilhada no servidor:", error);
+    });
 }
 
-questionForm.addEventListener("submit", event => {
+questionForm.addEventListener("submit", async event => {
     event.preventDefault();
     try {
         const level = Number(questionLevel.value);
         const question = buildQuestionFromForm();
         const id = window.crypto?.randomUUID?.() || `question-${Date.now()}`;
         question.customId = id;
-        customQuestions.push({ id, level, question });
+
+        // Médico/admin: tenta salvar compartilhado no Supabase primeiro —
+        // só cai pro localStorage puramente local se isso falhar (offline,
+        // por exemplo), pra não duplicar a mesma pergunta nas duas listas.
+        let savedRemotely = false;
+        if (canManageQuestions) {
+            try {
+                const exerciseId = await getOrCreateOwnCompleteFraseContainer();
+                const { customId, ...questionForStorage } = question;
+                const { data: inserted, error } = await supabase.from("exercise_items").insert([{
+                    exercise_id: exerciseId,
+                    word: (question.answers && question.answers[0]) || "",
+                    role: COMPLETE_FRASE_CARD_ROLE,
+                    link: JSON.stringify({ level, question: questionForStorage })
+                }]).select().single();
+                if (error) throw error;
+                const remoteId = `remote-${inserted.id}`;
+                question.customId = remoteId;
+                remoteCustomQuestions.push({ id: remoteId, level, question, remoteItemId: inserted.id });
+                savedRemotely = true;
+            } catch (syncErr) {
+                console.warn("Não foi possível salvar a pergunta compartilhada, salvando só neste navegador:", syncErr);
+            }
+        }
+        if (!savedRemotely) {
+            customQuestions.push({ id, level, question });
+            saveCustomQuestions();
+        }
         levels[level].push(question);
-        saveCustomQuestions();
         renderQuestionLibrary();
         if (state.level === level) updateCounters();
         questionSentence.value = "";

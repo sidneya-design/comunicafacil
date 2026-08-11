@@ -107,7 +107,10 @@ Deno.serve(async (req) => {
           .upsert({ user_id: created.user!.id, role: finalRole });
         if (roleErr) throw roleErr;
 
-        if (finalRole === "doctor") {
+        // Empresa não é mais exclusiva de médico — admin pode vincular
+        // qualquer papel a uma empresa (ex.: alguém que ainda vai virar
+        // paciente, mas já precisa estar associado à empresa desde já).
+        if (companyId) {
           const { error: memberErr } = await admin
             .from("company_members")
             .upsert({ user_id: created.user!.id, company_id: companyId });
@@ -124,6 +127,25 @@ Deno.serve(async (req) => {
 
         const { error } = await admin.from("user_roles").upsert({ user_id: userId, role });
         if (error) throw error;
+
+        return json({ ok: true });
+      }
+
+      case "setCompany": {
+        const { userId, companyId } = payload ?? {};
+        if (!userId) return json({ error: "userId é obrigatório." }, 400);
+
+        if (companyId) {
+          const { error } = await admin
+            .from("company_members")
+            .upsert({ user_id: userId, company_id: companyId });
+          if (error) throw error;
+        } else {
+          // company_members.company_id é not null — "sem empresa" é a linha
+          // inteira não existir, não um valor vazio.
+          const { error } = await admin.from("company_members").delete().eq("user_id", userId);
+          if (error) throw error;
+        }
 
         return json({ ok: true });
       }
@@ -184,17 +206,46 @@ Deno.serve(async (req) => {
       }
 
       case "createCompany": {
-        const { name } = payload ?? {};
+        const { name, doctorEmail, doctorPassword, doctorName } = payload ?? {};
         if (!name || !String(name).trim()) return json({ error: "Nome da empresa é obrigatório." }, 400);
+        if (doctorEmail && (!doctorPassword || String(doctorPassword).length < 6)) {
+          return json({ error: "A senha do médico precisa ter ao menos 6 caracteres." }, 400);
+        }
 
-        const { data, error } = await admin
+        const { data: company, error } = await admin
           .from("companies")
           .insert({ name: String(name).trim(), created_by: caller.id })
           .select()
           .single();
         if (error) throw error;
 
-        return json({ company: data });
+        // Médico responsável é opcional — se informado, cria junto (mesmo
+        // padrão de "create" pra doctor, mas a empresa já é a recém-criada).
+        let doctor: { id: string; email: string } | null = null;
+        if (doctorEmail) {
+          const { data: createdDoctor, error: doctorErr } = await admin.auth.admin.createUser({
+            email: doctorEmail,
+            password: doctorPassword,
+            email_confirm: true,
+            user_metadata: doctorName ? { full_name: doctorName } : undefined,
+          });
+          if (doctorErr) {
+            // Empresa já foi criada — não desfaz (não é destrutivo deixar uma
+            // empresa sem médico, o admin sempre pode vincular um depois).
+            return json({ company, error: `Empresa criada, mas o médico não pôde ser criado: ${doctorErr.message}` }, 200);
+          }
+          const { error: roleErr } = await admin
+            .from("user_roles")
+            .upsert({ user_id: createdDoctor.user!.id, role: "doctor" });
+          if (roleErr) throw roleErr;
+          const { error: memberErr } = await admin
+            .from("company_members")
+            .upsert({ user_id: createdDoctor.user!.id, company_id: company.id });
+          if (memberErr) throw memberErr;
+          doctor = { id: createdDoctor.user!.id, email: createdDoctor.user!.email! };
+        }
+
+        return json({ company, doctor });
       }
 
       default:

@@ -1858,6 +1858,13 @@ async function saveMediaToDB(title, fileBlob, mimeType, colorClass, mediaUrl, pa
     if (patientId) {
         const { data: sessionData } = await supabaseClient.auth.getSession();
         extraFields = { visible: true, patient_id: patientId, user_id: sessionData?.session?.user?.id };
+    } else if (isDoctor) {
+        // Fase 19: médico sem paciente selecionado ainda vai pro banco
+        // próprio — visível só pra ele até liberar por paciente (Meus
+        // Pacientes → Mídias), mesma semântica de doctor_user_id em
+        // exercises (saveExercisePlaylistToDB).
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        extraFields = { visible: true, doctor_user_id: currentUserId, user_id: sessionData?.session?.user?.id };
     }
     if (supabaseClient) {
         try {
@@ -2122,6 +2129,107 @@ async function saveExercisePlaylistToDB(title, itemsArray, doctorUserId = null) 
     }
 }
 
+// Adiciona um exercício do "Banco de Prontos" (global do admin, ou um dos 2
+// decks semeados só localmente via practiceExerciseSeeds) como um exercício
+// de verdade no banco do médico — mesmo formato de item de "Novo
+// Exercício", remapeando defensivamente os nomes de campo do seed local
+// (textColor/textSize/isUppercase/isBold) pros que saveExercisePlaylistToDB
+// espera (mesmo remapeamento de openEditExercise, app.js:2503-2506); pra um
+// exercício já vindo do Supabase os campos já batem, o remapeamento é
+// inofensivo. O imgQuery do seed de "Frases Funcionais" não existe em
+// exercise_items e se perde — a busca de pictograma cai pro fallback por
+// item.word, que já existe.
+async function addReadyBankExerciseToDoctorBank(ex) {
+    if (!isDoctor || !currentUserId) return;
+
+    const previousEditingId = currentEditingExerciseId;
+    const previousEditingFromSupabase = currentEditingExerciseFromSupabase;
+    const previousBlobs = currentEditingBlobs;
+    const previousImageUrls = currentEditingImageUrls;
+
+    currentEditingExerciseId = null; // força inserção como exercício novo
+    currentEditingExerciseFromSupabase = false;
+    currentEditingBlobs = {};
+    currentEditingImageUrls = {};
+
+    const mappedItems = (ex.items || []).map(item => ({
+        word: item.word || '',
+        videoLink: item.videoLink || item.link || '',
+        color: item.color || item.textColor || '#333333',
+        size: item.size || item.textSize || '100',
+        uppercase: item.uppercase !== undefined ? !!item.uppercase : !!item.isUppercase,
+        bold: item.bold !== undefined ? !!item.bold : (item.isBold !== undefined ? !!item.isBold : true),
+        imageBlob: item.imageBlob || null,
+        image_url: item.image_url || null
+    }));
+
+    try {
+        await saveExercisePlaylistToDB(ex.title, mappedItems, currentUserId);
+    } finally {
+        currentEditingExerciseId = previousEditingId;
+        currentEditingExerciseFromSupabase = previousEditingFromSupabase;
+        currentEditingBlobs = previousBlobs;
+        currentEditingImageUrls = previousImageUrls;
+    }
+}
+
+// "Banco de Prontos" (modal aberto a partir de "Novo Exercício"): lista os
+// exercícios em formato slide-deck que não pertencem a nenhum médico —
+// globais criados pelo admin, ou os 2 decks de exemplo semeados localmente
+// (practiceExerciseSeeds). Exclui os containers de jogo (memória, alfabeto,
+// naming/afasia/jogo2/complete-frase): o conteúdo deles não é um deck de
+// slides, "adicionar" por aqui produziria um exercício quebrado.
+function getReadyBankCandidates() {
+    return lastMergedExercises.filter(ex =>
+        !ex.doctorUserId &&
+        ex.seedKey !== JOGO2_CARDS_SEED_KEY &&
+        !isGameContainerSeedKey(ex.seedKey, MEMORY_CARDS_SEED_KEY) &&
+        !isGameContainerSeedKey(ex.seedKey, ALPHABET_MEMORY_SEED_KEY) &&
+        !isGameContainerSeedKey(ex.seedKey, NAMING_SEED_KEY) &&
+        !isGameContainerSeedKey(ex.seedKey, AFASIA_SEED_KEY) &&
+        !isGameContainerSeedKey(ex.seedKey, COMPLETE_FRASE_SEED_KEY)
+    );
+}
+
+function renderReadyBankList() {
+    const list = document.getElementById('ready-bank-list');
+    if (!list) return;
+    list.innerHTML = '';
+    const candidates = getReadyBankCandidates();
+    if (!candidates.length) {
+        const empty = document.createElement('p');
+        empty.className = 'media-hint';
+        empty.textContent = 'Nenhum exercício pronto disponível ainda.';
+        list.appendChild(empty);
+        return;
+    }
+    candidates.forEach(ex => {
+        const displayTitle = (ex.title || '').split('|')[0];
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:#f5f5f5; border-radius:8px;';
+        const label = document.createElement('span');
+        label.textContent = displayTitle;
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'btn-secondary';
+        addBtn.textContent = 'Adicionar ao meu banco';
+        addBtn.onclick = async () => {
+            addBtn.disabled = true;
+            await addReadyBankExerciseToDoctorBank(ex);
+            const modal = document.getElementById('ready-bank-modal');
+            if (modal) modal.style.display = 'none';
+        };
+        row.append(label, addBtn);
+        list.appendChild(row);
+    });
+}
+
+function openReadyBankModal() {
+    renderReadyBankList();
+    const modal = document.getElementById('ready-bank-modal');
+    if (modal) modal.style.display = 'flex';
+}
+
 async function toggleExerciseVisibility(ex) {
     const newVisible = !(ex.visible !== false);
     ex.visible = newVisible;
@@ -2240,7 +2348,16 @@ function renderExerciseCards(exercisesArray) {
 
     // O container "Cartas do Jogo da Memória" (seedKey MEMORY_CARDS_SEED_KEY) é armazenamento
     // interno do Jogo da Memória — nunca deve aparecer como um card de exercício, nem para o admin.
-    const realExercises = exercisesArray.filter(ex => ex.seedKey !== MEMORY_CARDS_SEED_KEY && ex.seedKey !== NAMING_SEED_KEY && ex.seedKey !== ALPHABET_MEMORY_SEED_KEY && ex.seedKey !== AFASIA_SEED_KEY);
+    // Naming/afasia também escondem as variantes por médico (":doctor:<uuid>",
+    // ver doctorScopedSeedKey) — sem isso, o container do médico vazaria como
+    // card solto na grade normal de Exercícios.
+    const realExercises = exercisesArray.filter(ex =>
+        !isGameContainerSeedKey(ex.seedKey, MEMORY_CARDS_SEED_KEY) &&
+        !isGameContainerSeedKey(ex.seedKey, ALPHABET_MEMORY_SEED_KEY) &&
+        !isGameContainerSeedKey(ex.seedKey, NAMING_SEED_KEY) &&
+        !isGameContainerSeedKey(ex.seedKey, AFASIA_SEED_KEY) &&
+        !isGameContainerSeedKey(ex.seedKey, COMPLETE_FRASE_SEED_KEY)
+    );
 
     // Médico vê o próprio "banco" de exercícios (Fase 7) — os que ele criou,
     // ainda que não liberados pra nenhum paciente — mais os globais, como
@@ -2340,6 +2457,10 @@ function renderExerciseCards(exercisesArray) {
             };
             btn.appendChild(editBtn);
         }
+        // Sem botão de clonar aqui na grade — o caminho pra médico adicionar
+        // um exercício pronto (global do admin, ou os 2 decks semeados
+        // localmente) é o modal "Banco de Prontos" (ver openReadyBankModal),
+        // aberto a partir de "Novo Exercício".
 
         btn.addEventListener('click', () => openPresentationPlaylist(ex));
         container.appendChild(btn);
@@ -2553,7 +2674,7 @@ function setupModals() {
         const openManagerMessage = () => frame.contentWindow?.postMessage({ type: 'complete-sentence:open-manager' }, window.location.origin);
         if (!frame.src) {
             frame.addEventListener('load', openManagerMessage, { once: true });
-            frame.src = frame.dataset.src;
+            refreshCompleteSentenceFrameSrc();
         } else {
             openManagerMessage();
         }
@@ -2772,7 +2893,10 @@ function setupModals() {
     });
 
     document.getElementById('btn-open-upload').addEventListener('click', () => {
-        if (!isAdmin && !(isDoctor && activePatientContext)) return;
+        // Fase 19: sem paciente selecionado, a mídia do médico vai pro
+        // banco próprio dele — não precisa mais de activePatientContext
+        // pra abrir o modal (só o submit é que decide o destino).
+        if (!isAdmin && !isDoctor) return;
         document.getElementById('upload-modal').style.display = 'flex';
     });
     const closeUpload = () => { document.getElementById('upload-modal').style.display = 'none'; document.getElementById('upload-form').reset(); };
@@ -2798,8 +2922,8 @@ function setupModals() {
 
     document.getElementById('upload-form').addEventListener('submit', (e) => {
         e.preventDefault();
-        if (!isAdmin && !(isDoctor && activePatientContext)) {
-            alert('Apenas administradores ou médicos (com um paciente selecionado) podem adicionar mídia.');
+        if (!isAdmin && !isDoctor) {
+            alert('Apenas administradores ou médicos podem adicionar mídia.');
             return;
         }
 
@@ -2854,19 +2978,27 @@ function setupModals() {
     };
 
     document.getElementById('btn-open-exercise-upload').addEventListener('click', () => {
-        if (isDoctor) {
-            // Médico só cria "Exercício com Slides" pro próprio banco (os
-            // outros tipos usam tabelas/fluxos próprios) — pula direto pro
-            // criador, sem passar pelo seletor de tipo do admin.
-            openSlidesExerciseCreator();
-            return;
-        }
-        if (!isAdmin) return;
+        // Desde as Fases 10-13, naming/afasia/complete-sentence também têm
+        // banco por médico (mesma RLS de doctor_user_id do Exercício com
+        // Slides) — médico vê o mesmo seletor de tipo que o admin, em vez
+        // de pular direto pro criador de slides como antes.
+        if (!isAdmin && !isDoctor) return;
+        // "Banco de Prontos" só faz sentido pro médico adicionar ao próprio
+        // banco — admin já é dono do conteúdo global, não precisa "adicionar".
+        const readyBankTile = document.getElementById('btn-open-ready-bank');
+        if (readyBankTile) readyBankTile.style.display = isDoctor ? 'flex' : 'none';
         document.getElementById('exercise-type-modal').style.display = 'flex';
     });
     document.getElementById('btn-close-exercise-type').addEventListener('click', closeExerciseType);
     document.getElementById('btn-cancel-exercise-type').addEventListener('click', closeExerciseType);
     document.getElementById('btn-create-slides-exercise').addEventListener('click', openSlidesExerciseCreator);
+    document.getElementById('btn-open-ready-bank')?.addEventListener('click', () => {
+        closeExerciseType();
+        openReadyBankModal();
+    });
+    document.getElementById('btn-close-ready-bank')?.addEventListener('click', () => {
+        document.getElementById('ready-bank-modal').style.display = 'none';
+    });
 
     document.getElementById('btn-create-recognition-exercise').addEventListener('click', () => {
         closeExerciseType();
@@ -3242,10 +3374,7 @@ async function applyModuleVisibility() {
     
     navButtons.forEach(btn => {
         const viewId = btn.dataset.view;
-        // view-carometro agora é controlado por patient_id (Fase 4 do modelo médico→
-        // paciente), não pelo toggle genérico de módulos — sem isso, esta função
-        // reexibia a aba pra todo mundo toda vez que rodava (ex: a cada login).
-        if (viewId === 'view-admin' || viewId === 'view-core' || viewId === 'view-doctor-patients' || viewId === 'view-carometro') return;
+        if (viewId === 'view-admin' || viewId === 'view-core' || viewId === 'view-doctor-patients') return;
         
         if (flags[viewId] === false) {
             if (isAdmin) {
@@ -3269,8 +3398,7 @@ function renderAdminModulesPanel(flags) {
     if (!container) return;
     
     const modules = [
-        // view-carometro fica fora: visibilidade agora é por paciente (Fase 4 do
-        // modelo médico→paciente), não um liga/desliga geral pra todo mundo.
+        { id: 'view-carometro', name: 'Carômetro', icon: 'fa-id-card' },
         { id: 'view-topics', name: 'Tópicos', icon: 'fa-folder-open' },
         { id: 'view-virtues', name: 'Fomes e Forças', icon: 'fa-star' },
         { id: 'view-keyboard', name: 'Teclado', icon: 'fa-keyboard' },
@@ -3443,7 +3571,7 @@ function openGame(gameId) {
         const container = document.getElementById('game-complete-sentence-container');
         const frame = document.getElementById('complete-sentence-frame');
         container.style.display = 'flex';
-        if (!frame.src) frame.src = frame.dataset.src;
+        if (!frame.src) refreshCompleteSentenceFrameSrc();
     }
 
     const activityInfo = getActivityTrackingMeta(gameId);
@@ -4682,10 +4810,12 @@ function serializeJogo2CardItem(card, exerciseId) {
     };
 }
 
-async function getOrCreateJogo2CardsContainer() {
+async function getOrCreateJogo2CardsContainer(doctorUserId = null) {
     if (supabaseClient) {
-        const container = await getOrCreateGameContainer(JOGO2_CARDS_SEED_KEY, JOGO2_CARDS_TITLE);
-        if (container.fromSupabase) {
+        const container = doctorUserId
+            ? await getOrCreateGameContainer(doctorScopedSeedKey(JOGO2_CARDS_SEED_KEY, doctorUserId), JOGO2_CARDS_TITLE, doctorUserId)
+            : await getOrCreateGameContainer(JOGO2_CARDS_SEED_KEY, JOGO2_CARDS_TITLE);
+        if (container && container.fromSupabase) {
             const { data, error } = await supabaseClient
                 .from('exercise_items')
                 .select('*')
@@ -4721,6 +4851,33 @@ async function getOrCreateJogo2CardsContainer() {
     });
 }
 
+// Leitura pro paciente jogar — nunca cria/semeia nada (semeadura de fábrica é
+// preocupação só de quem autora, ver loadJogo2CustomCards). Tenta primeiro o
+// container do médico do paciente logado; se não existir ou estiver vazio,
+// cai pro container global de sempre, sem mudança nenhuma nesse caminho.
+async function getJogo2ContainerForPlay() {
+    if (supabaseClient && currentPatientId && currentPatientDoctorUserId) {
+        try {
+            const scopedSeedKey = doctorScopedSeedKey(JOGO2_CARDS_SEED_KEY, currentPatientDoctorUserId);
+            const { data: container } = await supabaseClient.from('exercises').select('*').eq('seed_key', scopedSeedKey).maybeSingle();
+            if (container) {
+                const { data: items } = await supabaseClient
+                    .from('exercise_items').select('*').eq('exercise_id', container.id).eq('role', JOGO2_CARD_ROLE).order('id', { ascending: true });
+                const mapped = (items || []).map(parseJogo2CardItem);
+                if (mapped.length > 0) return { ...container, fromSupabase: true, items: mapped };
+            }
+        } catch (e) {}
+    }
+    return getOrCreateJogo2CardsContainer();
+}
+
+// Container usado por quem autora (salvar/editar/excluir/importar/resetar
+// cartas) — médico usa o próprio, admin usa o global. Mesmo padrão de
+// getNamingContainer/getAfasiaContainer.
+function getJogo2ManageContainer() {
+    return getOrCreateJogo2CardsContainer(isDoctor ? currentUserId : null);
+}
+
 async function saveJogo2CardsContainer(container) {
     container.items = jogo2CustomCards;
 
@@ -4753,8 +4910,13 @@ function updateJogo2SetupSelection() {
 
 // Carregar cartas customizadas da base local ou do Supabase
 async function loadJogo2CustomCards() {
+    // Médico/admin autoram (container próprio ou global, get-or-create de
+    // verdade); paciente só lê, nunca cria nada (getJogo2ContainerForPlay).
+    const isAuthoring = isDoctor || isAdmin;
     try {
-        const container = await getOrCreateJogo2CardsContainer();
+        const container = isAuthoring
+            ? await getOrCreateJogo2CardsContainer(isDoctor ? currentUserId : null)
+            : await getJogo2ContainerForPlay();
         if (container && container.items) {
             jogo2CustomCards = Array.isArray(container.items) ? container.items : [];
         } else {
@@ -4765,8 +4927,10 @@ async function loadJogo2CustomCards() {
         jogo2CustomCards = [];
     }
 
-    // Importação inicial automática de fábrica caso a base esteja vazia e nunca inicializada com a versão v2 (sem emojis nas opções)
-    if (!localStorage.getItem('jogo2_factory_initialized_v2') && jogo2CustomCards.length === 0) {
+    // Importação inicial automática de fábrica caso a base esteja vazia e nunca
+    // inicializada com a versão v2 (sem emojis nas opções) — só pra quem
+    // autora; paciente nunca deve disparar essa semeadura.
+    if (isAuthoring && !localStorage.getItem('jogo2_factory_initialized_v2') && jogo2CustomCards.length === 0) {
         jogo2CustomCards = [];
         let defaultIdCounter = 1;
         for (let virtue in jogo2DefaultQuestions) {
@@ -4785,14 +4949,14 @@ async function loadJogo2CustomCards() {
             });
         }
         try {
-            const container = await getOrCreateJogo2CardsContainer();
+            const container = await getOrCreateJogo2CardsContainer(isDoctor ? currentUserId : null);
             await saveJogo2CardsContainer(container);
             localStorage.setItem('jogo2_factory_initialized_v2', 'true');
         } catch (err) {
             console.error('Erro ao salvar importação inicial de fábrica:', err);
         }
     }
-    
+
     // Atualizar o contador no gerenciador
     const countSpan = document.getElementById('jogo2-custom-count');
     if (countSpan) countSpan.textContent = jogo2CustomCards.length;
@@ -4941,10 +5105,11 @@ function showJogo2Setup() {
         container.dataset.submitGuardAttached = '1';
     }
     
-    // Configurar botão de gerenciar cartas (exibe se for administrador)
+    // Configurar botão de gerenciar cartas (exibe pra admin ou médico — cada
+    // um edita o próprio container, ver getOrCreateJogo2CardsContainer)
     const manageBtn = document.getElementById('btn-jogo2-manage');
     if (manageBtn) {
-        manageBtn.style.display = isAdmin ? 'inline-block' : 'none';
+        manageBtn.style.display = (isAdmin || isDoctor) ? 'inline-block' : 'none';
         manageBtn.onclick = () => showJogo2Manager();
     }
 
@@ -5443,7 +5608,7 @@ async function saveJogo2CustomCard() {
 
     // Salvar na base (Supabase ou Local)
     try {
-        const container = await getOrCreateJogo2CardsContainer();
+        const container = await getJogo2ManageContainer();
         await saveJogo2CardsContainer(container);
         
         const wasEditing = (jogo2EditingCardId !== null);
@@ -5554,7 +5719,7 @@ async function deleteJogo2CustomCard(cardId) {
     jogo2CustomCards = jogo2CustomCards.filter(c => c.id !== cardId);
     
     try {
-        const container = await getOrCreateJogo2CardsContainer();
+        const container = await getJogo2ManageContainer();
         await saveJogo2CardsContainer(container);
         
         renderJogo2CustomQuestionsList();
@@ -5634,7 +5799,7 @@ async function resetJogo2CardsToFactory() {
     }
 
     try {
-        const container = await getOrCreateJogo2CardsContainer();
+        const container = await getJogo2ManageContainer();
         await saveJogo2CardsContainer(container);
         localStorage.setItem('jogo2_factory_initialized_v2', 'true');
         
@@ -5822,7 +5987,7 @@ function handleJogo2CSVImport(event) {
 
         if (importCounter > 0) {
             try {
-                const container = await getOrCreateJogo2CardsContainer();
+                const container = await getJogo2ManageContainer();
                 await saveJogo2CardsContainer(container);
                 
                 renderJogo2CustomQuestionsList();
@@ -6930,7 +7095,41 @@ function closeJogo2ChampionModal() {
 // cartas num aparelho e quem joga vê no outro — e cai pro IndexedDB local só sem
 // supabaseClient (uso offline). Nunca toca em exercícios reais do usuário.
 // =============================================
-async function getOrCreateGameContainer(seedKey, title) {
+// Deriva uma seed_key única por médico a partir da global (ex.:
+// 'naming-game-container' -> 'naming-game-container:doctor:<uuid>') — sem
+// isso, lastMergedExercises.find(seedKey === X) fica ambíguo assim que o
+// container do médico e o global aparecerem juntos pro mesmo cliente (ex.:
+// admin, que enxerga tudo).
+function doctorScopedSeedKey(baseSeedKey, doctorUserId) {
+    return `${baseSeedKey}:doctor:${doctorUserId}`;
+}
+
+async function getOrCreateGameContainer(seedKey, title, doctorUserId = null) {
+    if (supabaseClient && doctorUserId) {
+        // Container do próprio médico: busca só por (seed_key, doctor_user_id)
+        // e, se não achar, insere direto com os dois já setados — pula
+        // deliberadamente a cadeia de fallback por título logo abaixo (ela é
+        // só pra containers antigos do admin sem seed_key; reusada aqui, um
+        // médico sem container ainda receberia o container GLOBAL do admin
+        // como se fosse seu, pelo título bater).
+        try {
+            const { data: existing, error } = await supabaseClient.from('exercises')
+                .select('*').eq('seed_key', seedKey).eq('doctor_user_id', doctorUserId).maybeSingle();
+            if (!error && existing) {
+                return { ...existing, fromSupabase: true, seedKey, visible: existing.visible !== undefined ? existing.visible !== false : false };
+            }
+        } catch (e) {}
+
+        try {
+            const { data: created, error: insertErr } = await supabaseClient.from('exercises')
+                .insert([{ title, visible: false, seed_key: seedKey, doctor_user_id: doctorUserId }])
+                .select().single();
+            if (!insertErr && created) return { ...created, fromSupabase: true, seedKey };
+        } catch (e) {}
+
+        return null;
+    }
+
     if (supabaseClient) {
         try {
             const { data: existing, error } = await supabaseClient.from('exercises').select('*').eq('seed_key', seedKey).maybeSingle();
@@ -6998,6 +7197,29 @@ async function getOrCreateGameContainer(seedKey, title) {
     });
 }
 
+function isGameContainerSeedKey(seedKey, baseSeedKey) {
+    return seedKey === baseSeedKey || (typeof seedKey === 'string' && seedKey.startsWith(`${baseSeedKey}:doctor:`));
+}
+
+// Resolve qual container de jogo (naming/afasia) usar pra leitura:
+// - médico autorando: só o próprio, sem fallback pro global (cair no
+//   container do admin por engano faria o próximo save criar uma cópia
+//   dessincronizada, nunca vista por ninguém);
+// - paciente jogando: tenta primeiro o container do médico dele (só usa se
+//   tiver itens), senão cai pro container global do admin — exatamente o
+//   comportamento de hoje, preservado pra quem não tem nada configurado;
+// - qualquer outro caso (admin, por exemplo): container global, como sempre.
+function resolveGameContainer(baseSeedKey) {
+    if (isDoctor && currentUserId) {
+        return lastMergedExercises.find(ex => ex.seedKey === doctorScopedSeedKey(baseSeedKey, currentUserId)) || null;
+    }
+    if (currentPatientId && currentPatientDoctorUserId) {
+        const own = lastMergedExercises.find(ex => ex.seedKey === doctorScopedSeedKey(baseSeedKey, currentPatientDoctorUserId));
+        if (own && own.items && own.items.length > 0) return own;
+    }
+    return lastMergedExercises.find(ex => ex.seedKey === baseSeedKey) || null;
+}
+
 function putLocalGameContainer(container) {
     return new Promise((resolve) => {
         db.transaction(['exercises'], 'readwrite').objectStore('exercises').put(container).onsuccess = resolve;
@@ -7015,8 +7237,16 @@ function makePairId() {
     return 'pair-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 }
 
+// Mesmo padrão de getNamingContainer/getAfasiaContainer (Fase 10-11):
+// médico autorando usa o próprio container; admin usa o global de sempre.
+function getMemoryContainer() {
+    return isDoctor && currentUserId
+        ? getOrCreateGameContainer(doctorScopedSeedKey(MEMORY_CARDS_SEED_KEY, currentUserId), MEMORY_CARDS_TITLE, currentUserId)
+        : getOrCreateGameContainer(MEMORY_CARDS_SEED_KEY, MEMORY_CARDS_TITLE);
+}
+
 async function addMemoryCardPair(label, imageFileA, imageFileB) {
-    const container = await getOrCreateGameContainer(MEMORY_CARDS_SEED_KEY, MEMORY_CARDS_TITLE);
+    const container = await getMemoryContainer();
     const pairId = makePairId();
 
     if (container.fromSupabase) {
@@ -7047,7 +7277,7 @@ async function addMemoryCardPair(label, imageFileA, imageFileB) {
 }
 
 async function updateMemoryCardPair(pairId, label, imageFileA, imageFileB) {
-    const container = await getOrCreateGameContainer(MEMORY_CARDS_SEED_KEY, MEMORY_CARDS_TITLE);
+    const container = await getMemoryContainer();
 
     if (container.fromSupabase) {
         const { data: pairItems } = await supabaseClient.from('exercise_items').select('*').eq('pair_id', pairId).order('id', { ascending: true });
@@ -7074,7 +7304,7 @@ async function updateMemoryCardPair(pairId, label, imageFileA, imageFileB) {
 }
 
 async function deleteMemoryCardPair(pairId) {
-    const container = await getOrCreateGameContainer(MEMORY_CARDS_SEED_KEY, MEMORY_CARDS_TITLE);
+    const container = await getMemoryContainer();
 
     if (container.fromSupabase) {
         await supabaseClient.from('exercise_items').delete().eq('pair_id', pairId);
@@ -7100,7 +7330,7 @@ function getMemoryCardPairs() {
     // Restrito ao container desse jogo especificamente: agora que existe mais de um
     // "jogo da memória" (ex.: o do Alfabeto), flatMap em lastMergedExercises inteiro
     // misturaria os pares dos dois jogos num só.
-    const container = lastMergedExercises.find(ex => ex.seedKey === MEMORY_CARDS_SEED_KEY);
+    const container = resolveGameContainer(MEMORY_CARDS_SEED_KEY);
     return groupMemoryItemsByPair((container && container.items) || []);
 }
 
@@ -7193,7 +7423,7 @@ async function renderMemoryManageGrid() {
     container.classList.remove('memory-board');
     container.innerHTML = '';
 
-    const cardsContainer = lastMergedExercises.find(ex => ex.seedKey === MEMORY_CARDS_SEED_KEY);
+    const cardsContainer = resolveGameContainer(MEMORY_CARDS_SEED_KEY);
     const pairs = groupMemoryItemsByPair((cardsContainer && cardsContainer.items) || []);
 
     pairs.forEach(({ pairId, itemA, itemB }) => {
@@ -7488,8 +7718,15 @@ function checkMemoryMatch() {
 const ALPHABET_MEMORY_SEED_KEY = 'alphabet-memory-cards-container';
 const ALPHABET_MEMORY_TITLE = 'Cartas do Jogo da Memória do Alfabeto|green';
 
+// Mesmo padrão de getMemoryContainer (Fase 15).
+function getAlphabetMemoryContainer() {
+    return isDoctor && currentUserId
+        ? getOrCreateGameContainer(doctorScopedSeedKey(ALPHABET_MEMORY_SEED_KEY, currentUserId), ALPHABET_MEMORY_TITLE, currentUserId)
+        : getOrCreateGameContainer(ALPHABET_MEMORY_SEED_KEY, ALPHABET_MEMORY_TITLE);
+}
+
 async function addAlphabetMemoryCardPair(label, imageFileA, imageFileB) {
-    const container = await getOrCreateGameContainer(ALPHABET_MEMORY_SEED_KEY, ALPHABET_MEMORY_TITLE);
+    const container = await getAlphabetMemoryContainer();
     const pairId = makePairId();
 
     if (container.fromSupabase) {
@@ -7520,7 +7757,7 @@ async function addAlphabetMemoryCardPair(label, imageFileA, imageFileB) {
 }
 
 async function updateAlphabetMemoryCardPair(pairId, label, imageFileA, imageFileB) {
-    const container = await getOrCreateGameContainer(ALPHABET_MEMORY_SEED_KEY, ALPHABET_MEMORY_TITLE);
+    const container = await getAlphabetMemoryContainer();
 
     if (container.fromSupabase) {
         const { data: pairItems } = await supabaseClient.from('exercise_items').select('*').eq('pair_id', pairId).order('id', { ascending: true });
@@ -7547,7 +7784,7 @@ async function updateAlphabetMemoryCardPair(pairId, label, imageFileA, imageFile
 }
 
 async function deleteAlphabetMemoryCardPair(pairId) {
-    const container = await getOrCreateGameContainer(ALPHABET_MEMORY_SEED_KEY, ALPHABET_MEMORY_TITLE);
+    const container = await getAlphabetMemoryContainer();
 
     if (container.fromSupabase) {
         await supabaseClient.from('exercise_items').delete().eq('pair_id', pairId);
@@ -7570,7 +7807,7 @@ let alphabetMemoryBusy = false;
 const ALPHABET_MEMORY_MAX_PAIRS = 10;
 
 function getAlphabetMemoryCardPairs() {
-    const container = lastMergedExercises.find(ex => ex.seedKey === ALPHABET_MEMORY_SEED_KEY);
+    const container = resolveGameContainer(ALPHABET_MEMORY_SEED_KEY);
     return groupMemoryItemsByPair((container && container.items) || []);
 }
 
@@ -7629,7 +7866,7 @@ async function renderAlphabetMemoryManageGrid() {
     container.classList.remove('memory-board');
     container.innerHTML = '';
 
-    const cardsContainer = lastMergedExercises.find(ex => ex.seedKey === ALPHABET_MEMORY_SEED_KEY);
+    const cardsContainer = resolveGameContainer(ALPHABET_MEMORY_SEED_KEY);
     const pairs = groupMemoryItemsByPair((cardsContainer && cardsContainer.items) || []);
 
     pairs.forEach(({ pairId, itemA, itemB }) => {
@@ -7879,13 +8116,26 @@ function checkAlphabetMemoryMatch() {
 // =============================================
 const NAMING_SEED_KEY = 'naming-game-container';
 const NAMING_TITLE = 'Jogo de Reconhecimento|red';
+// Container de Complete a Frase (Fase 13) — gerenciado inteiramente de
+// dentro do iframe complete-frase.js, mas o container em si (exercises row)
+// aparece em lastMergedExercises igual qualquer outro, então precisa entrar
+// nas mesmas exclusões de naming/afasia pra não vazar como card solto.
+const COMPLETE_FRASE_SEED_KEY = 'complete-frase-container';
 
 function makeNamingSetId() {
     return 'naming-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 }
 
+// Médico autorando: container escopado só pra ele. Admin (ou sem sessão de
+// médico): container global de sempre.
+function getNamingContainer() {
+    return isDoctor && currentUserId
+        ? getOrCreateGameContainer(doctorScopedSeedKey(NAMING_SEED_KEY, currentUserId), NAMING_TITLE, currentUserId)
+        : getOrCreateGameContainer(NAMING_SEED_KEY, NAMING_TITLE);
+}
+
 async function addNamingSet(word, correctFile, distractorFile1, distractorFile2) {
-    const container = await getOrCreateGameContainer(NAMING_SEED_KEY, NAMING_TITLE);
+    const container = await getNamingContainer();
     const pairId = makeNamingSetId();
 
     if (container.fromSupabase) {
@@ -7913,7 +8163,7 @@ async function addNamingSet(word, correctFile, distractorFile1, distractorFile2)
 }
 
 async function updateNamingSet(pairId, word, correctFile, distractorFile1, distractorFile2) {
-    const container = await getOrCreateGameContainer(NAMING_SEED_KEY, NAMING_TITLE);
+    const container = await getNamingContainer();
 
     if (container.fromSupabase) {
         const { data: setItems } = await supabaseClient.from('exercise_items').select('*').eq('pair_id', pairId).order('id', { ascending: true });
@@ -7943,7 +8193,7 @@ async function updateNamingSet(pairId, word, correctFile, distractorFile1, distr
 }
 
 async function deleteNamingSet(pairId) {
-    const container = await getOrCreateGameContainer(NAMING_SEED_KEY, NAMING_TITLE);
+    const container = await getNamingContainer();
 
     if (container.fromSupabase) {
         await supabaseClient.from('exercise_items').delete().eq('pair_id', pairId);
@@ -7985,7 +8235,7 @@ async function renderNamingManageGrid() {
     if (!container) return;
     container.innerHTML = '';
 
-    const namingContainer = lastMergedExercises.find(ex => ex.seedKey === NAMING_SEED_KEY);
+    const namingContainer = resolveGameContainer(NAMING_SEED_KEY);
     const sets = groupNamingItemsBySet((namingContainer && namingContainer.items) || []);
 
     sets.forEach(set => {
@@ -8136,7 +8386,7 @@ function closeNamingSetModal() {
 // ---- Partida (modo "Jogar") ----
 
 function getNamingSets() {
-    const container = lastMergedExercises.find(ex => ex.seedKey === NAMING_SEED_KEY);
+    const container = resolveGameContainer(NAMING_SEED_KEY);
     return groupNamingItemsBySet((container && container.items) || []);
 }
 
@@ -8281,8 +8531,16 @@ function makeAfasiaSetId() {
     return 'afasia-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 }
 
+// Mesmo padrão de getNamingContainer (Fase 10): médico autorando usa o
+// próprio container; admin usa o global de sempre.
+function getAfasiaContainer() {
+    return isDoctor && currentUserId
+        ? getOrCreateGameContainer(doctorScopedSeedKey(AFASIA_SEED_KEY, currentUserId), AFASIA_TITLE, currentUserId)
+        : getOrCreateGameContainer(AFASIA_SEED_KEY, AFASIA_TITLE);
+}
+
 async function addAfasiaSet(question, correctWord, d1Word, d2Word, imageFile) {
-    const container = await getOrCreateGameContainer(AFASIA_SEED_KEY, AFASIA_TITLE);
+    const container = await getAfasiaContainer();
     const pairId = makeAfasiaSetId();
 
     if (container.fromSupabase) {
@@ -8306,7 +8564,7 @@ async function addAfasiaSet(question, correctWord, d1Word, d2Word, imageFile) {
 }
 
 async function updateAfasiaSet(pairId, question, correctWord, d1Word, d2Word, imageFile) {
-    const container = await getOrCreateGameContainer(AFASIA_SEED_KEY, AFASIA_TITLE);
+    const container = await getAfasiaContainer();
 
     if (container.fromSupabase) {
         const { data: setItems } = await supabaseClient.from('exercise_items').select('*').eq('pair_id', pairId).order('id', { ascending: true });
@@ -8336,7 +8594,7 @@ async function updateAfasiaSet(pairId, question, correctWord, d1Word, d2Word, im
 }
 
 async function deleteAfasiaSet(pairId) {
-    const container = await getOrCreateGameContainer(AFASIA_SEED_KEY, AFASIA_TITLE);
+    const container = await getAfasiaContainer();
 
     if (container.fromSupabase) {
         await supabaseClient.from('exercise_items').delete().eq('pair_id', pairId);
@@ -8377,7 +8635,7 @@ async function renderAfasiaManageGrid() {
     if (!container) return;
     container.innerHTML = '';
 
-    const afasiaContainer = lastMergedExercises.find(ex => ex.seedKey === AFASIA_SEED_KEY);
+    const afasiaContainer = resolveGameContainer(AFASIA_SEED_KEY);
     const sets = groupAfasiaItemsBySet((afasiaContainer && afasiaContainer.items) || []);
 
     sets.forEach(set => {
@@ -8511,7 +8769,7 @@ function closeAfasiaSetModal() {
 // ---- Partida (modo "Jogar") ----
 
 function getAfasiaSets() {
-    const container = lastMergedExercises.find(ex => ex.seedKey === AFASIA_SEED_KEY);
+    const container = resolveGameContainer(AFASIA_SEED_KEY);
     return groupAfasiaItemsBySet((container && container.items) || []);
 }
 
@@ -8652,6 +8910,7 @@ let isAdmin = false; // Bloqueado por padrão (Apenas fala)
 let canManageUsers = false;
 let isDoctor = false; // Papel "doctor": gerencia só os próprios pacientes, não conteúdo geral
 let currentPatientId = null; // Preenchido quando o papel logado é "patient"
+let currentPatientDoctorUserId = null; // doctor_user_id do próprio médico do paciente logado (resolveGameContainer)
 let currentUserId = null; // uuid do usuário logado, pra saber "isso é meu?" (banco de exercícios do médico)
 let activePatientContext = null; // { id, name } — médico "entrou" no paciente pra editar Carômetro/Livros/Mídias dele
 
@@ -8714,8 +8973,9 @@ if (supabaseClient) {
 
             if (role === 'patient') {
                 const { data: patientRow } = await supabaseClient
-                    .from('patients').select('id').eq('user_id', userId).maybeSingle();
+                    .from('patients').select('id, doctor_user_id').eq('user_id', userId).maybeSingle();
                 currentPatientId = patientRow?.id || null;
+                currentPatientDoctorUserId = patientRow?.doctor_user_id || null;
             }
             startUsageSession({
                 id: userId,
@@ -8739,8 +8999,17 @@ if (supabaseClient) {
             if (isAdmin) {
                 // Re-render grids to show edit buttons se editor/admin
                 loadCoreAndRender();
-                if (typeof initVirtuesDB === 'function') initVirtuesDB();
-                if (typeof initTopicsDB === 'function') initTopicsDB();
+            }
+            if (isAdmin || isDoctor) {
+                // Recarrega tópicos/virtudes direto do Supabase (não initVirtuesDB/
+                // initTopicsDB — essas só olham Supabase quando o IndexedDB local
+                // está vazio; se este navegador já tinha cache de uma sessão
+                // anterior, o médico nunca veria as próprias pastas recém-criadas
+                // sem isso). Mídias/exercícios já recarregam assim sempre (loadX
+                // consulta o Supabase direto), mas repetir aqui garante que
+                // apareçam assim que o papel (isDoctor) é conhecido.
+                if (typeof loadVirtuesAndRender === 'function') loadVirtuesAndRender();
+                if (typeof loadTopicsAndRender === 'function') loadTopicsAndRender();
                 loadMediaCards();
                 loadExerciseCards();
             }
@@ -8807,23 +9076,66 @@ function formatAdminDate(iso) {
     return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+// Lembra a empresa selecionada no filtro entre recarregamentos da lista
+// (ex.: depois de trocar o papel de alguém) — sem isso o filtro voltava
+// pra "Todas" a cada ação.
+let adminUsersCompanyFilter = '';
+
+function populateAdminUsersCompanyFilter() {
+    const filterSelect = document.getElementById('admin-users-company-filter');
+    if (!filterSelect) return;
+    const current = adminUsersCompanyFilter;
+    filterSelect.innerHTML = '<option value="">Todas as empresas</option>'
+        + companiesCache.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    if (current && companiesCache.some(c => c.id === current)) filterSelect.value = current;
+    else adminUsersCompanyFilter = '';
+}
+
 async function loadAdminUsers() {
     const tbody = document.getElementById('admin-users-tbody');
     if (!tbody || !canManageUsers) return;
-    tbody.innerHTML = '<tr><td colspan="5">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7">Carregando...</td></tr>';
 
     try {
         const { data: sessionData } = await supabaseClient.auth.getSession();
         const currentUserId = sessionData?.session?.user?.id;
         if (!currentUserId && isLocalAppHost()) {
-            tbody.innerHTML = '<tr><td colspan="5">Para ver e editar usuários, faça login com uma conta admin do Supabase.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7">Para ver e editar usuários, faça login com uma conta admin do Supabase.</td></tr>';
             showAdminFeedback('A aba Usuários depende da sessão do Supabase para carregar a lista.', true);
             return;
         }
-        const { users } = await callAdminUsersFn('list');
+        // companiesCache pode ainda não ter sido carregado se o admin nunca
+        // abriu a aba "Empresas" nesta sessão — precisamos dele pra mostrar
+        // o nome da empresa de cada médico e popular o filtro.
+        if (!companiesCache.length) {
+            try {
+                const { companies } = await callAdminUsersFn('listCompanies');
+                companiesCache = companies || [];
+            } catch (e) {}
+        }
+        populateAdminUsersCompanyFilter();
+
+        // Empresa de paciente não vem de company_members (isso é só pra
+        // quem não é paciente) — vem do médico dele, via patients.company_id.
+        // Mostramos só leitura pra paciente, sem dropdown editável, pra não
+        // sugerir que dá pra mudar a empresa dele por aqui sem trocar de médico.
+        const { data: patientRows } = await supabaseClient.from('patients').select('user_id, company_id');
+        const patientCompanyByUserId = new Map((patientRows || []).map(p => [p.user_id, p.company_id]));
+
+        const { users: allUsers } = await callAdminUsersFn('list');
+        const effectiveCompanyId = (u) => u.role === 'patient' ? (patientCompanyByUserId.get(u.id) || null) : u.companyId;
+        const users = adminUsersCompanyFilter
+            ? allUsers.filter(u => effectiveCompanyId(u) === adminUsersCompanyFilter)
+            : allUsers;
 
         users.sort((a, b) => a.email.localeCompare(b.email));
         tbody.innerHTML = '';
+
+        if (!users.length) {
+            tbody.innerHTML = '<tr><td colspan="7">Nenhum usuário encontrado pra essa empresa.</td></tr>';
+            renderUsageDashboard();
+            return;
+        }
 
         users.forEach(u => {
             const tr = document.createElement('tr');
@@ -8910,8 +9222,50 @@ async function loadAdminUsers() {
             emailCell.textContent = u.email + (isSelf ? ' (você)' : '');
             tr.appendChild(emailCell);
 
+            const companyCell = document.createElement('td');
+            if (u.role === 'patient') {
+                const companyName = patientCompanyByUserId.get(u.id)
+                    ? (companiesCache.find(c => c.id === patientCompanyByUserId.get(u.id))?.name || '—')
+                    : '—';
+                companyCell.textContent = companyName;
+                companyCell.title = 'Empresa do paciente vem do médico dele — troque o médico pra mudar.';
+            } else {
+                const companySelect = document.createElement('select');
+                companySelect.className = 'admin-role-select';
+                const noneOpt = document.createElement('option');
+                noneOpt.value = '';
+                noneOpt.textContent = 'Sem empresa';
+                companySelect.appendChild(noneOpt);
+                companiesCache.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name;
+                    if (c.id === u.companyId) opt.selected = true;
+                    companySelect.appendChild(opt);
+                });
+                companySelect.addEventListener('change', async () => {
+                    const newCompanyId = companySelect.value || null;
+                    companySelect.disabled = true;
+                    try {
+                        await callAdminUsersFn('setCompany', { userId: u.id, companyId: newCompanyId });
+                        u.companyId = newCompanyId;
+                        showAdminFeedback(`Empresa de ${u.email} atualizada.`);
+                    } catch (err) {
+                        showAdminFeedback(err.message || 'Erro ao atualizar empresa.', true);
+                        companySelect.value = u.companyId || '';
+                    } finally {
+                        companySelect.disabled = false;
+                    }
+                });
+                companyCell.appendChild(companySelect);
+            }
+            tr.appendChild(companyCell);
+
             const roleCell = document.createElement('td');
-            if (isSelf) {
+            const EDITABLE_ROLES = ['viewer', 'editor', 'admin', 'doctor'];
+            if (isSelf || !EDITABLE_ROLES.includes(u.role)) {
+                // Papéis fora de EDITABLE_ROLES (ex: patient) não são alteráveis por
+                // aqui — setRole do backend só aceita viewer/editor/admin/doctor.
                 const badge = document.createElement('span');
                 badge.className = `admin-role-badge ${u.role}`;
                 badge.textContent = u.role;
@@ -8919,7 +9273,7 @@ async function loadAdminUsers() {
             } else {
                 const select = document.createElement('select');
                 select.className = 'admin-role-select';
-                ['viewer', 'editor', 'admin'].forEach(r => {
+                EDITABLE_ROLES.forEach(r => {
                     const opt = document.createElement('option');
                     opt.value = r;
                     opt.textContent = r;
@@ -8962,23 +9316,32 @@ async function loadAdminUsers() {
             actionsCell.appendChild(passBtn);
 
             if (!isSelf) {
-                const delBtn = document.createElement('button');
-                delBtn.className = 'admin-delete-user-btn';
-                delBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>';
-                delBtn.title = 'Excluir usuário';
-                delBtn.addEventListener('click', async () => {
-                    if (!confirm(`Excluir a conta de ${u.email}? Essa ação não pode ser desfeita.`)) return;
-                    delBtn.disabled = true;
+                // Remoção de conta = desativar (ban), nunca apagar de
+                // verdade (regra fixa do projeto) — excluir de verdade
+                // também quebrava com erro de chave estrangeira sempre que
+                // o usuário tinha paciente/exercício/tópico/mídia vinculado.
+                const btnToggleActive = document.createElement('button');
+                btnToggleActive.innerHTML = u.active
+                    ? '<i class="fas fa-user-slash" aria-hidden="true"></i>'
+                    : '<i class="fas fa-user-check" aria-hidden="true"></i>';
+                btnToggleActive.title = u.active ? 'Desativar usuário' : 'Reativar usuário';
+                btnToggleActive.className = u.active ? 'admin-delete-user-btn' : 'admin-edit-password-btn';
+                btnToggleActive.addEventListener('click', async () => {
+                    const confirmMsg = u.active
+                        ? `Desativar ${u.email}? Não vai conseguir mais entrar, mas os dados continuam salvos.`
+                        : `Reativar ${u.email}?`;
+                    if (!confirm(confirmMsg)) return;
+                    btnToggleActive.disabled = true;
                     try {
-                        await callAdminUsersFn('delete', { userId: u.id });
-                        showAdminFeedback(`Usuário ${u.email} excluído.`);
+                        await callAdminUsersFn('setActive', { userId: u.id, active: !u.active });
+                        showAdminFeedback(u.active ? `Usuário ${u.email} desativado.` : `Usuário ${u.email} reativado.`);
                         loadAdminUsers();
                     } catch (err) {
-                        showAdminFeedback(err.message || 'Erro ao excluir usuário.', true);
-                        delBtn.disabled = false;
+                        showAdminFeedback(err.message || 'Erro ao atualizar usuário.', true);
+                        btnToggleActive.disabled = false;
                     }
                 });
-                actionsCell.appendChild(delBtn);
+                actionsCell.appendChild(btnToggleActive);
             }
             tr.appendChild(actionsCell);
 
@@ -8995,6 +9358,10 @@ document.getElementById('btn-nav-admin')?.addEventListener('click', async () => 
     setAdminTab('users');
     await loadAdminUsers();
 });
+document.getElementById('admin-users-company-filter')?.addEventListener('change', (e) => {
+    adminUsersCompanyFilter = e.target.value;
+    loadAdminUsers();
+});
 document.getElementById('btn-admin-tab-users')?.addEventListener('click', () => setAdminTab('users'));
 document.getElementById('btn-admin-tab-companies')?.addEventListener('click', () => setAdminTab('companies'));
 document.getElementById('btn-admin-tab-usage')?.addEventListener('click', () => setAdminTab('usage'));
@@ -9008,25 +9375,34 @@ let companiesCache = [];
 async function loadCompanies() {
     const tbody = document.getElementById('companies-tbody');
     if (!tbody || !canManageUsers) return;
-    tbody.innerHTML = '<tr><td colspan="4">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5">Carregando...</td></tr>';
 
     try {
-        const [{ companies }, { users }] = await Promise.all([
+        const [{ companies }, { users }, { data: patients }] = await Promise.all([
             callAdminUsersFn('listCompanies'),
             callAdminUsersFn('list'),
+            supabaseClient.from('patients').select('id, company_id'),
         ]);
         companiesCache = companies || [];
 
+        // Empresa agora pode ter qualquer papel vinculado (não só médico) —
+        // conta os três grupos separadamente pra refletir isso na tabela.
         const doctorCountByCompany = new Map();
+        const otherCountByCompany = new Map();
         (users || []).forEach(u => {
-            if (u.role === 'doctor' && u.companyId) {
-                doctorCountByCompany.set(u.companyId, (doctorCountByCompany.get(u.companyId) || 0) + 1);
-            }
+            if (!u.companyId) return;
+            const map = u.role === 'doctor' ? doctorCountByCompany : otherCountByCompany;
+            map.set(u.companyId, (map.get(u.companyId) || 0) + 1);
+        });
+        const patientCountByCompany = new Map();
+        (patients || []).forEach(p => {
+            if (!p.company_id) return;
+            patientCountByCompany.set(p.company_id, (patientCountByCompany.get(p.company_id) || 0) + 1);
         });
 
         tbody.innerHTML = '';
         if (!companiesCache.length) {
-            tbody.innerHTML = '<tr><td colspan="4">Nenhuma empresa cadastrada ainda.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5">Nenhuma empresa cadastrada ainda.</td></tr>';
         }
         companiesCache.forEach(c => {
             const tr = document.createElement('tr');
@@ -9035,16 +9411,18 @@ async function loadCompanies() {
             const tdDoctors = document.createElement('td');
             tdDoctors.textContent = String(doctorCountByCompany.get(c.id) || 0);
             const tdPatients = document.createElement('td');
-            tdPatients.textContent = '—'; // Fase 2 traz a contagem real de pacientes
+            tdPatients.textContent = String(patientCountByCompany.get(c.id) || 0);
+            const tdOthers = document.createElement('td');
+            tdOthers.textContent = String(otherCountByCompany.get(c.id) || 0);
             const tdCreated = document.createElement('td');
             tdCreated.textContent = formatAdminDate(c.created_at);
-            tr.append(tdName, tdDoctors, tdPatients, tdCreated);
+            tr.append(tdName, tdDoctors, tdPatients, tdOthers, tdCreated);
             tbody.appendChild(tr);
         });
 
         populateCompanySelect();
     } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="4">Erro ao carregar empresas: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5">Erro ao carregar empresas: ${err.message}</td></tr>`;
     }
 }
 
@@ -9057,32 +9435,54 @@ function populateCompanySelect() {
     if (current && companiesCache.some(c => c.id === current)) select.value = current;
 }
 
-document.getElementById('new-company-form')?.addEventListener('submit', async (e) => {
+const newCompanyModal = document.getElementById('new-company-modal');
+const newCompanyForm = document.getElementById('new-company-form');
+const newCompanyError = document.getElementById('new-company-error');
+
+document.getElementById('btn-open-new-company')?.addEventListener('click', () => {
+    newCompanyForm?.reset();
+    if (newCompanyError) newCompanyError.style.display = 'none';
+    if (newCompanyModal) newCompanyModal.style.display = 'flex';
+});
+
+function closeNewCompanyModal() {
+    if (newCompanyModal) newCompanyModal.style.display = 'none';
+}
+document.getElementById('btn-close-new-company')?.addEventListener('click', closeNewCompanyModal);
+document.getElementById('btn-cancel-new-company')?.addEventListener('click', closeNewCompanyModal);
+
+newCompanyForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const input = document.getElementById('new-company-name');
-    const name = input.value.trim();
+    const name = document.getElementById('new-company-name').value.trim();
+    const doctorEmail = document.getElementById('new-company-doctor-email')?.value.trim();
+    const doctorName = document.getElementById('new-company-doctor-name')?.value.trim();
+    const doctorPassword = document.getElementById('new-company-doctor-password')?.value;
     const submitBtn = document.getElementById('btn-submit-new-company');
     const feedback = document.getElementById('companies-feedback');
 
+    if (newCompanyError) newCompanyError.style.display = 'none';
     submitBtn.disabled = true;
+    submitBtn.textContent = 'Criando...';
     try {
-        await callAdminUsersFn('createCompany', { name });
-        input.value = '';
+        const result = await callAdminUsersFn('createCompany', { name, doctorEmail, doctorName, doctorPassword });
+        closeNewCompanyModal();
         if (feedback) {
-            feedback.textContent = `Empresa "${name}" criada.`;
-            feedback.classList.remove('error');
+            feedback.textContent = result?.doctor
+                ? `Empresa "${name}" criada com o médico ${result.doctor.email}.`
+                : result?.error || `Empresa "${name}" criada.`;
+            feedback.classList.toggle('error', !result?.doctor && !!result?.error);
             feedback.style.display = 'block';
-            setTimeout(() => { feedback.style.display = 'none'; }, 4000);
+            setTimeout(() => { feedback.style.display = 'none'; }, 5000);
         }
         await loadCompanies();
     } catch (err) {
-        if (feedback) {
-            feedback.textContent = err.message || 'Erro ao criar empresa.';
-            feedback.classList.add('error');
-            feedback.style.display = 'block';
+        if (newCompanyError) {
+            newCompanyError.textContent = err.message || 'Erro ao criar empresa.';
+            newCompanyError.style.display = 'block';
         }
     } finally {
         submitBtn.disabled = false;
+        submitBtn.textContent = 'Criar empresa';
     }
 });
 document.getElementById('btn-refresh-usage')?.addEventListener('click', renderUsageDashboard);
@@ -9202,11 +9602,29 @@ async function loadDoctorPatients() {
             btnExercises.className = 'admin-edit-password-btn';
             btnExercises.addEventListener('click', () => openPatientExercisesModal(p));
 
+            const btnTopics = document.createElement('button');
+            btnTopics.innerHTML = '<i class="fas fa-list" aria-hidden="true"></i>';
+            btnTopics.title = 'Tópicos liberados para este paciente';
+            btnTopics.className = 'admin-edit-password-btn';
+            btnTopics.addEventListener('click', () => openPatientTopicsModal(p));
+
+            const btnVirtues = document.createElement('button');
+            btnVirtues.innerHTML = '<i class="fas fa-star" aria-hidden="true"></i>';
+            btnVirtues.title = 'Fomes e Forças liberadas para este paciente';
+            btnVirtues.className = 'admin-edit-password-btn';
+            btnVirtues.addEventListener('click', () => openPatientVirtuesModal(p));
+
             const btnCarometro = document.createElement('button');
             btnCarometro.innerHTML = '<i class="fas fa-id-card" aria-hidden="true"></i>';
             btnCarometro.title = 'Carômetro deste paciente';
             btnCarometro.className = 'admin-edit-password-btn';
             btnCarometro.addEventListener('click', () => enterPatientContext(p, 'view-carometro'));
+
+            const btnCarometroGlobal = document.createElement('button');
+            btnCarometroGlobal.innerHTML = '<i class="fas fa-users-rectangle" aria-hidden="true"></i>';
+            btnCarometroGlobal.title = 'Setores globais de Carômetro liberados para este paciente';
+            btnCarometroGlobal.className = 'admin-edit-password-btn';
+            btnCarometroGlobal.addEventListener('click', () => openPatientCarometroModal(p));
 
             const btnBooks = document.createElement('button');
             btnBooks.innerHTML = '<i class="fas fa-book" aria-hidden="true"></i>';
@@ -9214,13 +9632,17 @@ async function loadDoctorPatients() {
             btnBooks.className = 'admin-edit-password-btn';
             btnBooks.addEventListener('click', () => enterPatientContext(p, 'view-books'));
 
+            // Fase 19: mesmo padrão de Exercícios/Tópicos/Virtudes — mostra a
+            // lista do banco do médico pra liberar por paciente, em vez de
+            // "entrar" no paciente pra fazer upload direto (fluxo antigo da
+            // Fase 6, agora substituído por "banco + liberar depois").
             const btnMedias = document.createElement('button');
             btnMedias.innerHTML = '<i class="fas fa-play-circle" aria-hidden="true"></i>';
-            btnMedias.title = 'Mídias deste paciente';
+            btnMedias.title = 'Mídias liberadas para este paciente';
             btnMedias.className = 'admin-edit-password-btn';
-            btnMedias.addEventListener('click', () => enterPatientContext(p, 'view-media'));
+            btnMedias.addEventListener('click', () => openPatientMediasModal(p));
 
-            tdActions.append(btnPassword, btnModules, btnExercises, btnCarometro, btnBooks, btnMedias, btnToggleActive);
+            tdActions.append(btnPassword, btnModules, btnExercises, btnTopics, btnVirtues, btnCarometro, btnCarometroGlobal, btnBooks, btnMedias, btnToggleActive);
             tr.append(tdName, tdEmail, tdStatus, tdCreated, tdLastSignIn, tdActions);
             tbody.appendChild(tr);
         });
@@ -9234,8 +9656,11 @@ const newPatientForm = document.getElementById('new-patient-form');
 const newPatientError = document.getElementById('new-patient-error');
 
 // Módulos por paciente (Fase 5a) — usa a mesma lista de módulos do painel
-// admin (sem Carômetro, que tem mecanismo próprio desde a Fase 4).
+// admin. Carômetro entrou aqui também: liga/desliga a aba (o CONTEÚDO
+// dela — quais setores globais o paciente vê — continua controlado à
+// parte, em "Meus Pacientes → Carômetro (globais)").
 const PATIENT_TOGGLABLE_MODULES = [
+    { id: 'view-carometro', name: 'Carômetro' },
     { id: 'view-topics', name: 'Tópicos' },
     { id: 'view-virtues', name: 'Fomes e Forças' },
     { id: 'view-keyboard', name: 'Teclado' },
@@ -9310,20 +9735,26 @@ async function openPatientExercisesModal(patient) {
     list.innerHTML = 'Carregando...';
     if (patientExercisesModal) patientExercisesModal.style.display = 'flex';
 
+    // Inclui o próprio banco do médico E o conteúdo global do admin (Fase
+    // 21: conteúdo global deixou de ser automático pro paciente — o médico
+    // precisa liberar também, mesma lista/mecanismo do banco próprio).
     const { data: myExercises } = await supabaseClient
-        .from('exercises').select('id, title').eq('doctor_user_id', currentUserId).order('title');
+        .from('exercises').select('id, title, doctor_user_id')
+        .or(`doctor_user_id.eq.${currentUserId},and(doctor_user_id.is.null,company_id.is.null,patient_id.is.null)`)
+        .order('title');
     const { data: overrides } = await supabaseClient
         .from('patient_exercise_flags').select('exercise_id, visible').eq('patient_id', patient.id);
     const overrideMap = new Map((overrides || []).map(r => [r.exercise_id, r.visible]));
 
     list.innerHTML = '';
     if (!myExercises || !myExercises.length) {
-        list.innerHTML = '<p class="media-hint">Você ainda não criou nenhum exercício. Crie em "Exercícios" na barra lateral.</p>';
+        list.innerHTML = '<p class="media-hint">Nenhum exercício disponível pra liberar ainda. Crie em "Exercícios" na barra lateral, ou peça pro admin publicar algo global.</p>';
         return;
     }
 
     myExercises.forEach(ex => {
-        const displayTitle = (ex.title || '').split('|')[0];
+        const isGlobal = !ex.doctor_user_id;
+        const displayTitle = (ex.title || '').split('|')[0] + (isGlobal ? ' (do admin)' : '');
         const isVisible = overrideMap.has(ex.id) ? overrideMap.get(ex.id) : false; // opt-in: começa desligado
 
         const row = document.createElement('div');
@@ -9358,6 +9789,268 @@ async function openPatientExercisesModal(patient) {
     });
 }
 
+// Tópicos liberados por paciente (Fase 17) — cópia quase literal de
+// openPatientExercisesModal, trocando exercises/patient_exercise_flags por
+// topics/patient_topic_flags.
+const patientTopicsModal = document.getElementById('patient-topics-modal');
+
+async function openPatientTopicsModal(patient) {
+    document.getElementById('patient-topics-subtitle').textContent = patient.name || patient.email;
+    const list = document.getElementById('patient-topics-list');
+    list.innerHTML = 'Carregando...';
+    if (patientTopicsModal) patientTopicsModal.style.display = 'flex';
+
+    // Inclui o banco do médico E o conteúdo global do admin (Fase 22, mesmo
+    // conceito da Fase 21 aplicado a Tópicos).
+    const { data: myTopics } = await supabaseClient
+        .from('topics').select('id, folder, doctor_user_id')
+        .or(`doctor_user_id.eq.${currentUserId},and(doctor_user_id.is.null,company_id.is.null,patient_id.is.null)`)
+        .order('folder');
+    const { data: overrides } = await supabaseClient
+        .from('patient_topic_flags').select('topic_id, visible').eq('patient_id', patient.id);
+    const overrideMap = new Map((overrides || []).map(r => [r.topic_id, r.visible]));
+
+    list.innerHTML = '';
+    if (!myTopics || !myTopics.length) {
+        list.innerHTML = '<p class="media-hint">Nenhuma pasta de Tópicos disponível pra liberar ainda. Crie em "Tópicos" na barra lateral, ou peça pro admin publicar algo global.</p>';
+        return;
+    }
+
+    myTopics.forEach(topic => {
+        const isVisible = overrideMap.has(topic.id) ? overrideMap.get(topic.id) : false; // opt-in: começa desligado
+        const topicLabel = topic.folder + (topic.doctor_user_id ? '' : ' (do admin)');
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:#f5f5f5; border-radius:8px;';
+
+        const label = document.createElement('span');
+        label.textContent = topicLabel;
+
+        const toggleWrap = document.createElement('div');
+        toggleWrap.style.cssText = 'position:relative; width:32px; height:18px;';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'visibility-toggle-btn ' + (isVisible ? 'is-visible' : 'is-hidden');
+        toggleBtn.style.cssText = 'position:absolute; top:0; left:0;';
+        toggleBtn.setAttribute('role', 'switch');
+        toggleBtn.setAttribute('aria-checked', String(isVisible));
+        toggleBtn.setAttribute('aria-label', `Liberar ${topicLabel} para ${patient.name || patient.email}`);
+        toggleBtn.addEventListener('click', async () => {
+            const newVisible = !isVisible;
+            try {
+                await supabaseClient.from('patient_topic_flags')
+                    .upsert({ patient_id: patient.id, topic_id: topic.id, visible: newVisible, updated_at: new Date().toISOString() });
+                openPatientTopicsModal(patient); // recarrega com o novo estado
+            } catch (err) {
+                showDoctorPatientsFeedback('Erro ao liberar tópico: ' + err.message, true);
+            }
+        });
+
+        toggleWrap.appendChild(toggleBtn);
+        row.append(label, toggleWrap);
+        list.appendChild(row);
+    });
+}
+
+document.getElementById('btn-close-patient-topics')?.addEventListener('click', () => {
+    if (patientTopicsModal) patientTopicsModal.style.display = 'none';
+});
+
+// Virtudes/Fomes e Forças liberadas por paciente (Fase 18) — mesma cópia.
+const patientVirtuesModal = document.getElementById('patient-virtues-modal');
+
+async function openPatientVirtuesModal(patient) {
+    document.getElementById('patient-virtues-subtitle').textContent = patient.name || patient.email;
+    const list = document.getElementById('patient-virtues-list');
+    list.innerHTML = 'Carregando...';
+    if (patientVirtuesModal) patientVirtuesModal.style.display = 'flex';
+
+    // Inclui o banco do médico E o conteúdo global do admin (Fase 22, mesmo
+    // conceito da Fase 21 aplicado a Virtudes).
+    const { data: myVirtues } = await supabaseClient
+        .from('virtues').select('id, folder, doctor_user_id')
+        .or(`doctor_user_id.eq.${currentUserId},and(doctor_user_id.is.null,company_id.is.null,patient_id.is.null)`)
+        .order('folder');
+    const { data: overrides } = await supabaseClient
+        .from('patient_virtue_flags').select('virtue_id, visible').eq('patient_id', patient.id);
+    const overrideMap = new Map((overrides || []).map(r => [r.virtue_id, r.visible]));
+
+    list.innerHTML = '';
+    if (!myVirtues || !myVirtues.length) {
+        list.innerHTML = '<p class="media-hint">Nenhuma categoria de Fomes e Forças disponível pra liberar ainda. Crie em "Virtudes" na barra lateral, ou peça pro admin publicar algo global.</p>';
+        return;
+    }
+
+    myVirtues.forEach(virtue => {
+        const isVisible = overrideMap.has(virtue.id) ? overrideMap.get(virtue.id) : false;
+        const virtueLabel = virtue.folder + (virtue.doctor_user_id ? '' : ' (do admin)');
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:#f5f5f5; border-radius:8px;';
+
+        const label = document.createElement('span');
+        label.textContent = virtueLabel;
+
+        const toggleWrap = document.createElement('div');
+        toggleWrap.style.cssText = 'position:relative; width:32px; height:18px;';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'visibility-toggle-btn ' + (isVisible ? 'is-visible' : 'is-hidden');
+        toggleBtn.style.cssText = 'position:absolute; top:0; left:0;';
+        toggleBtn.setAttribute('role', 'switch');
+        toggleBtn.setAttribute('aria-checked', String(isVisible));
+        toggleBtn.setAttribute('aria-label', `Liberar ${virtueLabel} para ${patient.name || patient.email}`);
+        toggleBtn.addEventListener('click', async () => {
+            const newVisible = !isVisible;
+            try {
+                await supabaseClient.from('patient_virtue_flags')
+                    .upsert({ patient_id: patient.id, virtue_id: virtue.id, visible: newVisible, updated_at: new Date().toISOString() });
+                openPatientVirtuesModal(patient);
+            } catch (err) {
+                showDoctorPatientsFeedback('Erro ao liberar categoria: ' + err.message, true);
+            }
+        });
+
+        toggleWrap.appendChild(toggleBtn);
+        row.append(label, toggleWrap);
+        list.appendChild(row);
+    });
+}
+
+document.getElementById('btn-close-patient-virtues')?.addEventListener('click', () => {
+    if (patientVirtuesModal) patientVirtuesModal.style.display = 'none';
+});
+
+// Mídias liberadas por paciente (Fase 19) — mesma cópia; usa
+// patient_media_flags em vez de reusar medias.patient_id direto (uma
+// mídia do banco pode ir pra mais de um paciente ao longo do tempo, mesmo
+// motivo de patient_exercise_flags existir na Fase 7).
+const patientMediasModal = document.getElementById('patient-medias-modal');
+
+async function openPatientMediasModal(patient) {
+    document.getElementById('patient-medias-subtitle').textContent = patient.name || patient.email;
+    const list = document.getElementById('patient-medias-list');
+    list.innerHTML = 'Carregando...';
+    if (patientMediasModal) patientMediasModal.style.display = 'flex';
+
+    // Inclui o banco do médico E o conteúdo global do admin (Fase 21).
+    const { data: myMedias } = await supabaseClient
+        .from('medias').select('id, title, doctor_user_id')
+        .or(`doctor_user_id.eq.${currentUserId},and(doctor_user_id.is.null,company_id.is.null,patient_id.is.null)`)
+        .order('title');
+    const { data: overrides } = await supabaseClient
+        .from('patient_media_flags').select('media_id, visible').eq('patient_id', patient.id);
+    const overrideMap = new Map((overrides || []).map(r => [r.media_id, r.visible]));
+
+    list.innerHTML = '';
+    if (!myMedias || !myMedias.length) {
+        list.innerHTML = '<p class="media-hint">Nenhuma mídia disponível pra liberar ainda. Adicione em "Mídias" na barra lateral, ou peça pro admin publicar algo global.</p>';
+        return;
+    }
+
+    myMedias.forEach(media => {
+        const isGlobal = !media.doctor_user_id;
+        media = { ...media, title: media.title + (isGlobal ? ' (do admin)' : '') };
+        const isVisible = overrideMap.has(media.id) ? overrideMap.get(media.id) : false;
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:#f5f5f5; border-radius:8px;';
+
+        const label = document.createElement('span');
+        label.textContent = media.title;
+
+        const toggleWrap = document.createElement('div');
+        toggleWrap.style.cssText = 'position:relative; width:32px; height:18px;';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'visibility-toggle-btn ' + (isVisible ? 'is-visible' : 'is-hidden');
+        toggleBtn.style.cssText = 'position:absolute; top:0; left:0;';
+        toggleBtn.setAttribute('role', 'switch');
+        toggleBtn.setAttribute('aria-checked', String(isVisible));
+        toggleBtn.setAttribute('aria-label', `Liberar ${media.title} para ${patient.name || patient.email}`);
+        toggleBtn.addEventListener('click', async () => {
+            const newVisible = !isVisible;
+            try {
+                await supabaseClient.from('patient_media_flags')
+                    .upsert({ patient_id: patient.id, media_id: media.id, visible: newVisible, updated_at: new Date().toISOString() });
+                openPatientMediasModal(patient);
+            } catch (err) {
+                showDoctorPatientsFeedback('Erro ao liberar mídia: ' + err.message, true);
+            }
+        });
+
+        toggleWrap.appendChild(toggleBtn);
+        row.append(label, toggleWrap);
+        list.appendChild(row);
+    });
+}
+
+document.getElementById('btn-close-patient-medias')?.addEventListener('click', () => {
+    if (patientMediasModal) patientMediasModal.style.display = 'none';
+});
+
+// Setores globais de Carômetro liberados por paciente — diferente de
+// exercises/topics/virtues/medias, Carômetro não tem "banco do médico"
+// (cada setor já nasce direto pra um paciente, via enterPatientContext);
+// só os setores GLOBAIS do admin (patient_id nulo) precisam desse toggle.
+const patientCarometroModal = document.getElementById('patient-carometro-modal');
+
+async function openPatientCarometroModal(patient) {
+    document.getElementById('patient-carometro-subtitle').textContent = patient.name || patient.email;
+    const list = document.getElementById('patient-carometro-list');
+    list.innerHTML = 'Carregando...';
+    if (patientCarometroModal) patientCarometroModal.style.display = 'flex';
+
+    const { data: globalSectors } = await supabaseClient
+        .from('carometro_sectors').select('id, title_html').is('patient_id', null).order('title_html');
+    const { data: overrides } = await supabaseClient
+        .from('patient_carometro_flags').select('sector_id, visible').eq('patient_id', patient.id);
+    const overrideMap = new Map((overrides || []).map(r => [r.sector_id, r.visible]));
+
+    list.innerHTML = '';
+    if (!globalSectors || !globalSectors.length) {
+        list.innerHTML = '<p class="media-hint">Nenhum setor global de Carômetro disponível pra liberar ainda.</p>';
+        return;
+    }
+
+    globalSectors.forEach(sector => {
+        const isVisible = overrideMap.has(sector.id) ? overrideMap.get(sector.id) : false;
+        const label = document.createElement('span');
+        label.innerHTML = sector.title_html;
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:#f5f5f5; border-radius:8px;';
+
+        const toggleWrap = document.createElement('div');
+        toggleWrap.style.cssText = 'position:relative; width:32px; height:18px;';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'visibility-toggle-btn ' + (isVisible ? 'is-visible' : 'is-hidden');
+        toggleBtn.style.cssText = 'position:absolute; top:0; left:0;';
+        toggleBtn.setAttribute('role', 'switch');
+        toggleBtn.setAttribute('aria-checked', String(isVisible));
+        toggleBtn.setAttribute('aria-label', `Liberar setor de Carômetro para ${patient.name || patient.email}`);
+        toggleBtn.addEventListener('click', async () => {
+            const newVisible = !isVisible;
+            try {
+                await supabaseClient.from('patient_carometro_flags')
+                    .upsert({ patient_id: patient.id, sector_id: sector.id, visible: newVisible, updated_at: new Date().toISOString() });
+                openPatientCarometroModal(patient);
+            } catch (err) {
+                showDoctorPatientsFeedback('Erro ao liberar setor: ' + err.message, true);
+            }
+        });
+
+        toggleWrap.appendChild(toggleBtn);
+        row.append(label, toggleWrap);
+        list.appendChild(row);
+    });
+}
+
+document.getElementById('btn-close-patient-carometro')?.addEventListener('click', () => {
+    if (patientCarometroModal) patientCarometroModal.style.display = 'none';
+});
+
 document.getElementById('btn-close-patient-exercises')?.addEventListener('click', () => {
     if (patientExercisesModal) patientExercisesModal.style.display = 'none';
 });
@@ -9374,6 +10067,23 @@ function buildBooksFrameUrl() {
         params.set('patientName', activePatientContext.name);
     }
     return 'book-reader.html?' + params.toString();
+}
+
+// Mesmo motivo do buildBooksFrameUrl: sem propagar ?sb=staging, o iframe de
+// Complete a Frase sempre falaria com produção, mesmo testando o resto do
+// app em staging — o que quebraria o guard de sessão da Fase 8 (a checagem
+// de auth.getSession() do iframe bateria no projeto errado).
+function buildCompleteSentenceFrameUrl() {
+    const params = new URLSearchParams({ embedded: '1' });
+    if (typeof useStagingSupabase !== 'undefined' && useStagingSupabase) params.set('sb', 'staging');
+    return 'complete-frase.html?' + params.toString();
+}
+
+function refreshCompleteSentenceFrameSrc() {
+    const frame = document.getElementById('complete-sentence-frame');
+    if (!frame) return;
+    const desiredSrc = new URL(buildCompleteSentenceFrameUrl(), window.location.href).href;
+    if (frame.src !== desiredSrc) frame.src = desiredSrc;
 }
 
 function refreshBooksFrameSrc() {
@@ -9483,18 +10193,11 @@ const newUserModal = document.getElementById('new-user-modal');
 const newUserForm = document.getElementById('new-user-form');
 const newUserError = document.getElementById('new-user-error');
 
-const newUserCompanyGroup = document.getElementById('new-user-company-group');
-
 document.getElementById('btn-open-new-user')?.addEventListener('click', () => {
     newUserForm?.reset();
     if (newUserError) newUserError.style.display = 'none';
-    if (newUserCompanyGroup) newUserCompanyGroup.style.display = 'none';
     if (newUserModal) newUserModal.style.display = 'flex';
     if (!companiesCache.length) loadCompanies(); else populateCompanySelect();
-});
-
-document.getElementById('new-user-role')?.addEventListener('change', (e) => {
-    if (newUserCompanyGroup) newUserCompanyGroup.style.display = e.target.value === 'doctor' ? 'block' : 'none';
 });
 
 function closeNewUserModal() {
@@ -9509,7 +10212,9 @@ newUserForm?.addEventListener('submit', async (e) => {
     const name = document.getElementById('new-user-name')?.value.trim();
     const password = document.getElementById('new-user-password').value;
     const role = document.getElementById('new-user-role').value;
-    const companyId = role === 'doctor' ? document.getElementById('new-user-company')?.value : undefined;
+    // Empresa não é mais exclusiva de médico — qualquer papel pode ser
+    // vinculado a uma empresa (ex.: alguém que ainda vai virar paciente).
+    const companyId = document.getElementById('new-user-company')?.value || undefined;
     const submitBtn = document.getElementById('btn-submit-new-user');
 
     if (newUserError) newUserError.style.display = 'none';
@@ -9587,9 +10292,15 @@ let currentOpenTopicFolderRecord = null;
 
 // ---- Helpers de visibilidade de edição ----
 function showEditBars() {
-    ['btn-edit-core', 'btn-edit-virtues', 'btn-edit-topics', 'btn-edit-memory', 'btn-edit-naming', 'btn-edit-alphabet-memory', 'btn-edit-afasia'].forEach(id => {
+    ['btn-edit-core'].forEach(id => {
         const btn = document.getElementById(id);
         if (btn) btn.style.display = isAdmin ? 'inline-block' : 'none';
+    });
+    // Naming/afasia/memória/alfabeto/tópicos/virtudes: médico também
+    // gerencia o próprio banco (Fases 10-11, 15-18).
+    ['btn-edit-naming', 'btn-edit-afasia', 'btn-edit-memory', 'btn-edit-alphabet-memory', 'btn-edit-topics', 'btn-edit-virtues'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.style.display = (isAdmin || isDoctor) ? 'inline-block' : 'none';
     });
     document.querySelectorAll('.media-header').forEach(header => {
         // #exercises-header/#media-upload-header têm sua própria regra logo
@@ -9599,16 +10310,18 @@ function showEditBars() {
         if (header.id === 'exercises-header' || header.id === 'media-upload-header') return;
         header.style.display = isAdmin ? 'flex' : 'none';
     });
-    const canCreateForPatient = isAdmin || (isDoctor && activePatientContext);
-    // exercises-header fica liberado pro médico sempre (não só depois de
-    // entrar via "Meus Pacientes") — o paciente é escolhido dentro do
-    // próprio formulário de "Novo Exercício".
+    // exercises-header/media-upload-header ficam liberados pro médico
+    // sempre (não só depois de entrar via "Meus Pacientes") — Fase 19: sem
+    // paciente selecionado, a mídia vai pro banco próprio do médico.
     const exercisesHeader = document.getElementById('exercises-header');
     if (exercisesHeader) exercisesHeader.style.display = (isAdmin || isDoctor) ? 'flex' : 'none';
     const mediaHeader = document.getElementById('media-upload-header');
-    if (mediaHeader) mediaHeader.style.display = canCreateForPatient ? 'flex' : 'none';
+    if (mediaHeader) mediaHeader.style.display = (isAdmin || isDoctor) ? 'flex' : 'none';
+    // Médico também gerencia o próprio container de perguntas (Fase 13);
+    // notificar por e-mail é um broadcast pra TODOS os usuários do sistema,
+    // continua exclusivo do admin.
     const completeSentenceManager = document.getElementById('btn-manage-complete-sentence');
-    if (completeSentenceManager) completeSentenceManager.style.display = isAdmin ? 'flex' : 'none';
+    if (completeSentenceManager) completeSentenceManager.style.display = (isAdmin || isDoctor) ? 'flex' : 'none';
     const completeSentenceNotify = document.getElementById('btn-notify-complete-sentence');
     if (completeSentenceNotify) completeSentenceNotify.style.display = isAdmin ? 'inline-flex' : 'none';
 }
@@ -9845,7 +10558,7 @@ async function loadTopicsAndRender() {
                     const items = (itemData || []).filter(item => item.topic_id === cat.id).map(item => ({
                         word: item.word, styleClass: item.style_class, img: item.img, image_url: item.image_url, audio_url: item.audio_url
                     }));
-                    return { id: cat.id, folder: cat.folder, styleClass: cat.style_class, items };
+                    return { id: cat.id, folder: cat.folder, styleClass: cat.style_class, items, doctorUserId: cat.doctor_user_id || null };
                 });
 
                 currentTopicsFolders = merged;
@@ -9943,7 +10656,11 @@ async function renderTopicsFolders() {
             });
         }
 
-        if (isAdmin && editModes.topic) {
+        // Médico só edita/apaga as próprias pastas (doctor_user_id dele) — as
+        // globais aparecem como referência, sem esses botões (a RLS
+        // rejeitaria a escrita mesmo se o botão aparecesse).
+        const canEditTopic = isAdmin || (isDoctor && record.doctorUserId === currentUserId);
+        if (canEditTopic && editModes.topic) {
             const delBtn = document.createElement('button');
             delBtn.className = 'delete-media-btn';
             delBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>';
@@ -9971,8 +10688,11 @@ async function renderTopicsFolders() {
             editBtn.onclick = (ev) => { ev.stopPropagation(); openCardEditor('topic', null, null, record); };
             btn.appendChild(editBtn);
 
-            // Avisar usuários por e-mail sobre a pasta de tópicos
-            btn.appendChild(createNotifyUsersButton(record.folder, 'Tópico'));
+            if (isAdmin) {
+                // Avisar usuários por e-mail sobre a pasta de tópicos — broadcast
+                // pra todo mundo, continua exclusivo do admin.
+                btn.appendChild(createNotifyUsersButton(record.folder, 'Tópico'));
+            }
         }
 
         btn.onclick = () => {
@@ -9983,7 +10703,7 @@ async function renderTopicsFolders() {
         container.appendChild(btn);
     }
 
-    if (isAdmin && editModes.topic) {
+    if ((isAdmin || isDoctor) && editModes.topic) {
         const addBtn = document.createElement('button');
         addBtn.className = 'word-btn add-btn';
         addBtn.innerHTML = '<i class="fas fa-plus" aria-hidden="true"></i><div class="word-btn-text">Nova Pasta</div>';
@@ -10039,7 +10759,7 @@ async function renderTopicsWords(record) {
         btn.appendChild(imgCont);
         btn.appendChild(textEl);
 
-        if (isAdmin && editModes.topic) {
+        if ((isAdmin || (isDoctor && record.doctorUserId === currentUserId)) && editModes.topic) {
             const delBtn = document.createElement('button');
             delBtn.className = 'delete-media-btn';
             delBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>';
@@ -10142,7 +10862,8 @@ async function loadVirtuesAndRender() {
                         id: cat.id,
                         folder: cat.folder,
                         styleClass: cat.style_class,
-                        items
+                        items,
+                        doctorUserId: cat.doctor_user_id || null
                     };
                 });
 
@@ -10240,7 +10961,10 @@ async function renderVirtueFolders() {
         btn.appendChild(imgCont);
         btn.appendChild(textEl);
 
-        if (isAdmin && editModes.virtue) {
+        // Médico só edita/apaga as próprias categorias (doctor_user_id dele)
+        // — as globais aparecem como referência, sem esses botões.
+        const canEditVirtue = isAdmin || (isDoctor && record.doctorUserId === currentUserId);
+        if (canEditVirtue && editModes.virtue) {
             const delBtn = document.createElement('button');
             delBtn.className = 'delete-media-btn';
             delBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>';
@@ -10260,8 +10984,11 @@ async function renderVirtueFolders() {
             };
             btn.appendChild(delBtn);
 
-            // Avisar usuários por e-mail sobre a pasta de Fomes e Forças
-            btn.appendChild(createNotifyUsersButton(record.folder, 'Categoria'));
+            if (isAdmin) {
+                // Avisar usuários por e-mail sobre a pasta de Fomes e Forças
+                // — broadcast pra todo mundo, continua exclusivo do admin.
+                btn.appendChild(createNotifyUsersButton(record.folder, 'Categoria'));
+            }
         }
 
         btn.addEventListener('click', () => {
@@ -10285,7 +11012,7 @@ async function renderVirtueFolders() {
         }
     }
 
-    if (isAdmin && editModes.virtue) {
+    if ((isAdmin || isDoctor) && editModes.virtue) {
         const addBtn = document.createElement('button');
         addBtn.className = 'word-btn border-gray';
         addBtn.innerHTML = '<div class="word-btn-img-container"><i class="fas fa-plus word-btn-icon" style="color:#888" aria-hidden="true"></i></div><div class="word-btn-text">Nova Categoria</div>';
@@ -10295,7 +11022,9 @@ async function renderVirtueFolders() {
             const colors = ['border-green', 'border-orange', 'border-blue', 'border-red', 'border-yellow', 'border-pink'];
             const styleClass = colors[Math.floor(Math.random() * colors.length)];
             if (supabaseClient) {
-                supabaseClient.from('virtues').insert([{ folder: name.trim(), style_class: styleClass }]).then(({ error }) => {
+                const newVirtuePayload = { folder: name.trim(), style_class: styleClass };
+                if (isDoctor) newVirtuePayload.doctor_user_id = currentUserId;
+                supabaseClient.from('virtues').insert([newVirtuePayload]).then(({ error }) => {
                     if (error) alert('Erro ao criar no Supabase: ' + error.message);
                     loadVirtuesAndRender();
                 });
@@ -10344,7 +11073,7 @@ async function renderVirtueWords(record) {
         btn.appendChild(imgCont);
         btn.appendChild(textEl);
 
-        if (isAdmin && editModes.virtue) {
+        if ((isAdmin || (isDoctor && record.doctorUserId === currentUserId)) && editModes.virtue) {
             const delBtn = document.createElement('button');
             delBtn.className = 'delete-media-btn';
             delBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>';
@@ -10402,7 +11131,7 @@ async function renderVirtueWords(record) {
         }
     }
 
-    if (isAdmin && editModes.virtue) {
+    if ((isAdmin || (isDoctor && record.doctorUserId === currentUserId)) && editModes.virtue) {
         const addBtn = document.createElement('button');
         addBtn.className = 'word-btn border-gray';
         addBtn.innerHTML = '<div class="word-btn-img-container"><i class="fas fa-plus word-btn-icon" style="color:#888" aria-hidden="true"></i></div><div class="word-btn-text">Novo Card</div>';
@@ -10641,7 +11370,9 @@ function setupCardEditor() {
             if (folderRecord === null) {
                 if (supabaseClient) {
                     try {
-                        await supabaseClient.from('topics').insert([{ folder: word, style_class: styleClass }]);
+                        const newTopicPayload = { folder: word, style_class: styleClass };
+                        if (isDoctor) newTopicPayload.doctor_user_id = currentUserId;
+                        await supabaseClient.from('topics').insert([newTopicPayload]);
                         loadTopicsAndRender();
                         closeCardEditor();
                         return;
@@ -11207,15 +11938,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 const { data: dbSectors, error: secErr } = await sectorsQuery;
                 if (secErr) throw secErr;
-
-                // RLS agora filtra por paciente (Fase 4 do modelo médico→paciente):
-                // "tem alguma linha visível" == "deve ver a aba". Setado aqui pois
-                // essa busca é assíncrona e roda depois do primeiro toggle do botão.
-                window.__carometroHasVisibleContent = (dbSectors?.length ?? 0) > 0;
-                const carometroNavBtn = document.getElementById('btn-nav-carometro');
-                if (carometroNavBtn) {
-                    carometroNavBtn.style.display = (isAdmin || window.__carometroHasVisibleContent) ? 'flex' : 'none';
-                }
+                // Visibilidade da aba agora é só pelo módulo (patient_module_flags,
+                // igual aos outros) — não depende mais de "tem conteúdo ou não".
 
                 const { data: dbPeople, error: peoErr } = await supabaseClient.from('carometro_people').select('*').order('order_index', { ascending: true });
                 if (peoErr) throw peoErr;

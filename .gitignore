@@ -13,3 +13,4 @@ node_modules/
 scripts/
 .env.staging
 .env.production
+HANDOFF-multi-tenant.md

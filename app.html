@@ -648,6 +648,9 @@
                                 <i class="fas fa-user-plus" aria-hidden="true"></i> Novo usuário
                             </button>
                             <p class="media-hint">Crie contas, defina quem pode editar conteúdo e quem é administrador.</p>
+                            <select id="admin-users-company-filter" style="margin-left:auto; padding:8px 12px; border:1px solid #ddd; border-radius:8px; background:white; cursor:pointer;">
+                                <option value="">Todas as empresas</option>
+                            </select>
                         </div>
                         <div id="admin-users-feedback" class="admin-feedback" role="status" aria-live="polite" style="display:none;"></div>
                         <div class="admin-table-wrapper">
@@ -656,6 +659,7 @@
                                     <tr>
                                         <th>Nome Completo</th>
                                         <th>E-mail</th>
+                                        <th>Empresa</th>
                                         <th>Papel</th>
                                         <th>Criado em</th>
                                         <th>Último acesso</th>
@@ -663,7 +667,7 @@
                                     </tr>
                                 </thead>
                                 <tbody id="admin-users-tbody">
-                                    <tr><td colspan="6">Carregando...</td></tr>
+                                    <tr><td colspan="7">Carregando...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -671,12 +675,10 @@
 
                     <section class="admin-tab-panel" id="admin-companies-panel" role="tabpanel" aria-labelledby="btn-admin-tab-companies">
                         <div class="media-header">
-                            <form id="new-company-form" style="display:flex; gap:10px; align-items:center; flex:1;">
-                                <input type="text" id="new-company-name" required placeholder="Nome da empresa (ex: Clínica Vida Nova)" style="flex:1; max-width:360px;">
-                                <button type="submit" class="add-media-btn" id="btn-submit-new-company">
-                                    <i class="fas fa-plus" aria-hidden="true"></i> Criar empresa
-                                </button>
-                            </form>
+                            <button type="button" class="add-media-btn" id="btn-open-new-company">
+                                <i class="fas fa-plus" aria-hidden="true"></i> Nova empresa
+                            </button>
+                            <p class="media-hint">Crie uma empresa e, se quiser, já vincule o médico responsável.</p>
                         </div>
                         <div id="companies-feedback" class="admin-feedback" role="status" aria-live="polite" style="display:none;"></div>
                         <div class="admin-table-wrapper">
@@ -686,11 +688,12 @@
                                         <th>Empresa</th>
                                         <th>Médicos</th>
                                         <th>Pacientes</th>
+                                        <th>Outros usuários</th>
                                         <th>Criada em</th>
                                     </tr>
                                 </thead>
                                 <tbody id="companies-tbody">
-                                    <tr><td colspan="4">Carregando...</td></tr>
+                                    <tr><td colspan="5">Carregando...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -884,6 +887,54 @@
                     </div>
                 </div>
 
+                <!-- Modal: Tópicos liberados por Paciente -->
+                <div class="modal-overlay" id="patient-topics-modal" role="dialog" aria-modal="true" aria-labelledby="patient-topics-modal-title">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 id="patient-topics-modal-title">Tópicos liberados</h2>
+                            <button class="close-modal-btn" id="btn-close-patient-topics" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+                        </div>
+                        <p class="media-hint" id="patient-topics-subtitle" style="margin-bottom: 1rem;"></p>
+                        <div id="patient-topics-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+                    </div>
+                </div>
+
+                <!-- Modal: Fomes e Forças liberadas por Paciente -->
+                <div class="modal-overlay" id="patient-virtues-modal" role="dialog" aria-modal="true" aria-labelledby="patient-virtues-modal-title">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 id="patient-virtues-modal-title">Fomes e Forças liberadas</h2>
+                            <button class="close-modal-btn" id="btn-close-patient-virtues" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+                        </div>
+                        <p class="media-hint" id="patient-virtues-subtitle" style="margin-bottom: 1rem;"></p>
+                        <div id="patient-virtues-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+                    </div>
+                </div>
+
+                <!-- Modal: Mídias do banco do médico liberadas por Paciente -->
+                <div class="modal-overlay" id="patient-medias-modal" role="dialog" aria-modal="true" aria-labelledby="patient-medias-modal-title">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 id="patient-medias-modal-title">Mídias liberadas</h2>
+                            <button class="close-modal-btn" id="btn-close-patient-medias" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+                        </div>
+                        <p class="media-hint" id="patient-medias-subtitle" style="margin-bottom: 1rem;"></p>
+                        <div id="patient-medias-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+                    </div>
+                </div>
+
+                <!-- Modal: Setores globais de Carômetro liberados por Paciente -->
+                <div class="modal-overlay" id="patient-carometro-modal" role="dialog" aria-modal="true" aria-labelledby="patient-carometro-modal-title">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 id="patient-carometro-modal-title">Setores de Carômetro liberados</h2>
+                            <button class="close-modal-btn" id="btn-close-patient-carometro" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+                        </div>
+                        <p class="media-hint" id="patient-carometro-subtitle" style="margin-bottom: 1rem;"></p>
+                        <div id="patient-carometro-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+                    </div>
+                </div>
+
                 <!-- Modal: Novo Paciente -->
                 <div class="modal-overlay" id="new-patient-modal" role="dialog" aria-modal="true" aria-labelledby="new-patient-modal-title">
                     <div class="modal-content">
@@ -1053,10 +1104,27 @@
                     <strong>Complete a Frase</strong>
                     <span>Arraste, complete e ouça frases do cotidiano.</span>
                 </button>
+                <button type="button" class="exercise-type-option ready-bank" id="btn-open-ready-bank" style="display:none;">
+                    <i class="fas fa-book-open" aria-hidden="true"></i>
+                    <strong>Banco de Prontos</strong>
+                    <span>Adicione ao seu banco um exercício já pronto, feito pelo admin.</span>
+                </button>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" id="btn-cancel-exercise-type">Cancelar</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Modal: Banco de Prontos (exercícios globais do admin que o médico pode adicionar ao próprio banco) -->
+    <div class="modal-overlay" id="ready-bank-modal" role="dialog" aria-modal="true" aria-labelledby="ready-bank-modal-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="ready-bank-modal-title">Banco de Prontos</h2>
+                <button class="close-modal-btn" id="btn-close-ready-bank" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <p class="media-hint" style="margin-bottom: 1rem;">Exercícios prontos, feitos pelo admin. Adicione ao seu banco pra depois liberar pros seus pacientes.</p>
+            <div id="ready-bank-list" style="display:flex; flex-direction:column; gap:10px;"></div>
         </div>
     </div>
 
@@ -1365,6 +1433,41 @@
         </div>
     </div>
 
+    <!-- Modal: Nova Empresa (Admin) -->
+    <div class="modal-overlay" id="new-company-modal" role="dialog" aria-modal="true" aria-labelledby="new-company-modal-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="new-company-modal-title">Nova empresa</h2>
+                <button class="close-modal-btn" id="btn-close-new-company" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <form id="new-company-form">
+                <div class="form-group">
+                    <label for="new-company-name">Nome da empresa</label>
+                    <input type="text" id="new-company-name" required placeholder="Ex: Clínica Vida Nova">
+                </div>
+                <hr style="border:none; border-top:1px solid #e2e8f0; margin:20px 0;">
+                <p class="media-hint" style="margin-bottom:12px;">Médico responsável (opcional — dá pra vincular depois)</p>
+                <div class="form-group">
+                    <label for="new-company-doctor-name">Nome do médico</label>
+                    <input type="text" id="new-company-doctor-name" placeholder="Ex: Dra. Ana Souza" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="new-company-doctor-email">E-mail do médico</label>
+                    <input type="email" id="new-company-doctor-email" placeholder="medico@clinica.com" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="new-company-doctor-password">Senha temporária do médico</label>
+                    <input type="text" id="new-company-doctor-password" minlength="6" placeholder="Mínimo de 6 caracteres" autocomplete="off">
+                </div>
+                <div id="new-company-error" class="admin-feedback error" style="display:none;"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-cancel-new-company">Cancelar</button>
+                    <button type="submit" class="btn-primary" id="btn-submit-new-company">Criar empresa</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Modal: Novo Usuário (Admin) -->
     <div class="modal-overlay" id="new-user-modal" role="dialog" aria-modal="true" aria-labelledby="new-user-modal-title">
         <div class="modal-content">
@@ -1394,8 +1497,8 @@
                         <option value="doctor">Médico (gerencia pacientes de uma empresa)</option>
                     </select>
                 </div>
-                <div class="form-group" id="new-user-company-group" style="display:none;">
-                    <label for="new-user-company">Empresa</label>
+                <div class="form-group" id="new-user-company-group">
+                    <label for="new-user-company">Empresa (opcional)</label>
                     <select id="new-user-company"></select>
                 </div>
                 <div id="new-user-error" class="admin-feedback error" style="display:none;"></div>
@@ -1488,12 +1591,12 @@
         }
     </style>
 
-    <link rel="stylesheet" href="style.css?v=24">
+    <link rel="stylesheet" href="style.css?v=25">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script defer src="app.js?v=33"></script>
+    <script defer src="app.js?v=51"></script>
 </body>
 
 

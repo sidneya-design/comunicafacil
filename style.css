@@ -245,6 +245,7 @@ body {
 .modal-content {
     background: white; width: 90%; max-width: 500px; color: #111;
     border-radius: var(--radius); padding: 25px; box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    max-height: 85vh; overflow-y: auto;
 }
 .video-modal-content { max-width: 800px; background: black; color: white;}
 .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
@@ -295,6 +296,8 @@ body {
 .exercise-type-option.recognition i { color: #dc2626; }
 .exercise-type-option.afasia { border-color: var(--color-yellow); }
 .exercise-type-option.afasia i { color: #ca8a04; }
+.exercise-type-option.ready-bank { border-color: #86efac; }
+.exercise-type-option.ready-bank i { color: #16a34a; }
 @media (max-width: 600px) {
     .exercise-type-grid { grid-template-columns: 1fr; }
     .exercise-type-option { min-height: 145px; }
