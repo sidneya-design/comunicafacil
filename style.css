@@ -215,6 +215,15 @@ body {
 .visibility-toggle-btn.is-hidden::after { left: 2px; }
 .card-hidden { opacity: 0.5; }
 
+.release-status-badge {
+    position: absolute; top: 5px; left: 5px;
+    padding: 3px 8px; border-radius: 999px;
+    font-size: 10px; font-weight: 700; color: #fff;
+    z-index: 2; white-space: nowrap;
+}
+.release-status-badge.is-released { background: #16b84e; }
+.release-status-badge.is-not-released { background: #6b7280; }
+
 .notify-users-btn {
     position: absolute; top: 5px; left: 44px;
     width: 26px; height: 26px; padding: 0;

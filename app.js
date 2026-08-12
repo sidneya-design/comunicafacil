@@ -2392,6 +2392,19 @@ function createNotifyUsersButton(title, category = 'Atividade', patient = null) 
 let currentExercises = [];
 let lastMergedExercises = [];
 async function loadExerciseCards() {
+    // Tela "olho" de Exercícios (enterPatientContext) mostra o banco inteiro do
+    // médico, não só o que está liberado pro paciente — sem isso, um card novo
+    // parece "já disponível pro paciente" quando na verdade ainda não foi
+    // liberado. O mapa abaixo alimenta o selo "Liberado"/"Não liberado" por
+    // card em renderExerciseCards.
+    if (supabaseClient && isDoctor && activePatientContext) {
+        const { data: flags } = await supabaseClient
+            .from('patient_exercise_flags').select('exercise_id, visible').eq('patient_id', activePatientContext.id);
+        patientExerciseReleaseMap = new Map((flags || []).map(f => [String(f.exercise_id), f.visible]));
+    } else {
+        patientExerciseReleaseMap = new Map();
+    }
+
     if (supabaseClient) {
         try {
             const { data: exData, error: exErr } = await supabaseClient.from('exercises').select('*');
@@ -2533,6 +2546,19 @@ function renderExerciseCards(exercisesArray) {
 
         btn.appendChild(imgContainer);
         btn.appendChild(textEl);
+
+        if (inDoctorPatientContext) {
+            // Exercício escopado direto a esse paciente (ex.patientId) fica
+            // visível pra ele sem depender de patient_exercise_flags (RLS
+            // libera direto por dono) — os demais (banco geral/global) só
+            // aparecem pro paciente depois de liberados aqui na lista.
+            const isReleased = ex.patientId === activePatientContext.id
+                || patientExerciseReleaseMap.get(String(ex.id)) === true;
+            const releaseBadge = document.createElement('div');
+            releaseBadge.className = 'release-status-badge ' + (isReleased ? 'is-released' : 'is-not-released');
+            releaseBadge.textContent = isReleased ? 'Liberado' : 'Não liberado';
+            btn.appendChild(releaseBadge);
+        }
 
         if (isAdmin) {
             const isVisible = ex.visible !== false;
@@ -9242,6 +9268,7 @@ let currentPatientId = null; // Preenchido quando o papel logado é "patient"
 let currentPatientDoctorUserId = null; // doctor_user_id do próprio médico do paciente logado (resolveGameContainer)
 let currentUserId = null; // uuid do usuário logado, pra saber "isso é meu?" (banco de exercícios do médico)
 let activePatientContext = null; // { id, name } — médico "entrou" no paciente pra editar Carômetro/Livros/Mídias dele
+let patientExerciseReleaseMap = new Map(); // exercise_id (string) -> visible, só preenchido quando activePatientContext (tela "olho" de Exercícios)
 
 function isCompleteSentenceLocalDemo() {
     const localHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
