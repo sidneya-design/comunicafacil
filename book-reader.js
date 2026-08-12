@@ -321,10 +321,8 @@ async function uploadFile(file) {
     // 3. Registrar no banco
     const title = file.name.replace(/\.[^/.]+$/, '');
     const genre = bookGenreSelect?.value || 'Outros';
-    const { data: { user } } = await supabase.auth.getUser();
     const { error: dbErr } = await supabase.from('books').insert({
       title, mime_type: mimeType, file_path: filePath, file_size: file.size, genre,
-      uploaded_by: user?.id,
       ...(doctorPatientContext ? { patient_id: doctorPatientContext.id } : {}),
     });
 
@@ -415,21 +413,19 @@ async function deleteBook(book) {
   const title = book.title || 'este livro';
   if (!confirm(`Apagar "${title}"? Essa ação não pode ser desfeita.`)) return;
 
-  // Apaga a linha do banco primeiro: se a RLS negar (livro de outro médico/
-  // catálogo global sem permissão), sai daqui sem ter tocado no storage.
-  const { data: dbData, error: dbErr } = await supabase.from('books').delete().eq('id', book.id).select();
-  if (dbErr) { alert('Erro ao excluir: ' + dbErr.message); return; }
-  if (!dbData || dbData.length === 0) {
-    alert('Não foi possível excluir (sessão sem permissão). Tente sair e entrar de novo.');
-    return;
-  }
-
   const filePath = (book.file_path || '').replace(/^\/+/, '');
   const coverPath = deriveCoverPath(book.file_path);
   const pathsToRemove = [filePath, coverPath].filter(Boolean);
   if (pathsToRemove.length) {
     const { error: storageErr } = await supabase.storage.from('books').remove(pathsToRemove);
     if (storageErr) console.warn('[BookReader] Erro ao remover arquivos do storage:', storageErr.message);
+  }
+
+  const { data: dbData, error: dbErr } = await supabase.from('books').delete().eq('id', book.id).select();
+  if (dbErr) { alert('Erro ao excluir: ' + dbErr.message); return; }
+  if (!dbData || dbData.length === 0) {
+    alert('Não foi possível excluir (sessão sem permissão). Tente sair e entrar de novo.');
+    return;
   }
 
   await loadBookList();
