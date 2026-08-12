@@ -2412,9 +2412,25 @@ function renderExerciseCards(exercisesArray) {
     // ainda que não liberados pra nenhum paciente — mais os globais, como
     // referência. A liberação por paciente acontece na tela "Meus Pacientes"
     // (openPatientExercisesModal), não aqui.
-    const isOwnBankExercise = ex => ex.doctorUserId && ex.doctorUserId === currentUserId;
+    // Exercício escopado direto a um paciente (patientId, sem doctorUserId)
+    // já chegou até aqui filtrado pelo baseExercises acima (só sobra se for
+    // do paciente ativo) — então, se tem patientId nesse ponto, é do
+    // paciente que o médico está vendo agora: edita/apaga igual ao próprio
+    // banco, não é fork de conteúdo global do admin.
+    const isOwnBankExercise = ex => (ex.doctorUserId && ex.doctorUserId === currentUserId) || !!ex.patientId;
     const canEditHere = isAdmin || isDoctor;
-    const cardsToRender = canEditHere ? realExercises : realExercises.filter(ex => ex.visible !== false);
+
+    // Médico "fora" de um paciente (grade geral de Exercícios) não deve ver
+    // exercícios escopados a um paciente específico — isso é conteúdo
+    // pessoal daquele paciente, não do banco geral do médico. "Dentro" de um
+    // paciente (activePatientContext), mostra só os daquele paciente. Mesmo
+    // cuidado que renderMediaCards já toma pra mídias.
+    const inDoctorPatientContext = isDoctor && activePatientContext;
+    const baseExercises = isDoctor
+        ? realExercises.filter(ex => !ex.patientId || (inDoctorPatientContext && ex.patientId === activePatientContext.id))
+        : realExercises;
+
+    const cardsToRender = canEditHere ? baseExercises : baseExercises.filter(ex => ex.visible !== false);
     cardsToRender.forEach(ex => {
         const parts = (ex.title || '').split('|');
         const displayTitle = parts[0];
@@ -2660,7 +2676,9 @@ function openEditExercise(ex) {
     // Médico editando um exercício global do admin (Fase 23): se ele já tem
     // uma cópia própria (fork) desse exercício, edita a cópia — não o
     // original de novo (senão perderia as edições já feitas na cópia).
-    if (isDoctor && !ex.doctorUserId) {
+    // Exercício escopado a um paciente (patientId) NÃO entra aqui — já é
+    // dele/do médico responsável, edita direto, não forka.
+    if (isDoctor && !ex.doctorUserId && !ex.patientId) {
         const existingFork = lastMergedExercises.find(e => e.doctorUserId === currentUserId && e.forkedFrom === ex.id);
         if (existingFork) return openEditExercise(existingFork);
         currentEditingExerciseId = null;
@@ -9722,6 +9740,12 @@ async function loadDoctorPatients() {
             btnExercises.className = 'admin-edit-password-btn';
             btnExercises.addEventListener('click', () => openPatientExercisesModal(p));
 
+            const btnViewExercises = document.createElement('button');
+            btnViewExercises.innerHTML = '<i class="fas fa-eye" aria-hidden="true"></i>';
+            btnViewExercises.title = 'Ver exercícios deste paciente';
+            btnViewExercises.className = 'admin-edit-password-btn';
+            btnViewExercises.addEventListener('click', () => enterPatientContext(p, 'view-exercises'));
+
             const btnTopics = document.createElement('button');
             btnTopics.innerHTML = '<i class="fas fa-list" aria-hidden="true"></i>';
             btnTopics.title = 'Tópicos liberados para este paciente';
@@ -9762,7 +9786,7 @@ async function loadDoctorPatients() {
             btnMedias.className = 'admin-edit-password-btn';
             btnMedias.addEventListener('click', () => openPatientMediasModal(p));
 
-            tdActions.append(btnPassword, btnModules, btnExercises, btnTopics, btnVirtues, btnCarometro, btnCarometroGlobal, btnBooks, btnMedias, btnToggleActive);
+            tdActions.append(btnPassword, btnModules, btnExercises, btnViewExercises, btnTopics, btnVirtues, btnCarometro, btnCarometroGlobal, btnBooks, btnMedias, btnToggleActive);
             tr.append(tdName, tdEmail, tdStatus, tdCreated, tdLastSignIn, tdActions);
             tbody.appendChild(tr);
         });
@@ -10251,6 +10275,7 @@ function enterPatientContext(patient, targetView) {
     showEditBars();
     if (targetView === 'view-carometro' && typeof reloadCarometroState === 'function') reloadCarometroState();
     if (targetView === 'view-media') loadMediaCards();
+    if (targetView === 'view-exercises') loadExerciseCards();
     document.querySelector(`.nav-btn[data-view="${targetView}"]`)?.click();
     if (targetView === 'view-books') refreshBooksFrameSrc();
 }
@@ -10261,6 +10286,7 @@ function exitPatientContext() {
     updateCarometroEditButtonVisibility();
     showEditBars();
     loadMediaCards();
+    loadExerciseCards();
     if (typeof reloadCarometroState === 'function') reloadCarometroState();
     if (document.querySelector('.nav-btn[data-view="view-books"]')?.classList.contains('active')) refreshBooksFrameSrc();
 }
@@ -10289,10 +10315,18 @@ function updatePatientContextBanners() {
         meText.textContent = `Editando mídias de: ${activePatientContext?.name || ''}`;
         meBanner.style.display = show ? 'flex' : 'none';
     }
+
+    const exBanner = document.getElementById('patient-context-banner-exercises');
+    const exText = document.getElementById('patient-context-banner-exercises-text');
+    if (exBanner && exText) {
+        exText.textContent = `Vendo exercícios de: ${activePatientContext?.name || ''}`;
+        exBanner.style.display = show ? 'flex' : 'none';
+    }
 }
 
 document.getElementById('btn-clear-patient-context-carometro')?.addEventListener('click', exitPatientContext);
 document.getElementById('btn-clear-patient-context-media')?.addEventListener('click', exitPatientContext);
+document.getElementById('btn-clear-patient-context-exercises')?.addEventListener('click', exitPatientContext);
 
 document.getElementById('btn-open-new-patient')?.addEventListener('click', () => {
     newPatientForm?.reset();
