@@ -841,30 +841,154 @@
 
                 <!-- Tela: Meus Pacientes (papel "doctor") -->
                 <main class="view-section" id="view-doctor-patients">
-                    <div class="doctor-patients-header">
-                        <button class="add-media-btn" id="btn-open-new-patient">
-                            <i class="fas fa-user-plus" aria-hidden="true"></i> Novo paciente
-                        </button>
-                        <p class="media-hint">Crie contas de pacientes e gerencie o acesso deles.</p>
+                    <div class="admin-tabbar" role="tablist" aria-label="Meus Pacientes">
+                        <button class="admin-tab active" id="btn-doctor-tab-patients" data-doctor-tab="patients" type="button" role="tab" aria-selected="true">Pacientes</button>
+                        <button class="admin-tab" id="btn-doctor-tab-usage" data-doctor-tab="usage" type="button" role="tab" aria-selected="false">Uso e insights</button>
                     </div>
-                    <div id="doctor-patients-feedback" class="admin-feedback" role="status" aria-live="polite" style="display:none;"></div>
-                    <div class="admin-table-wrapper">
-                        <table class="admin-users-table">
-                            <thead>
-                                <tr>
-                                    <th>Nome</th>
-                                    <th>E-mail</th>
-                                    <th>Status</th>
-                                    <th>Criado em</th>
-                                    <th>Último acesso</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody id="doctor-patients-tbody">
-                                <tr><td colspan="6">Carregando...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
+
+                    <section class="admin-tab-panel active" id="doctor-patients-panel" role="tabpanel" aria-labelledby="btn-doctor-tab-patients">
+                        <div class="doctor-patients-header">
+                            <button class="add-media-btn" id="btn-open-new-patient">
+                                <i class="fas fa-user-plus" aria-hidden="true"></i> Novo paciente
+                            </button>
+                            <p class="media-hint">Crie contas de pacientes e gerencie o acesso deles.</p>
+                        </div>
+                        <div id="doctor-patients-feedback" class="admin-feedback" role="status" aria-live="polite" style="display:none;"></div>
+                        <div class="admin-table-wrapper">
+                            <table class="admin-users-table">
+                                <thead>
+                                    <tr>
+                                        <th>Nome</th>
+                                        <th>E-mail</th>
+                                        <th>Status</th>
+                                        <th>Criado em</th>
+                                        <th>Último acesso</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="doctor-patients-tbody">
+                                    <tr><td colspan="6">Carregando...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section class="admin-tab-panel" id="doctor-usage-panel" role="tabpanel" aria-labelledby="btn-doctor-tab-usage">
+                        <section class="admin-analytics-panel">
+                            <div class="admin-analytics-hero">
+                                <div>
+                                    <div class="admin-panel-kicker"><i class="fas fa-cloud" aria-hidden="true"></i> Uso na nuvem (Tempo Real)</div>
+                                    <h3>Tempo logado, atividades mais usadas e sinais de concentração de uso.</h3>
+                                    <p>Uso acumulado só dos seus pacientes.</p>
+                                </div>
+                                <div class="admin-analytics-actions">
+                                    <select id="doctor-usage-user-filter" class="admin-analytics-select" aria-label="Filtrar por paciente">
+                                        <option value="all">Filtrar: Todos os pacientes</option>
+                                    </select>
+                                    <button type="button" class="admin-analytics-action" id="btn-refresh-doctor-usage">
+                                        <i class="fas fa-rotate" aria-hidden="true"></i> Atualizar
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="admin-metric-grid">
+                                <article class="admin-metric-card">
+                                    <span>Pacientes com uso</span>
+                                    <strong id="doctor-usage-total-users">0</strong>
+                                    <small id="doctor-usage-total-sessions">0 sessões registradas</small>
+                                </article>
+                                <article class="admin-metric-card">
+                                    <span>Tempo total logado</span>
+                                    <strong id="doctor-usage-total-time">0</strong>
+                                    <small id="doctor-usage-active-now">0 sessões ativas agora</small>
+                                </article>
+                                <article class="admin-metric-card">
+                                    <span>Tempo médio por sessão</span>
+                                    <strong id="doctor-usage-avg-session-time">0</strong>
+                                    <small id="doctor-usage-avg-session-note">Baseado nas sessões registradas</small>
+                                </article>
+                                <article class="admin-metric-card">
+                                    <span>Atividades monitoradas</span>
+                                    <strong id="doctor-usage-total-activities">0</strong>
+                                    <small id="doctor-usage-total-events">0 eventos registrados</small>
+                                </article>
+                                <article class="admin-metric-card">
+                                    <span>Atividade com mais tempo</span>
+                                    <strong id="doctor-usage-top-item">—</strong>
+                                    <small id="doctor-usage-top-share">Sem dados suficientes ainda</small>
+                                </article>
+                            </div>
+
+                            <div class="admin-analytics-grid">
+                                <section class="admin-analytics-card">
+                                    <div class="admin-card-header">
+                                        <h4>Pacientes com mais tempo</h4>
+                                        <span>Tempo ativo acumulado</span>
+                                    </div>
+                                    <div id="doctor-usage-user-ranking" class="usage-list"></div>
+                                </section>
+                                <section class="admin-analytics-card">
+                                    <div class="admin-card-header">
+                                        <h4>Tempo por atividade</h4>
+                                        <span>Último acesso e permanência</span>
+                                    </div>
+                                    <div id="doctor-usage-top-activities" class="usage-list"></div>
+                                </section>
+                                <section class="admin-analytics-card">
+                                    <div class="admin-card-header">
+                                        <h4>Tempo gasto nas atividades</h4>
+                                        <span>Duração acumulada e recordes</span>
+                                    </div>
+                                    <div id="doctor-usage-activities-durations" class="usage-list"></div>
+                                </section>
+                                <section class="admin-analytics-card">
+                                    <div class="admin-card-header">
+                                        <h4>Sessões ativas</h4>
+                                        <span>Quem está usando agora</span>
+                                    </div>
+                                    <div id="doctor-usage-live-sessions" class="usage-list"></div>
+                                </section>
+                            </div>
+
+                            <section class="admin-analytics-card">
+                                <div class="admin-card-header">
+                                    <h4>Detalhe por atividade</h4>
+                                    <span>Tempo, acessos e último registro</span>
+                                </div>
+                                <div class="admin-table-wrapper usage-table-wrapper">
+                                    <table class="usage-detail-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Atividade</th>
+                                                <th>Tempo total</th>
+                                                <th>Média/acesso</th>
+                                                <th>Acessos</th>
+                                                <th>Último acesso</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="doctor-usage-activity-table-body">
+                                            <tr><td colspan="5">Carregando...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
+
+                            <section class="admin-analytics-card">
+                                <div class="admin-card-header">
+                                    <h4>Últimos eventos</h4>
+                                    <span>Mais recentes primeiro</span>
+                                </div>
+                                <div id="doctor-usage-event-log" class="usage-timeline"></div>
+                            </section>
+
+                            <section class="admin-analytics-card admin-insight-card">
+                                <div class="admin-card-header">
+                                    <h4>O que isso indica?</h4>
+                                    <span>Leitura rápida do comportamento</span>
+                                </div>
+                                <p id="doctor-usage-insight" class="admin-insight-text">Colete alguns acessos para liberar as leituras automáticas do painel.</p>
+                            </section>
+                        </section>
+                    </section>
                 </main>
 
                 <!-- Modal: Módulos por Paciente -->

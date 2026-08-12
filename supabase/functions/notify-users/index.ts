@@ -56,31 +56,58 @@ Deno.serve(async (req) => {
       .eq("user_id", callerData.user.id)
       .maybeSingle();
     if (roleError) throw roleError;
-    if (!["editor", "admin"].includes(callerRole?.role ?? "")) {
-      return json({ error: "Apenas editores e administradores podem enviar avisos." }, 403);
-    }
 
     const body = await req.json();
     const title = String(body?.title ?? "").trim().slice(0, 160);
     const category = String(body?.category ?? "Atividade").trim().slice(0, 40);
+    const patientId = body?.patientId ? String(body.patientId) : null;
     if (!title) return json({ error: "O título da atividade é obrigatório." }, 400);
 
-    const { data: usersPage, error: usersError } = await admin.auth.admin.listUsers({ perPage: 1000 });
-    if (usersError) throw usersError;
+    let recipients: string[];
 
-    const { data: roles, error: rolesError } = await admin
-      .from("user_roles")
-      .select("user_id, role")
-      .eq("role", "viewer");
-    if (rolesError) throw rolesError;
+    if (patientId) {
+      // Aviso pontual pro paciente dono deste conteúdo — médico responsável
+      // por ele pode disparar (sem precisar ser editor/admin), mas só pra
+      // esse paciente específico, nunca broadcast.
+      const { data: patient, error: patientError } = await admin
+        .from("patients")
+        .select("id, user_id, doctor_user_id")
+        .eq("id", patientId)
+        .maybeSingle();
+      if (patientError) throw patientError;
+      if (!patient) return json({ error: "Paciente não encontrado." }, 404);
 
-    const viewerIds = new Set((roles ?? []).map((role: { user_id: string }) => role.user_id));
-    const recipients = usersPage.users
-      .filter((user) => viewerIds.has(user.id) && user.email && !user.banned_until)
-      .map((user) => user.email!);
+      const isOwnerDoctor = patient.doctor_user_id === callerData.user.id;
+      const isPrivileged = ["editor", "admin"].includes(callerRole?.role ?? "");
+      if (!isOwnerDoctor && !isPrivileged) {
+        return json({ error: "Você só pode avisar os próprios pacientes." }, 403);
+      }
+
+      const { data: patientUser, error: patientUserError } = await admin.auth.admin.getUserById(patient.user_id);
+      if (patientUserError) throw patientUserError;
+      recipients = patientUser?.user?.email && !patientUser.user.banned_until ? [patientUser.user.email] : [];
+    } else {
+      if (!["editor", "admin"].includes(callerRole?.role ?? "")) {
+        return json({ error: "Apenas editores e administradores podem enviar avisos pra todo mundo." }, 403);
+      }
+
+      const { data: usersPage, error: usersError } = await admin.auth.admin.listUsers({ perPage: 1000 });
+      if (usersError) throw usersError;
+
+      const { data: roles, error: rolesError } = await admin
+        .from("user_roles")
+        .select("user_id, role")
+        .eq("role", "viewer");
+      if (rolesError) throw rolesError;
+
+      const viewerIds = new Set((roles ?? []).map((role: { user_id: string }) => role.user_id));
+      recipients = usersPage.users
+        .filter((user) => viewerIds.has(user.id) && user.email && !user.banned_until)
+        .map((user) => user.email!);
+    }
 
     if (recipients.length === 0) {
-      return json({ recipientCount: 0, message: "Nenhum usuário final com e-mail foi encontrado." });
+      return json({ recipientCount: 0, message: "Nenhum destinatário com e-mail foi encontrado." });
     }
 
     const safeTitle = escapeHtml(title);

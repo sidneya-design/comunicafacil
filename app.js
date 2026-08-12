@@ -185,7 +185,10 @@ let usageCurrentActivity = null;
 let usageCurrentActivityStartedAt = 0;
 let usageHeartbeatTimer = null;
 let usageLastHeartbeatAt = 0;
-let usageSelectedUserId = null;
+// Um dashboard de uso pode aparecer em mais de um lugar agora (admin vê
+// todo mundo, médico vê só os próprios pacientes) — cada instância guarda
+// o próprio filtro de usuário selecionado, chaveado pelo idPrefix do DOM.
+let usageSelectedUserIdByPrefix = { usage: null };
 let usageCurrentSection = 'view-core';
 let usageSectionLastActiveAt = Date.now();
 
@@ -785,20 +788,32 @@ function formatUsageDateTime(iso) {
     return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
-async function getUsageAggregate() {
-    if (supabaseClient && canManageUsers) {
+async function getUsageAggregate(allowedUserIds = null) {
+    // allowedUserIds restringe a agregação a uma lista específica de
+    // usuários — usado pelo médico, que só pode ver o uso dos próprios
+    // pacientes (RLS também garante isso do lado do banco, isso aqui só
+    // evita puxar dado de sessões/eventos que nem vão ser exibidos).
+    if (supabaseClient && (canManageUsers || (isDoctor && allowedUserIds))) {
         try {
-            const { data: dbSessions, error: errSessions } = await supabaseClient
+            let sessionsQuery = supabaseClient
                 .from('usage_sessions')
                 .select('*')
                 .order('start_at', { ascending: false })
                 .limit(100);
-
-            const { data: dbEvents, error: errEvents } = await supabaseClient
+            let eventsQuery = supabaseClient
                 .from('usage_events')
                 .select('*')
                 .order('timestamp', { ascending: false })
                 .limit(150);
+            if (allowedUserIds) {
+                if (allowedUserIds.length === 0) {
+                    return { users: [], sessions: [], events: [], viewTotals: {}, activityTotals: {}, activityStatsTotals: {}, knownViews: [], knownActivities: [], topActivity: null };
+                }
+                sessionsQuery = sessionsQuery.in('user_id', allowedUserIds);
+                eventsQuery = eventsQuery.in('user_id', allowedUserIds);
+            }
+            const { data: dbSessions, error: errSessions } = await sessionsQuery;
+            const { data: dbEvents, error: errEvents } = await eventsQuery;
 
             if (!errSessions && !errEvents && dbSessions && dbEvents) {
                 const users = {};
@@ -975,7 +990,7 @@ function usageListItem(label, valueText, shareText, percent = 0) {
     return row;
 }
 
-function renderUsageList(containerId, items, emptyText) {
+function renderUsageList(containerId, items, emptyText, selectedUserId = null, onSelectUser = null) {
     const container = document.getElementById(containerId);
     if (!container) return;
     container.innerHTML = '';
@@ -989,26 +1004,16 @@ function renderUsageList(containerId, items, emptyText) {
     }
 
     const maxValue = Math.max(...items.map(item => item.value || 0), 1);
-    const selectFilter = document.getElementById('usage-user-filter');
     items.forEach(item => {
         const percent = ((item.value || 0) / maxValue) * 100;
         const row = usageListItem(item.label, item.valueText, item.shareText, percent);
-        if (item.userId) {
+        if (item.userId && onSelectUser) {
             row.style.cursor = 'pointer';
-            if (item.userId === usageSelectedUserId) {
+            if (item.userId === selectedUserId) {
                 row.style.background = 'rgba(59, 130, 246, 0.12)';
                 row.style.borderColor = 'rgba(59, 130, 246, 0.4)';
             }
-            row.onclick = () => {
-                if (usageSelectedUserId === item.userId) {
-                    usageSelectedUserId = null;
-                    if (selectFilter) selectFilter.value = 'all';
-                } else {
-                    usageSelectedUserId = item.userId;
-                    if (selectFilter) selectFilter.value = item.userId;
-                }
-                renderUsageDashboard();
-            };
+            row.onclick = () => onSelectUser(item.userId);
         }
         container.appendChild(row);
     });
@@ -1064,13 +1069,18 @@ function renderUsageActivityTable(containerId, items, emptyText) {
     });
 }
 
-async function renderUsageDashboard() {
-    const aggregate = await getUsageAggregate();
-    
+async function renderUsageDashboard(idPrefix = 'usage', allowedUserIds = null) {
+    const id = (suffix) => `${idPrefix}-${suffix}`;
+    if (usageSelectedUserIdByPrefix[idPrefix] === undefined) usageSelectedUserIdByPrefix[idPrefix] = null;
+    const setSelectedUserId = (val) => { usageSelectedUserIdByPrefix[idPrefix] = val; };
+    const selectedUserId = () => usageSelectedUserIdByPrefix[idPrefix];
+
+    const aggregate = await getUsageAggregate(allowedUserIds);
+
     // Atualizar o seletor dropdown com a lista de usuários únicos
-    const selectFilter = document.getElementById('usage-user-filter');
+    const selectFilter = document.getElementById(id('user-filter'));
     if (selectFilter) {
-        const currentVal = usageSelectedUserId || 'all';
+        const currentVal = selectedUserId() || 'all';
         selectFilter.innerHTML = '<option value="all">Filtrar: Todos os usuários</option>';
         const sortedUsersForFilter = [...aggregate.users].sort((a, b) => (a.email || '').localeCompare(b.email || ''));
         sortedUsersForFilter.forEach(u => {
@@ -1085,8 +1095,8 @@ async function renderUsageDashboard() {
         if (!selectFilter.dataset.listenerSet) {
             selectFilter.addEventListener('change', (e) => {
                 const val = e.target.value;
-                usageSelectedUserId = val === 'all' ? null : val;
-                renderUsageDashboard();
+                setSelectedUserId(val === 'all' ? null : val);
+                renderUsageDashboard(idPrefix, allowedUserIds);
             });
             selectFilter.dataset.listenerSet = 'true';
         }
@@ -1097,9 +1107,9 @@ async function renderUsageDashboard() {
         .sort((a, b) => (b.totalActiveSeconds || 0) - (a.totalActiveSeconds || 0));
 
     // Determina se vamos trabalhar com dados filtrados para um usuário específico
-    const selectedUserRecord = usageSelectedUserId ? aggregate.users.find(u => u.userId === usageSelectedUserId) : null;
-    
-    const filteredActivityStats = (usageSelectedUserId && selectedUserRecord) ? (selectedUserRecord.activities || {}) : aggregate.activityStatsTotals;
+    const selectedUserRecord = selectedUserId() ? aggregate.users.find(u => u.userId === selectedUserId()) : null;
+
+    const filteredActivityStats = (selectedUserId() && selectedUserRecord) ? (selectedUserRecord.activities || {}) : aggregate.activityStatsTotals;
     const activityEntries = Object.entries(filteredActivityStats)
         .map(([label, rawStats]) => {
             const stats = normalizeActivityStats(rawStats);
@@ -1142,7 +1152,7 @@ async function renderUsageDashboard() {
     });
     const catalogActivityEntries = Array.from(catalogActivityMap.values()).map(meta => ({
         label: formatUsageActivityDisplayLabel(meta.label),
-        value: normalizeActivityStats((usageSelectedUserId && selectedUserRecord) ? (selectedUserRecord.activities[meta.label] || 0) : (aggregate.activityStatsTotals[meta.label] || 0))
+        value: normalizeActivityStats((selectedUserId() && selectedUserRecord) ? (selectedUserRecord.activities[meta.label] || 0) : (aggregate.activityStatsTotals[meta.label] || 0))
     }));
     const activityTableEntries = [...catalogActivityEntries]
         .sort((a, b) => {
@@ -1174,7 +1184,7 @@ async function renderUsageDashboard() {
                 : `${item.value.count} acessos • último acesso ${formatUsageDateTime(item.value.lastAccessAt)}`
         }));
 
-    const filteredSessions = usageSelectedUserId ? aggregate.sessions.filter(s => s.userId === usageSelectedUserId) : aggregate.sessions;
+    const filteredSessions = selectedUserId() ? aggregate.sessions.filter(s => s.userId === selectedUserId()) : aggregate.sessions;
 
     const activeSessions = filteredSessions.filter(session => session.status === 'active')
         .sort((a, b) => new Date(b.lastSeenAt || b.startAt) - new Date(a.lastSeenAt || a.startAt))
@@ -1186,7 +1196,7 @@ async function renderUsageDashboard() {
             shareText: `${session.role || 'viewer'} • desde ${formatUsageDateTime(session.startAt)}`
         }));
 
-    const filteredEvents = usageSelectedUserId ? aggregate.events.filter(e => e.userId === usageSelectedUserId) : aggregate.events;
+    const filteredEvents = selectedUserId() ? aggregate.events.filter(e => e.userId === selectedUserId()) : aggregate.events;
     const eventItems = filteredEvents.slice(0, 18).map(event => ({
         timestamp: event.timestamp,
         label: event.type === 'view'
@@ -1196,7 +1206,7 @@ async function renderUsageDashboard() {
         kind: event.type
     }));
 
-    const totalActiveSeconds = usageSelectedUserId
+    const totalActiveSeconds = selectedUserId()
         ? (selectedUserRecord ? (selectedUserRecord.totalActiveSeconds || 0) : 0)
         : rankedUsers.reduce((sum, user) => sum + (user.totalActiveSeconds || 0), 0);
 
@@ -1207,42 +1217,42 @@ async function renderUsageDashboard() {
     const avgSessionSeconds = totalSessions > 0 ? Math.round(totalActiveSeconds / totalSessions) : 0;
     const topShare = totalActions > 0 && topActivity ? Math.round((topActivity.count / totalActions) * 100) : 0;
 
-    const usersBox = document.getElementById('usage-total-users');
+    const usersBox = document.getElementById(id('total-users'));
     if (usersBox) {
-        if (usageSelectedUserId) {
+        if (selectedUserId()) {
             usersBox.textContent = "1";
         } else {
             usersBox.textContent = rankedUsers.length.toString();
         }
     }
-    const sessionsBox = document.getElementById('usage-total-sessions');
+    const sessionsBox = document.getElementById(id('total-sessions'));
     if (sessionsBox) sessionsBox.textContent = `${totalSessions} sessões registradas`;
-    const totalTimeBox = document.getElementById('usage-total-time');
+    const totalTimeBox = document.getElementById(id('total-time'));
     if (totalTimeBox) totalTimeBox.textContent = formatUsageSeconds(totalActiveSeconds);
-    const activeNowBox = document.getElementById('usage-active-now');
+    const activeNowBox = document.getElementById(id('active-now'));
     if (activeNowBox) activeNowBox.textContent = `${activeSessionsCount} sessões ativas agora`;
 
-    const avgSessionBox = document.getElementById('usage-avg-session-time');
+    const avgSessionBox = document.getElementById(id('avg-session-time'));
     if (avgSessionBox) avgSessionBox.textContent = formatUsageSeconds(avgSessionSeconds);
-    const avgSessionNoteBox = document.getElementById('usage-avg-session-note');
+    const avgSessionNoteBox = document.getElementById(id('avg-session-note'));
     if (avgSessionNoteBox) {
         avgSessionNoteBox.textContent = totalSessions > 0
             ? `${totalSessions} sessões consideradas`
             : 'Baseado nas sessões registradas';
     }
-    
-    const totalActivitiesBox = document.getElementById('usage-total-activities');
+
+    const totalActivitiesBox = document.getElementById(id('total-activities'));
     if (totalActivitiesBox) {
-        const activeCount = usageSelectedUserId
+        const activeCount = selectedUserId()
             ? Object.keys(filteredActivityStats).length
             : aggregate.knownActivities.length;
         totalActivitiesBox.textContent = activeCount.toString();
     }
-    const totalEventsBox = document.getElementById('usage-total-events');
+    const totalEventsBox = document.getElementById(id('total-events'));
     if (totalEventsBox) totalEventsBox.textContent = `${filteredEvents.length} eventos registrados`;
 
-    const topItemBox = document.getElementById('usage-top-item');
-    const topShareBox = document.getElementById('usage-top-share');
+    const topItemBox = document.getElementById(id('top-item'));
+    const topShareBox = document.getElementById(id('top-share'));
     if (topActivity && topItemBox && topShareBox) {
         topItemBox.textContent = formatUsageActivityDisplayLabel(topActivity.label);
         topShareBox.textContent = `${formatUsageSeconds(topActivity.totalSeconds)} • último acesso ${formatUsageDateTime(topActivity.lastAccessAt)} • ${topActivity.count} acessos`;
@@ -1251,8 +1261,14 @@ async function renderUsageDashboard() {
         topShareBox.textContent = 'Sem dados suficientes ainda';
     }
 
+    const onSelectUser = (userId) => {
+        setSelectedUserId(selectedUserId() === userId ? null : userId);
+        if (selectFilter) selectFilter.value = selectedUserId() || 'all';
+        renderUsageDashboard(idPrefix, allowedUserIds);
+    };
+
     renderUsageList(
-        'usage-user-ranking',
+        id('user-ranking'),
         rankedUsers.slice(0, 5).map(user => ({
             label: user.email || 'Usuário',
             value: user.totalActiveSeconds || 0,
@@ -1260,15 +1276,17 @@ async function renderUsageDashboard() {
             shareText: `${user.totalSessions || 0} sessões • último acesso ${formatUsageDateTime(user.lastSeenAt)}`,
             userId: user.userId
         })),
-        'Nenhum usuário com uso registrado'
+        'Nenhum usuário com uso registrado',
+        selectedUserId(),
+        onSelectUser
     );
 
-    renderUsageList('usage-top-activities', topActivities, 'Nenhuma atividade acessada ainda');
-    renderUsageList('usage-activities-durations', lowActivities, 'Ainda não há dados de tempo registrados');
-    renderUsageList('usage-live-sessions', activeSessions, 'Nenhuma sessão ativa agora');
-    renderUsageActivityTable('usage-activity-table-body', activityTableEntries, 'Nenhuma atividade registrada ainda');
+    renderUsageList(id('top-activities'), topActivities, 'Nenhuma atividade acessada ainda');
+    renderUsageList(id('activities-durations'), lowActivities, 'Ainda não há dados de tempo registrados');
+    renderUsageList(id('live-sessions'), activeSessions, 'Nenhuma sessão ativa agora');
+    renderUsageActivityTable(id('activity-table-body'), activityTableEntries, 'Nenhuma atividade registrada ainda');
 
-    const timeline = document.getElementById('usage-event-log');
+    const timeline = document.getElementById(id('event-log'));
     if (timeline) {
         timeline.innerHTML = '';
         if (eventItems.length === 0) {
@@ -1298,7 +1316,7 @@ async function renderUsageDashboard() {
     }
 
     let insight = 'Cole mais alguns dias de uso para que o painel passe a mostrar padrões confiáveis.';
-    if (usageSelectedUserId && selectedUserRecord) {
+    if (selectedUserId() && selectedUserRecord) {
         if (topShare >= 35 && topActivity) {
             insight = `O usuário foca muito em "${formatUsageActivityDisplayLabel(topActivity.label)}", que representa ${topShare}% do tempo nas atividades. Último acesso em ${formatUsageDateTime(topActivity.lastAccessAt)}.`;
         } else if (avgSessionSeconds > 0 && avgSessionSeconds < 120) {
@@ -1317,7 +1335,7 @@ async function renderUsageDashboard() {
             insight = 'O uso já aparece distribuído, mas ainda vale observar quais telas viram hábito e quais parecem ter pouca descoberta. Uma reorganização de destaque pode aumentar adesão.';
         }
     }
-    const insightBox = document.getElementById('usage-insight');
+    const insightBox = document.getElementById(id('insight'));
     if (insightBox) insightBox.textContent = insight;
 }
 
@@ -1333,6 +1351,40 @@ function clearLocalUsageData() {
         console.warn('Não foi possível limpar os dados locais de uso.', e);
     }
     renderUsageDashboard();
+}
+
+// user_id dos pacientes do médico logado — usado pra restringir o dashboard
+// de uso dele só ao que é seu (RLS também garante isso, essa lista é só
+// pra montar a query já filtrada, sem depender de trazer tudo e filtrar
+// depois).
+async function getMyPatientUserIds() {
+    if (!supabaseClient || !currentUserId) return [];
+    const { data, error } = await supabaseClient.from('patients').select('user_id').eq('doctor_user_id', currentUserId);
+    if (error) { console.warn('Erro ao buscar pacientes do médico:', error.message); return []; }
+    return (data || []).map(p => p.user_id).filter(Boolean);
+}
+
+function setDoctorTab(tabName) {
+    const tabs = ['patients', 'usage'];
+
+    tabs.forEach(tab => {
+        const btn = document.getElementById(`btn-doctor-tab-${tab}`);
+        const panel = document.getElementById(`doctor-${tab}-panel`);
+
+        if (btn) {
+            btn.classList.toggle('active', tab === tabName);
+            btn.setAttribute('aria-selected', String(tab === tabName));
+        }
+        if (panel) {
+            panel.classList.toggle('active', tab === tabName);
+        }
+    });
+
+    if (tabName === 'patients') {
+        loadDoctorPatients();
+    } else if (tabName === 'usage') {
+        getMyPatientUserIds().then(ids => renderUsageDashboard('doctor-usage', ids));
+    }
 }
 
 function setAdminTab(tabName) {
@@ -2290,19 +2342,20 @@ async function toggleExerciseVisibility(ex) {
     loadExerciseCards();
 }
 
-async function sendActivityNotification(title, category = 'Atividade') {
+async function sendActivityNotification(title, category = 'Atividade', patient = null) {
     if (!supabaseClient) {
         alert('O envio de avisos requer conexão com o servidor.');
         return;
     }
 
-    const confirmed = confirm(
-        `Enviar um e-mail para todos os usuários avisando que "${title}" está disponível?`
-    );
+    const patientLabel = patient ? (patient.name || patient.email || 'este paciente') : null;
+    const confirmed = patient
+        ? confirm(`Enviar um e-mail para ${patientLabel} avisando que "${title}" está disponível?`)
+        : confirm(`Enviar um e-mail para todos os usuários avisando que "${title}" está disponível?`);
     if (!confirmed) return;
 
     const { data, error } = await supabaseClient.functions.invoke('notify-users', {
-        body: { title, category }
+        body: { title, category, patientId: patient ? patient.id : undefined }
     });
 
     if (error) {
@@ -2311,21 +2364,23 @@ async function sendActivityNotification(title, category = 'Atividade') {
         return;
     }
 
-    alert(`Aviso enviado para ${data?.recipientCount ?? 0} usuário(s).`);
+    alert(patient
+        ? (data?.recipientCount ? `Aviso enviado para ${patientLabel}.` : 'Não foi possível encontrar o e-mail deste paciente.')
+        : `Aviso enviado para ${data?.recipientCount ?? 0} usuário(s).`);
 }
 
-function createNotifyUsersButton(title, category = 'Atividade') {
+function createNotifyUsersButton(title, category = 'Atividade', patient = null) {
     const notifyBtn = document.createElement('button');
     notifyBtn.type = 'button';
     notifyBtn.className = 'notify-users-btn';
     notifyBtn.innerHTML = '<i class="fas fa-envelope" aria-hidden="true"></i>';
-    notifyBtn.setAttribute('aria-label', `Avisar usuários sobre ${title}`);
-    notifyBtn.title = 'Avisar usuários por e-mail';
+    notifyBtn.setAttribute('aria-label', patient ? `Avisar ${patient.name || patient.email} sobre ${title}` : `Avisar usuários sobre ${title}`);
+    notifyBtn.title = patient ? `Avisar ${patient.name || patient.email} por e-mail` : 'Avisar usuários por e-mail';
     notifyBtn.onclick = async (ev) => {
         ev.stopPropagation();
         notifyBtn.disabled = true;
         try {
-            await sendActivityNotification(title, category);
+            await sendActivityNotification(title, category, patient);
         } finally {
             notifyBtn.disabled = false;
         }
@@ -2405,7 +2460,8 @@ function renderExerciseCards(exercisesArray) {
         !isGameContainerSeedKey(ex.seedKey, ALPHABET_MEMORY_SEED_KEY) &&
         !isGameContainerSeedKey(ex.seedKey, NAMING_SEED_KEY) &&
         !isGameContainerSeedKey(ex.seedKey, AFASIA_SEED_KEY) &&
-        !isGameContainerSeedKey(ex.seedKey, COMPLETE_FRASE_SEED_KEY)
+        !isGameContainerSeedKey(ex.seedKey, COMPLETE_FRASE_SEED_KEY) &&
+        !isGameContainerSeedKey(ex.seedKey, JOGO2_CARDS_SEED_KEY)
     );
 
     // Médico vê o próprio "banco" de exercícios (Fase 7) — os que ele criou,
@@ -2521,6 +2577,15 @@ function renderExerciseCards(exercisesArray) {
                 openEditExercise(ex);
             };
             btn.appendChild(editBtn);
+
+            // Avisar por e-mail só faz sentido quando dá pra saber pra quem —
+            // exercício escopado direto a um paciente (ex.patientId) tem um
+            // dono óbvio; um item solto no banco do médico, sem paciente
+            // definido ainda, não tem alvo claro pra notificar.
+            if (ex.patientId) {
+                const patientInfo = doctorPatientsCache.find(p => p.id === ex.patientId);
+                btn.appendChild(createNotifyUsersButton(displayTitle, 'Exercício', { id: ex.patientId, name: patientInfo?.name, email: patientInfo?.email }));
+            }
         } else if (isDoctor && !ex.doctorUserId) {
             // Exercício global do admin: médico pode editar (a primeira edição
             // cria uma cópia própria — ver openEditExercise/getOrCreateExerciseFork —
@@ -9151,6 +9216,11 @@ if (supabaseClient) {
             if (typeof loadTopicsAndRender === 'function') loadTopicsAndRender();
             loadMediaCards();
             loadExerciseCards();
+            // Pré-carrega doctorPatientsCache pro botão de avisar já ter o
+            // nome do paciente pronto, mesmo sem o médico ter aberto "Meus
+            // Pacientes" ainda nesta sessão (só popula o cache, não muda
+            // nada visível já que a tela nem está ativa).
+            if (isDoctor) loadDoctorPatients();
             
             // Mostra/oculta o botão Editar do Carômetro conforme papel do usuário
             // (médico só quando "dentro" de um paciente — Fase 5c)
@@ -9505,6 +9575,12 @@ document.getElementById('btn-admin-tab-companies')?.addEventListener('click', ()
 document.getElementById('btn-admin-tab-usage')?.addEventListener('click', () => setAdminTab('usage'));
 document.getElementById('btn-admin-tab-modules')?.addEventListener('click', () => setAdminTab('modules'));
 
+document.getElementById('btn-doctor-tab-patients')?.addEventListener('click', () => setDoctorTab('patients'));
+document.getElementById('btn-doctor-tab-usage')?.addEventListener('click', () => setDoctorTab('usage'));
+document.getElementById('btn-refresh-doctor-usage')?.addEventListener('click', () => {
+    getMyPatientUserIds().then(ids => renderUsageDashboard('doctor-usage', ids));
+});
+
 // =============================================
 // PAINEL ADMIN — Empresas (Fase 1 do modelo médico→paciente)
 // =============================================
@@ -9659,6 +9735,10 @@ function showDoctorPatientsFeedback(message, isError = false) {
     setTimeout(() => { box.style.display = 'none'; }, 5000);
 }
 
+// Cache leve pra rotular o botão de avisar por e-mail nos cards de
+// exercícios escopados a paciente (evita uma consulta extra só pro nome).
+let doctorPatientsCache = [];
+
 async function loadDoctorPatients() {
     const tbody = document.getElementById('doctor-patients-tbody');
     if (!tbody || !isDoctor) return;
@@ -9666,6 +9746,7 @@ async function loadDoctorPatients() {
 
     try {
         const { patients } = await callDoctorPatientsFn('list');
+        doctorPatientsCache = patients || [];
         tbody.innerHTML = '';
         if (!patients || !patients.length) {
             tbody.innerHTML = '<tr><td colspan="6">Nenhum paciente cadastrado ainda.</td></tr>';
