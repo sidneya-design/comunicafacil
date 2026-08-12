@@ -2274,6 +2274,7 @@ async function addReadyBankExerciseToDoctorBank(ex) {
 function getReadyBankCandidates() {
     return lastMergedExercises.filter(ex =>
         !ex.doctorUserId &&
+        !ex.gameKind &&
         ex.seedKey !== JOGO2_CARDS_SEED_KEY &&
         !isGameContainerSeedKey(ex.seedKey, MEMORY_CARDS_SEED_KEY) &&
         !isGameContainerSeedKey(ex.seedKey, ALPHABET_MEMORY_SEED_KEY) &&
@@ -2415,7 +2416,8 @@ async function loadExerciseCards() {
                         fromSupabase: true,
                         patientId: ex.patient_id || null,
                         doctorUserId: ex.doctor_user_id || null,
-                        forkedFrom: ex.forked_from || null
+                        forkedFrom: ex.forked_from || null,
+                        gameKind: ex.game_kind || null
                     };
                 });
             }
@@ -2486,6 +2488,21 @@ function renderExerciseCards(exercisesArray) {
         ? realExercises.filter(ex => !ex.patientId || (inDoctorPatientContext && ex.patientId === activePatientContext.id))
         : realExercises;
 
+    // Reconhecimento de Palavras (e, no futuro, de Imagem) agora pode ter
+    // vários decks — cada `exercises` row com gameKind é um deck próprio,
+    // não mais um container singleton. Abrir pra editar ou pra jogar
+    // precisa direcionar pro fluxo certo em vez do de slide-deck comum.
+    const openExerciseEditor = (ex) => {
+        if (ex.gameKind === 'naming') openNamingDeckManage(ex);
+        else if (ex.gameKind === 'afasia') openAfasiaDeckManage(ex);
+        else openEditExercise(ex);
+    };
+    const openExerciseCard = (ex) => {
+        if (ex.gameKind === 'naming') playNamingDeck(ex);
+        else if (ex.gameKind === 'afasia') playAfasiaDeck(ex);
+        else openPresentationPlaylist(ex);
+    };
+
     const cardsToRender = canEditHere ? baseExercises : baseExercises.filter(ex => ex.visible !== false);
     cardsToRender.forEach(ex => {
         const parts = (ex.title || '').split('|');
@@ -2550,7 +2567,7 @@ function renderExerciseCards(exercisesArray) {
             editBtn.className = 'edit-media-btn'; editBtn.innerHTML = '<i class="fas fa-pencil-alt" aria-hidden="true"></i>'; editBtn.setAttribute('aria-label', 'Editar');
             editBtn.onclick = (ev) => {
                 ev.stopPropagation();
-                openEditExercise(ex);
+                openExerciseEditor(ex);
             };
             btn.appendChild(editBtn);
         } else if (isDoctor && isOwnBankExercise(ex)) {
@@ -2574,7 +2591,7 @@ function renderExerciseCards(exercisesArray) {
             editBtn.className = 'edit-media-btn'; editBtn.innerHTML = '<i class="fas fa-pencil-alt" aria-hidden="true"></i>'; editBtn.setAttribute('aria-label', 'Editar');
             editBtn.onclick = (ev) => {
                 ev.stopPropagation();
-                openEditExercise(ex);
+                openExerciseEditor(ex);
             };
             btn.appendChild(editBtn);
 
@@ -2586,11 +2603,13 @@ function renderExerciseCards(exercisesArray) {
                 const patientInfo = doctorPatientsCache.find(p => p.id === ex.patientId);
                 btn.appendChild(createNotifyUsersButton(displayTitle, 'Exercício', { id: ex.patientId, name: patientInfo?.name, email: patientInfo?.email }));
             }
-        } else if (isDoctor && !ex.doctorUserId) {
+        } else if (isDoctor && !ex.doctorUserId && !ex.gameKind) {
             // Exercício global do admin: médico pode editar (a primeira edição
             // cria uma cópia própria — ver openEditExercise/getOrCreateExerciseFork —
             // o original do admin não é alterado). Sem botão de apagar aqui: o
             // médico não é dono da linha global, só da eventual cópia dele.
+            // Decks de jogo (gameKind) ficam de fora por enquanto — fork ainda
+            // não sabe copiar itens no formato correct/distractor deles.
             const editBtn = document.createElement('button');
             editBtn.className = 'edit-media-btn'; editBtn.innerHTML = '<i class="fas fa-pencil-alt" aria-hidden="true"></i>'; editBtn.setAttribute('aria-label', 'Editar (cria cópia própria)');
             editBtn.title = 'Editar cria uma cópia própria, sem afetar o original do admin';
@@ -2605,7 +2624,7 @@ function renderExerciseCards(exercisesArray) {
         // localmente) é o modal "Banco de Prontos" (ver openReadyBankModal),
         // aberto a partir de "Novo Exercício".
 
-        btn.addEventListener('click', () => openPresentationPlaylist(ex));
+        btn.addEventListener('click', () => openExerciseCard(ex));
         container.appendChild(btn);
     });
 
@@ -3158,28 +3177,57 @@ function setupModals() {
         document.getElementById('ready-bank-modal').style.display = 'none';
     });
 
-    document.getElementById('btn-create-recognition-exercise').addEventListener('click', () => {
+    document.getElementById('btn-create-recognition-exercise').addEventListener('click', async () => {
+        if (!isAdmin && !isDoctor) return;
+        // Fase 24: cada "Reconhecimento de Palavras" agora é um deck próprio
+        // (pede nome), não mais o container único de sempre — cria a linha
+        // primeiro, só depois entra no gerenciador já apontando pra ela.
+        const deckTitle = prompt('Nome deste deck de Reconhecimento de Palavras (ex: "Animais", "Cores"):');
+        if (!deckTitle || !deckTitle.trim()) return;
         closeExerciseType();
-        openGame('naming');
-        editModes.naming = true;
-        updateEditBtn('naming', 'btn-edit-naming', 'Salvar');
-        document.getElementById('naming-play-area').style.display = 'none';
-        document.getElementById('grid-naming').style.display = 'grid';
-        renderNamingManageGrid();
-        namingQuickCreate = true;
-        openNamingSetModal(null);
+        try {
+            const payload = { title: `${deckTitle.trim()}|red`, visible: true, game_kind: 'naming' };
+            if (isDoctor) payload.doctor_user_id = currentUserId;
+            const { data: created, error } = await supabaseClient.from('exercises').insert([payload]).select().single();
+            if (error) throw error;
+            await loadExerciseCards();
+            activeNamingDeckId = created.id;
+            openGame('naming');
+            editModes.naming = true;
+            updateEditBtn('naming', 'btn-edit-naming', 'Salvar');
+            document.getElementById('naming-play-area').style.display = 'none';
+            document.getElementById('grid-naming').style.display = 'grid';
+            renderNamingManageGrid();
+            namingQuickCreate = true;
+            openNamingSetModal(null);
+        } catch (err) {
+            alert('Erro ao criar deck: ' + err.message);
+        }
     });
 
-    document.getElementById('btn-create-afasia-exercise').addEventListener('click', () => {
+    document.getElementById('btn-create-afasia-exercise').addEventListener('click', async () => {
+        if (!isAdmin && !isDoctor) return;
+        const deckTitle = prompt('Nome deste deck de Reconhecimento de Imagem (ex: "Emoções", "Objetos"):');
+        if (!deckTitle || !deckTitle.trim()) return;
         closeExerciseType();
-        openGame('afasia');
-        editModes.afasia = true;
-        updateEditBtn('afasia', 'btn-edit-afasia', 'Salvar');
-        document.getElementById('afasia-play-area').style.display = 'none';
-        document.getElementById('grid-afasia').style.display = 'grid';
-        renderAfasiaManageGrid();
-        afasiaQuickCreate = true;
-        openAfasiaSetModal(null);
+        try {
+            const payload = { title: `${deckTitle.trim()}|yellow`, visible: true, game_kind: 'afasia' };
+            if (isDoctor) payload.doctor_user_id = currentUserId;
+            const { data: created, error } = await supabaseClient.from('exercises').insert([payload]).select().single();
+            if (error) throw error;
+            await loadExerciseCards();
+            activeAfasiaDeckId = created.id;
+            openGame('afasia');
+            editModes.afasia = true;
+            updateEditBtn('afasia', 'btn-edit-afasia', 'Salvar');
+            document.getElementById('afasia-play-area').style.display = 'none';
+            document.getElementById('grid-afasia').style.display = 'grid';
+            renderAfasiaManageGrid();
+            afasiaQuickCreate = true;
+            openAfasiaSetModal(null);
+        } catch (err) {
+            alert('Erro ao criar deck: ' + err.message);
+        }
     });
 
     document.getElementById('btn-create-complete-sentence-exercise')?.addEventListener('click', () => {
@@ -3700,9 +3748,15 @@ async function renderGamesList() {
 async function renderExerciseActivities() {
     const container = document.getElementById('grid-exercises');
     const renderVersion = ++exerciseActivitiesRenderVersion;
+    // "naming"/"afasia" (Reconhecimento de Palavras/Imagem) saíram daqui —
+    // Fase 24: viraram vários decks reais, um card por deck, já desenhados
+    // por renderExerciseCards (na mesma grade). exerciseActivities continua
+    // com as entradas intactas (openGame/resolveActivityTitle dependem
+    // delas), só não desenha mais os atalhos fixos antigos.
+    const staticActivities = exerciseActivities.filter(a => a.id !== 'naming' && a.id !== 'afasia');
     await renderActivityCards(
         container,
-        exerciseActivities,
+        staticActivities,
         () => renderVersion === exerciseActivitiesRenderVersion
     );
 }
@@ -8331,12 +8385,53 @@ function makeNamingSetId() {
     return 'naming-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 }
 
-// Médico autorando: container escopado só pra ele. Admin (ou sem sessão de
-// médico): container global de sempre.
-function getNamingContainer() {
+// Deck específico de Reconhecimento de Palavras sendo editado/jogado agora
+// (Fase 24 — médico pode ter vários decks desse tipo, não mais um só). Nulo
+// = nenhum deck aberto ainda; setado por openNamingDeck()/criação de deck
+// novo antes de entrar no jogo, e lido por getNamingContainer() no lugar do
+// antigo container singleton por seed_key.
+let activeNamingDeckId = null;
+
+async function getNamingContainer() {
+    if (activeNamingDeckId && supabaseClient) {
+        const { data, error } = await supabaseClient.from('exercises').select('*').eq('id', activeNamingDeckId).maybeSingle();
+        if (!error && data) return { ...data, fromSupabase: true };
+    }
+    // Compatibilidade: nenhum deck ativo ainda (ex.: entrou direto sem
+    // passar pela grade) — cai no container legado por seed_key, se existir.
     return isDoctor && currentUserId
         ? getOrCreateGameContainer(doctorScopedSeedKey(NAMING_SEED_KEY, currentUserId), NAMING_TITLE, currentUserId)
         : getOrCreateGameContainer(NAMING_SEED_KEY, NAMING_TITLE);
+}
+
+// Versão síncrona (lê de lastMergedExercises, já carregado) pra uso nos
+// pontos que hoje chamam resolveGameContainer(NAMING_SEED_KEY) direto —
+// prioriza o deck ativo específico; sem deck ativo, cai no container
+// legado por seed_key (compatibilidade com o que sobrou de antes da Fase 24).
+function resolveActiveNamingContainer() {
+    if (activeNamingDeckId) {
+        return lastMergedExercises.find(ex => ex.id === activeNamingDeckId) || null;
+    }
+    return resolveGameContainer(NAMING_SEED_KEY);
+}
+
+// Card de deck de Reconhecimento de Palavras clicado na grade de Exercícios
+// (Fase 24). Editar entra direto no modo gerenciar daquele deck específico;
+// jogar abre a partida com as palavras só dele.
+function openNamingDeckManage(ex) {
+    activeNamingDeckId = ex.id;
+    openGame('naming');
+    editModes.naming = true;
+    updateEditBtn('naming', 'btn-edit-naming', 'Salvar');
+    document.getElementById('naming-play-area').style.display = 'none';
+    document.getElementById('grid-naming').style.display = 'grid';
+    renderNamingManageGrid();
+}
+
+function playNamingDeck(ex) {
+    activeNamingDeckId = ex.id;
+    editModes.naming = false;
+    openGame('naming'); // já chama startNamingGame() internamente, usando activeNamingDeckId acima
 }
 
 async function addNamingSet(word, correctFile, distractorFile1, distractorFile2) {
@@ -8440,7 +8535,7 @@ async function renderNamingManageGrid() {
     if (!container) return;
     container.innerHTML = '';
 
-    const namingContainer = resolveGameContainer(NAMING_SEED_KEY);
+    const namingContainer = resolveActiveNamingContainer();
     const sets = groupNamingItemsBySet((namingContainer && namingContainer.items) || []);
 
     sets.forEach(set => {
@@ -8591,7 +8686,7 @@ function closeNamingSetModal() {
 // ---- Partida (modo "Jogar") ----
 
 function getNamingSets() {
-    const container = resolveGameContainer(NAMING_SEED_KEY);
+    const container = resolveActiveNamingContainer();
     return groupNamingItemsBySet((container && container.items) || []);
 }
 
@@ -8736,12 +8831,41 @@ function makeAfasiaSetId() {
     return 'afasia-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 }
 
-// Mesmo padrão de getNamingContainer (Fase 10): médico autorando usa o
-// próprio container; admin usa o global de sempre.
-function getAfasiaContainer() {
+// Deck específico de Reconhecimento de Imagem sendo editado/jogado agora —
+// mesmo padrão de activeNamingDeckId (Fase 24).
+let activeAfasiaDeckId = null;
+
+async function getAfasiaContainer() {
+    if (activeAfasiaDeckId && supabaseClient) {
+        const { data, error } = await supabaseClient.from('exercises').select('*').eq('id', activeAfasiaDeckId).maybeSingle();
+        if (!error && data) return { ...data, fromSupabase: true };
+    }
     return isDoctor && currentUserId
         ? getOrCreateGameContainer(doctorScopedSeedKey(AFASIA_SEED_KEY, currentUserId), AFASIA_TITLE, currentUserId)
         : getOrCreateGameContainer(AFASIA_SEED_KEY, AFASIA_TITLE);
+}
+
+function resolveActiveAfasiaContainer() {
+    if (activeAfasiaDeckId) {
+        return lastMergedExercises.find(ex => ex.id === activeAfasiaDeckId) || null;
+    }
+    return resolveGameContainer(AFASIA_SEED_KEY);
+}
+
+function openAfasiaDeckManage(ex) {
+    activeAfasiaDeckId = ex.id;
+    openGame('afasia');
+    editModes.afasia = true;
+    updateEditBtn('afasia', 'btn-edit-afasia', 'Salvar');
+    document.getElementById('afasia-play-area').style.display = 'none';
+    document.getElementById('grid-afasia').style.display = 'grid';
+    renderAfasiaManageGrid();
+}
+
+function playAfasiaDeck(ex) {
+    activeAfasiaDeckId = ex.id;
+    editModes.afasia = false;
+    openGame('afasia'); // já chama startAfasiaGame() internamente, usando activeAfasiaDeckId acima
 }
 
 async function addAfasiaSet(question, correctWord, d1Word, d2Word, imageFile) {
@@ -8840,7 +8964,7 @@ async function renderAfasiaManageGrid() {
     if (!container) return;
     container.innerHTML = '';
 
-    const afasiaContainer = resolveGameContainer(AFASIA_SEED_KEY);
+    const afasiaContainer = resolveActiveAfasiaContainer();
     const sets = groupAfasiaItemsBySet((afasiaContainer && afasiaContainer.items) || []);
 
     sets.forEach(set => {
@@ -8974,7 +9098,7 @@ function closeAfasiaSetModal() {
 // ---- Partida (modo "Jogar") ----
 
 function getAfasiaSets() {
-    const container = resolveGameContainer(AFASIA_SEED_KEY);
+    const container = resolveActiveAfasiaContainer();
     return groupAfasiaItemsBySet((container && container.items) || []);
 }
 
@@ -9963,14 +10087,14 @@ async function openPatientExercisesModal(patient) {
         .from('patient_exercise_flags').select('exercise_id, visible').eq('patient_id', patient.id);
     const overrideMap = new Map((overrides || []).map(r => [r.exercise_id, r.visible]));
 
-    // Reconhecimento de Palavras/Imagem e Complete a Frase só viram linha de
-    // verdade em `exercises` quando o médico cadastra o primeiro item neles
-    // — sem isso não tinha nada pra liberar e a atividade nem aparecia
-    // aqui. Preenche com uma entrada "virtual" (sem id ainda) pras que
-    // faltarem, criando o container vazio só quando o médico liberar.
+    // Complete a Frase só vira linha de verdade em `exercises` quando o
+    // médico cadastra a primeira pergunta nele — sem isso não tinha nada
+    // pra liberar e a atividade nem aparecia aqui. Preenche com uma entrada
+    // "virtual" (sem id ainda), criando o container vazio só quando o
+    // médico liberar. Reconhecimento de Palavras/Imagem saíram daqui (Fase
+    // 24): agora são vários decks reais, criados explicitamente, já
+    // aparecem em myExercises normalmente.
     const activityPlaceholders = [
-        { baseSeedKey: NAMING_SEED_KEY, title: NAMING_TITLE },
-        { baseSeedKey: AFASIA_SEED_KEY, title: AFASIA_TITLE },
         { baseSeedKey: COMPLETE_FRASE_SEED_KEY, title: COMPLETE_FRASE_TITLE },
     ];
     // Container já pode existir como global (admin cadastrou direto) OU como
