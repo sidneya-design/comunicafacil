@@ -1,0 +1,18 @@
+-- ========================================================
+-- Corrige policy de DELETE legada de books (mesmo achado da
+-- 20260826000000_fix_books_write_policy.sql, mas essa migration só cobriu
+-- INSERT/UPDATE — a policy de exclusão original ficou de fora por engano)
+-- ========================================================
+-- Em produção (confirmado via schema.sql, refletindo o backup) `books`
+-- ainda tem a policy original:
+--   "Exclusão de books para autenticados" — DELETE, role authenticated,
+--   using(true)
+-- Isso libera qualquer usuário autenticado (qualquer médico) apagar
+-- QUALQUER livro — inclusive de outro médico/paciente sem relação nenhuma,
+-- e inclusive livros da biblioteca geral (patient_id/company_id nulos,
+-- compartilhados por todos). Como policies permissivas são combinadas com
+-- OR, essa policy aberta segue valendo em paralelo mesmo depois da
+-- "Modificação isolada por perfil em books" (for all) criada na migration
+-- de escrita — basta derrubar a antiga pra exclusão passar a respeitar a
+-- mesma regra de dono que já vale pra INSERT/UPDATE.
+drop policy if exists "Exclusão de books para autenticados" on public.books;

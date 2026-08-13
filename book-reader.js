@@ -34,6 +34,27 @@ supabase.auth.onAuthStateChange((event) => {
   }
 });
 
+// Dono do livro (uploaded_by) e papel do usuário atual — usado só pra
+// decidir se mostra os botões de editar/excluir num card, espelhando a
+// mesma regra da policy "Modificação isolada por perfil em books"
+// (uploaded_by = auth.uid() OR is_editor_or_admin() OR dono do paciente).
+// Sem isso, o botão aparecia pra qualquer livro e só falhava depois de
+// clicar, com um alert — confuso pro médico entender por que não conseguia
+// mexer num livro alheio da biblioteca geral.
+let currentUserId = null;
+let isEditorOrAdmin = false;
+let currentUserInfoLoaded = false;
+async function ensureCurrentUserInfo() {
+  if (currentUserInfoLoaded) return;
+  const { data: { user } } = await supabase.auth.getUser();
+  currentUserId = user?.id || null;
+  if (currentUserId) {
+    const { data } = await supabase.rpc('is_editor_or_admin');
+    isEditorOrAdmin = data === true;
+  }
+  currentUserInfoLoaded = true;
+}
+
 // ── Helpers ────────────────────────────────────────────────
 function escapeHtml(str) {
   const div = document.createElement('div');
@@ -325,7 +346,7 @@ async function uploadFile(file) {
     const { error: dbErr } = await supabase.from('books').insert({
       title, mime_type: mimeType, file_path: filePath, file_size: file.size, genre,
       uploaded_by: user?.id,
-      ...(doctorPatientContext ? { patient_id: doctorPatientContext.id } : {}),
+      doctor_user_id: user?.id,
     });
 
     if (dbErr) return setStatus('❌ Erro ao salvar: ' + dbErr.message, 'error');
@@ -413,6 +434,30 @@ editSaveBtn?.addEventListener('click', async () => {
 
 async function deleteBook(book) {
   const title = book.title || 'este livro';
+
+  // Dentro do contexto de um paciente, o lixo num livro do banco/catálogo
+  // geral (patient_id não é desse paciente — ou seja, é só uma prévia do
+  // banco inteiro do médico, igual ao selo Liberado/Não liberado) NÃO pode
+  // apagar o livro de verdade — apagaria pra todo mundo, inclusive da
+  // biblioteca geral do próprio médico. Nesse caso o botão só remove a
+  // liberação (mesma ação do "Remover" no modal de liberar). Livro que já
+  // pertence direto a esse paciente (fluxo legado, patient_id === paciente
+  // ativo) ou fora de qualquer contexto de paciente continua apagando de
+  // verdade — não é compartilhado com mais ninguém.
+  const isBankPreview = doctorPatientContext && book.patient_id !== doctorPatientContext.id;
+  if (isBankPreview) {
+    if (!confirm(`Remover "${title}" da liberação para ${doctorPatientContext.name}? O livro continua no seu banco.`)) return;
+    try {
+      await supabase.from('patient_book_flags')
+        .upsert({ patient_id: doctorPatientContext.id, book_id: book.id, visible: false, updated_at: new Date().toISOString() });
+    } catch (err) {
+      alert('Erro ao remover liberação: ' + err.message);
+      return;
+    }
+    await loadBookList();
+    return;
+  }
+
   if (!confirm(`Apagar "${title}"? Essa ação não pode ser desfeita.`)) return;
 
   // Apaga a linha do banco primeiro: se a RLS negar (livro de outro médico/
@@ -447,6 +492,10 @@ const BOOK_GRADIENTS = [
 
 let allBooksCache = [];
 let coverUrlMap = {};
+// Livro liberado pro paciente ativo (Fase de banco+liberação) — igual ao
+// patientExerciseReleaseMap de app.js: alimenta o selo "Liberado"/"Não
+// liberado" nos cards quando o médico está "dentro" de um paciente.
+let patientBookReleaseMap = new Map();
 
 async function resolveCoverUrls(books) {
   const paths = [...new Set(books.map(b => deriveCoverPath(b.file_path)).filter(Boolean))];
@@ -479,15 +528,45 @@ function createBookCard(book, index, opts = {}) {
   const coverPath = deriveCoverPath(book.file_path);
   const coverUrl = coverPath ? coverUrlMap[coverPath] : null;
 
+  // Livro escopado direto a esse paciente (book.patient_id, fluxo legado) já
+  // chega liberado sem precisar de flag — os demais (banco do médico ou
+  // catálogo global) só contam como liberados se houver uma linha visible=true
+  // em patient_book_flags pra esse paciente (ver openPatientBooksModal em app.js).
+  const isReleased = doctorPatientContext
+    ? (book.patient_id === doctorPatientContext.id || patientBookReleaseMap.get(book.id) === true)
+    : null;
+  // Mesmo critério do isBankPreview em deleteBook() — só pra decidir o
+  // texto do botão, a lógica de verdade fica lá. Dentro da lista já filtrada
+  // por loadBookList(), isBankPreview só bate em livro sem patient_id (banco
+  // do médico ou catálogo geral) — livro de outro paciente nem chega aqui.
+  const isBankPreview = doctorPatientContext && book.patient_id !== doctorPatientContext.id;
+  const deleteLabel = isBankPreview ? 'Remover liberação' : 'Excluir';
+  const deleteAriaLabel = isBankPreview
+    ? `Remover liberação de ${escapeHtml(title)} para ${escapeHtml(doctorPatientContext.name)}`
+    : `Excluir ${escapeHtml(title)}`;
+
+  // Espelha a policy de escrita de books (uploaded_by = auth.uid() OR
+  // is_editor_or_admin() OR dono do paciente) — sem isso o botão aparecia
+  // pra qualquer livro alheio e só falhava depois de clicar. "Remover
+  // liberação" (isBankPreview) é uma ação diferente, na tabela
+  // patient_book_flags, sempre permitida pra quem já está vendo esse
+  // paciente — não precisa dessa checagem.
+  const canManageBook = isEditorOrAdmin
+    || book.uploaded_by === currentUserId
+    || (doctorPatientContext && book.patient_id === doctorPatientContext.id);
+  const showEdit = canManageBook;
+  const showDelete = isBankPreview || canManageBook;
+
   li.innerHTML = `
     <div class="book-cover-fallback" style="background: ${bgGradient}"></div>
     ${coverUrl ? `<img class="book-cover" src="${coverUrl}" alt="" loading="lazy" onerror="this.remove()">` : ''}
     <div class="book-card-actions">
       ${opts.showRemoveProgress ? `<button type="button" class="card-action-btn" data-action="remove-progress" title="Remover de Continuar Lendo" aria-label="Remover ${escapeHtml(title)} de Continuar Lendo">↩</button>` : ''}
-      <button type="button" class="card-action-btn" data-action="edit" title="Editar" aria-label="Editar ${escapeHtml(title)}">✎</button>
-      <button type="button" class="card-action-btn" data-action="delete" title="Excluir" aria-label="Excluir ${escapeHtml(title)}">🗑</button>
+      ${showEdit ? `<button type="button" class="card-action-btn" data-action="edit" title="Editar" aria-label="Editar ${escapeHtml(title)}">✎</button>` : ''}
+      ${showDelete ? `<button type="button" class="card-action-btn" data-action="delete" title="${deleteLabel}" aria-label="${deleteAriaLabel}">${isBankPreview ? '🚫' : '🗑'}</button>` : ''}
     </div>
     <span class="book-type">${type}</span>
+    ${isReleased !== null ? `<span class="release-status-badge ${isReleased ? 'is-released' : 'is-not-released'}">${isReleased ? 'Liberado' : 'Não liberado'}</span>` : ''}
     <div class="book-info-overlay">
       ${coverUrl ? '' : `<span class="book-icon" aria-hidden="true">${icon}</span>`}
       <div class="book-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
@@ -595,13 +674,22 @@ function renderSearchResults(matches) {
 
 async function loadBookList() {
   console.log('[BookReader] Carregando lista de livros...');
+  await ensureCurrentUserInfo();
   const { data, error } = await supabase
     .from('books')
-    .select('id, title, mime_type, file_path, genre, last_page, last_location, last_read_at, patient_id')
+    .select('id, title, mime_type, file_path, genre, last_page, last_location, last_read_at, patient_id, uploaded_by')
     .order('created_at', { ascending: false });
 
   if (error) { console.error('[BookReader] Erro na listagem:', error); return; }
   console.log('[BookReader] Livros encontrados:', data?.length);
+
+  if (doctorPatientContext) {
+    const { data: flags } = await supabase
+      .from('patient_book_flags').select('book_id, visible').eq('patient_id', doctorPatientContext.id);
+    patientBookReleaseMap = new Map((flags || []).map(f => [f.book_id, f.visible]));
+  } else {
+    patientBookReleaseMap = new Map();
+  }
 
   // Médico "dentro" de um paciente (Fase 6c): mostra só os livros globais +
   // os daquele paciente — nunca a mistura de vários pacientes que a RLS

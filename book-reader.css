@@ -278,6 +278,22 @@ body {
 }
 .book-type { position: absolute; top: 0.5rem; right: 0.5rem; font-size: 0.65rem; background: rgba(0,0,0,0.7); padding: 3px 8px; border-radius: 4px; color: #fff; z-index: 3; font-weight: bold; letter-spacing: 1px; }
 
+/* Selo "Liberado"/"Não liberado" — só aparece pro médico dentro do contexto
+   de um paciente (ver doctorPatientContext em book-reader.js). Duplicado de
+   .release-status-badge em style.css (não linkado aqui pra não trazer o
+   resto das regras globais do app pro leitor) — mesmas cores do selo
+   equivalente de Exercícios, só reposicionado pro canto inferior esquerdo
+   porque o superior já tem os botões de editar/excluir. */
+.release-status-badge {
+  position: absolute;
+  bottom: 0.5rem; left: 0.5rem;
+  padding: 3px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; color: #fff;
+  z-index: 3; white-space: nowrap;
+}
+.release-status-badge.is-released { background: #16b84e; }
+.release-status-badge.is-not-released { background: #6b7280; }
+
 /* ---------- Device Frame (Kindle-like) ---------- */
 .device-frame {
   width: 100%;

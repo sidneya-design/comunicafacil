@@ -10008,6 +10008,12 @@ async function loadDoctorPatients() {
             btnBooks.className = 'admin-edit-password-btn';
             btnBooks.addEventListener('click', () => enterPatientContext(p, 'view-books'));
 
+            const btnReleaseBooks = document.createElement('button');
+            btnReleaseBooks.innerHTML = '<i class="fas fa-book-open" aria-hidden="true"></i>';
+            btnReleaseBooks.title = 'Liberar livros para este paciente';
+            btnReleaseBooks.className = 'admin-edit-password-btn';
+            btnReleaseBooks.addEventListener('click', () => openPatientBooksModal(p));
+
             // Fase 19: mesmo padrão de Exercícios/Tópicos/Virtudes — mostra a
             // lista do banco do médico pra liberar por paciente, em vez de
             // "entrar" no paciente pra fazer upload direto (fluxo antigo da
@@ -10018,7 +10024,7 @@ async function loadDoctorPatients() {
             btnMedias.className = 'admin-edit-password-btn';
             btnMedias.addEventListener('click', () => openPatientMediasModal(p));
 
-            tdActions.append(btnPassword, btnModules, btnExercises, btnViewExercises, btnTopics, btnVirtues, btnCarometro, btnCarometroGlobal, btnBooks, btnMedias, btnToggleActive);
+            tdActions.append(btnPassword, btnModules, btnExercises, btnViewExercises, btnTopics, btnVirtues, btnCarometro, btnCarometroGlobal, btnBooks, btnReleaseBooks, btnMedias, btnToggleActive);
             tr.append(tdName, tdEmail, tdStatus, tdCreated, tdLastSignIn, tdActions);
             tbody.appendChild(tr);
         });
@@ -10389,6 +10395,112 @@ document.getElementById('btn-close-patient-medias')?.addEventListener('click', (
     if (patientMediasModal) patientMediasModal.style.display = 'none';
 });
 
+// Livros liberados por paciente — diferente dos outros 3 (mídias/tópicos/
+// virtudes, que mostram o banco inteiro com toggle ligado/desligado): aqui
+// a lista principal só mostra o que JÁ está liberado (com botão de
+// remover), e tem um seletor separado pra adicionar um novo — pedido
+// explícito pra Livros, achado confuso ver tudo com toggle desligado
+// misturado. Usa patient_book_flags (books.id é uuid, diferente do bigint
+// de medias).
+const patientBooksModal = document.getElementById('patient-books-modal');
+let patientBooksModalPatient = null;
+
+async function openPatientBooksModal(patient) {
+    patientBooksModalPatient = patient;
+    document.getElementById('patient-books-subtitle').textContent = patient.name || patient.email;
+    const list = document.getElementById('patient-books-list');
+    const addSelect = document.getElementById('patient-books-add-select');
+    list.innerHTML = 'Carregando...';
+    addSelect.innerHTML = '';
+    if (patientBooksModal) patientBooksModal.style.display = 'flex';
+
+    // Inclui o banco do médico E o conteúdo global do admin.
+    const { data: myBooks } = await supabaseClient
+        .from('books').select('id, title, doctor_user_id')
+        .or(`doctor_user_id.eq.${currentUserId},and(doctor_user_id.is.null,company_id.is.null,patient_id.is.null)`)
+        .order('title');
+    const { data: overrides } = await supabaseClient
+        .from('patient_book_flags').select('book_id, visible').eq('patient_id', patient.id);
+    const releasedIds = new Set((overrides || []).filter(r => r.visible).map(r => r.book_id));
+
+    const allBooks = myBooks || [];
+    const releasedBooks = allBooks.filter(b => releasedIds.has(b.id));
+    const availableBooks = allBooks.filter(b => !releasedIds.has(b.id));
+
+    list.innerHTML = '';
+    if (!releasedBooks.length) {
+        list.innerHTML = '<p class="media-hint">Nenhum livro liberado pra esse paciente ainda.</p>';
+    } else {
+        releasedBooks.forEach(book => {
+            const isGlobal = !book.doctor_user_id;
+            const title = book.title + (isGlobal ? ' (do admin)' : '');
+
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:#f5f5f5; border-radius:8px;';
+
+            const label = document.createElement('span');
+            label.textContent = title;
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'btn-secondary';
+            removeBtn.style.cssText = 'padding:4px 10px;';
+            removeBtn.textContent = 'Remover';
+            removeBtn.setAttribute('aria-label', `Remover ${title} de ${patient.name || patient.email}`);
+            removeBtn.addEventListener('click', async () => {
+                try {
+                    await supabaseClient.from('patient_book_flags')
+                        .upsert({ patient_id: patient.id, book_id: book.id, visible: false, updated_at: new Date().toISOString() });
+                    openPatientBooksModal(patient);
+                } catch (err) {
+                    showDoctorPatientsFeedback('Erro ao remover livro: ' + err.message, true);
+                }
+            });
+
+            row.append(label, removeBtn);
+            list.appendChild(row);
+        });
+    }
+
+    if (!availableBooks.length) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'Nenhum livro disponível pra adicionar';
+        addSelect.appendChild(opt);
+        addSelect.disabled = true;
+    } else {
+        addSelect.disabled = false;
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Selecione um livro...';
+        addSelect.appendChild(placeholder);
+        availableBooks.forEach(book => {
+            const isGlobal = !book.doctor_user_id;
+            const opt = document.createElement('option');
+            opt.value = book.id;
+            opt.textContent = book.title + (isGlobal ? ' (do admin)' : '');
+            addSelect.appendChild(opt);
+        });
+    }
+}
+
+document.getElementById('patient-books-add-btn')?.addEventListener('click', async () => {
+    const addSelect = document.getElementById('patient-books-add-select');
+    const bookId = addSelect?.value;
+    if (!bookId || !patientBooksModalPatient) return;
+    try {
+        await supabaseClient.from('patient_book_flags')
+            .upsert({ patient_id: patientBooksModalPatient.id, book_id: bookId, visible: true, updated_at: new Date().toISOString() });
+        openPatientBooksModal(patientBooksModalPatient);
+    } catch (err) {
+        showDoctorPatientsFeedback('Erro ao liberar livro: ' + err.message, true);
+    }
+});
+
+document.getElementById('btn-close-patient-books')?.addEventListener('click', () => {
+    if (patientBooksModal) patientBooksModal.style.display = 'none';
+});
+
 // Setores globais de Carômetro liberados por paciente — diferente de
 // exercises/topics/virtues/medias, Carômetro não tem "banco do médico"
 // (cada setor já nasce direto pra um paciente, via enterPatientContext);
@@ -10554,11 +10666,19 @@ function updatePatientContextBanners() {
         exText.textContent = `Vendo exercícios de: ${activePatientContext?.name || ''}`;
         exBanner.style.display = show ? 'flex' : 'none';
     }
+
+    const boBanner = document.getElementById('patient-context-banner-books');
+    const boText = document.getElementById('patient-context-banner-books-text');
+    if (boBanner && boText) {
+        boText.textContent = `Vendo livros de: ${activePatientContext?.name || ''}`;
+        boBanner.style.display = show ? 'flex' : 'none';
+    }
 }
 
 document.getElementById('btn-clear-patient-context-carometro')?.addEventListener('click', exitPatientContext);
 document.getElementById('btn-clear-patient-context-media')?.addEventListener('click', exitPatientContext);
 document.getElementById('btn-clear-patient-context-exercises')?.addEventListener('click', exitPatientContext);
+document.getElementById('btn-clear-patient-context-books')?.addEventListener('click', exitPatientContext);
 
 document.getElementById('btn-open-new-patient')?.addEventListener('click', () => {
     newPatientForm?.reset();
