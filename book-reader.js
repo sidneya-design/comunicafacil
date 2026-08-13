@@ -554,7 +554,7 @@ function createBookCard(book, index, opts = {}) {
     <div class="book-cover-fallback" style="background: ${bgGradient}"></div>
     ${coverUrl ? `<img class="book-cover" src="${coverUrl}" alt="" loading="lazy" onerror="this.remove()">` : ''}
     <div class="book-card-actions">
-      ${opts.showRemoveProgress ? `<button type="button" class="card-action-btn" data-action="remove-progress" title="Remover de Continuar Lendo" aria-label="Remover ${escapeHtml(title)} de Continuar Lendo">↩</button>` : ''}
+      ${opts.showRemoveProgress && canManageBook ? `<button type="button" class="card-action-btn" data-action="remove-progress" title="Remover de Continuar Lendo" aria-label="Remover ${escapeHtml(title)} de Continuar Lendo">↩</button>` : ''}
       ${showEdit ? `<button type="button" class="card-action-btn" data-action="edit" title="Editar" aria-label="Editar ${escapeHtml(title)}">✎</button>` : ''}
       ${showDelete ? `<button type="button" class="card-action-btn" data-action="delete" title="${deleteLabel}" aria-label="${deleteAriaLabel}">${isBankPreview ? '🚫' : '🗑'}</button>` : ''}
     </div>
