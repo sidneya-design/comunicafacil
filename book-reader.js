@@ -528,13 +528,6 @@ function createBookCard(book, index, opts = {}) {
   const coverPath = deriveCoverPath(book.file_path);
   const coverUrl = coverPath ? coverUrlMap[coverPath] : null;
 
-  // Livro escopado direto a esse paciente (book.patient_id, fluxo legado) já
-  // chega liberado sem precisar de flag — os demais (banco do médico ou
-  // catálogo global) só contam como liberados se houver uma linha visible=true
-  // em patient_book_flags pra esse paciente (ver openPatientBooksModal em app.js).
-  const isReleased = doctorPatientContext
-    ? (book.patient_id === doctorPatientContext.id || patientBookReleaseMap.get(book.id) === true)
-    : null;
   // Mesmo critério do isBankPreview em deleteBook() — só pra decidir o
   // texto do botão, a lógica de verdade fica lá. Dentro da lista já filtrada
   // por loadBookList(), isBankPreview só bate em livro sem patient_id (banco
@@ -566,7 +559,6 @@ function createBookCard(book, index, opts = {}) {
       ${showDelete ? `<button type="button" class="card-action-btn" data-action="delete" title="${deleteLabel}" aria-label="${deleteAriaLabel}">${isBankPreview ? '🚫' : '🗑'}</button>` : ''}
     </div>
     <span class="book-type">${type}</span>
-    ${isReleased !== null ? `<span class="release-status-badge ${isReleased ? 'is-released' : 'is-not-released'}">${isReleased ? 'Liberado' : 'Não liberado'}</span>` : ''}
     <div class="book-info-overlay">
       ${coverUrl ? '' : `<span class="book-icon" aria-hidden="true">${icon}</span>`}
       <div class="book-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
@@ -691,11 +683,13 @@ async function loadBookList() {
     patientBookReleaseMap = new Map();
   }
 
-  // Médico "dentro" de um paciente (Fase 6c): mostra só os livros globais +
-  // os daquele paciente — nunca a mistura de vários pacientes que a RLS
-  // deixaria o médico ler (mesmo cuidado das Fases 5b/6b em app.js).
+  // Dentro do contexto de um paciente, mostra só o que já foi liberado pra
+  // ele (patient_id direto, fluxo legado, ou flag visible=true) — pedido
+  // explícito: nada de banco inteiro com selo "Não liberado", só o que
+  // realmente aparece pro paciente. Mesmo espírito do redesenho do modal de
+  // liberar (openPatientBooksModal em app.js).
   const filtered = doctorPatientContext
-    ? (data || []).filter(b => !b.patient_id || b.patient_id === doctorPatientContext.id)
+    ? (data || []).filter(b => b.patient_id === doctorPatientContext.id || patientBookReleaseMap.get(b.id) === true)
     : (data || []);
 
   allBooksCache = filtered;
