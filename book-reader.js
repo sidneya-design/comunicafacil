@@ -1012,6 +1012,18 @@ async function renderEPUB(url) {
         'height': 'auto !important',
         'display': 'block',
         'margin': '1em auto'
+      },
+      // Capa de EPUB costuma vir numa página própria embrulhada em <svg>
+      // (padrão do formato), não um <img> puro — max-width/height:auto do
+      // <img> acima não alcança isso. Sem essa regra, o <svg> herda
+      // width/height:100% do wrapper de página e estica a capa fora de
+      // proporção pra preencher o quadro, mesmo com a imagem interna
+      // preservando proporção.
+      'svg': {
+        'max-width': '100% !important',
+        'max-height': '100% !important',
+        'width': 'auto !important',
+        'height': 'auto !important'
       }
     });
 
