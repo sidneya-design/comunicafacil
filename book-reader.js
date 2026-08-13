@@ -342,11 +342,15 @@ async function uploadFile(file) {
     // 3. Registrar no banco
     const title = file.name.replace(/\.[^/.]+$/, '');
     const genre = bookGenreSelect?.value || 'Outros';
-    const { data: { user } } = await supabase.auth.getUser();
+    await ensureCurrentUserInfo();
     const { error: dbErr } = await supabase.from('books').insert({
       title, mime_type: mimeType, file_path: filePath, file_size: file.size, genre,
-      uploaded_by: user?.id,
-      doctor_user_id: user?.id,
+      uploaded_by: currentUserId,
+      // Só marca doctor_user_id (banco privado, exige liberação por
+      // paciente) quando quem sobe é médico de verdade. Admin/editor sobe
+      // pro catálogo GLOBAL (todos os 3 campos nulos) — visível a todos os
+      // médicos automaticamente, cada um libera pros próprios pacientes.
+      ...(isEditorOrAdmin ? {} : { doctor_user_id: currentUserId }),
     });
 
     if (dbErr) return setStatus('❌ Erro ao salvar: ' + dbErr.message, 'error');
@@ -458,6 +462,24 @@ async function deleteBook(book) {
     return;
   }
 
+  // Fora de contexto de paciente, num livro que não é seu (do admin ou de
+  // outro médico): não apaga de verdade (afetaria todo mundo), só oculta
+  // da sua própria biblioteca. Sempre permitido, pessoal.
+  const isHideOnly = !doctorPatientContext && !(isEditorOrAdmin || book.uploaded_by === currentUserId);
+  if (isHideOnly) {
+    if (!confirm(`Ocultar "${title}" da sua biblioteca? Continua existindo pros outros — só some da sua lista.`)) return;
+    await ensureCurrentUserInfo();
+    try {
+      await supabase.from('book_hidden_for_user')
+        .upsert({ user_id: currentUserId, book_id: book.id });
+    } catch (err) {
+      alert('Erro ao ocultar livro: ' + err.message);
+      return;
+    }
+    await loadBookList();
+    return;
+  }
+
   if (!confirm(`Apagar "${title}"? Essa ação não pode ser desfeita.`)) return;
 
   // Apaga a linha do banco primeiro: se a RLS negar (livro de outro médico/
@@ -528,35 +550,40 @@ function createBookCard(book, index, opts = {}) {
   const coverPath = deriveCoverPath(book.file_path);
   const coverUrl = coverPath ? coverUrlMap[coverPath] : null;
 
-  // Mesmo critério do isBankPreview em deleteBook() — só pra decidir o
-  // texto do botão, a lógica de verdade fica lá. Dentro da lista já filtrada
-  // por loadBookList(), isBankPreview só bate em livro sem patient_id (banco
-  // do médico ou catálogo geral) — livro de outro paciente nem chega aqui.
-  const isBankPreview = doctorPatientContext && book.patient_id !== doctorPatientContext.id;
-  const deleteLabel = isBankPreview ? 'Remover liberação' : 'Excluir';
-  const deleteAriaLabel = isBankPreview
-    ? `Remover liberação de ${escapeHtml(title)} para ${escapeHtml(doctorPatientContext.name)}`
-    : `Excluir ${escapeHtml(title)}`;
-
   // Espelha a policy de escrita de books (uploaded_by = auth.uid() OR
   // is_editor_or_admin() OR dono do paciente) — sem isso o botão aparecia
-  // pra qualquer livro alheio e só falhava depois de clicar. "Remover
-  // liberação" (isBankPreview) é uma ação diferente, na tabela
-  // patient_book_flags, sempre permitida pra quem já está vendo esse
-  // paciente — não precisa dessa checagem.
+  // pra qualquer livro alheio e só falhava depois de clicar.
   const canManageBook = isEditorOrAdmin
     || book.uploaded_by === currentUserId
     || (doctorPatientContext && book.patient_id === doctorPatientContext.id);
+  // Três significados possíveis pro botão de lixeira, mutuamente exclusivos:
+  // (1) dentro do contexto de um paciente, num livro que só está ali como
+  //     prévia do banco/catálogo geral — "remover liberação" (flag, sempre
+  //     permitido pra quem já está vendo esse paciente);
+  // (2) fora de contexto de paciente, num livro que não é seu — "ocultar da
+  //     minha biblioteca" (book_hidden_for_user, sempre permitido, pessoal,
+  //     não afeta ninguém — pedido explícito: médico quer poder "excluir"
+  //     livro do admin sem apagar de verdade nem depender de ser dono);
+  // (3) livro que você realmente pode editar — exclusão de verdade.
+  const isBankPreview = doctorPatientContext && book.patient_id !== doctorPatientContext.id;
+  const isHideOnly = !doctorPatientContext && !canManageBook;
+  const deleteLabel = isBankPreview ? 'Remover liberação' : isHideOnly ? 'Ocultar da minha biblioteca' : 'Excluir';
+  const deleteAriaLabel = isBankPreview
+    ? `Remover liberação de ${escapeHtml(title)} para ${escapeHtml(doctorPatientContext.name)}`
+    : isHideOnly
+      ? `Ocultar ${escapeHtml(title)} da minha biblioteca`
+      : `Excluir ${escapeHtml(title)}`;
+
   const showEdit = canManageBook;
-  const showDelete = isBankPreview || canManageBook;
+  const showDelete = true; // sempre tem alguma ação disponível (as 3 acima)
 
   li.innerHTML = `
     <div class="book-cover-fallback" style="background: ${bgGradient}"></div>
     ${coverUrl ? `<img class="book-cover" src="${coverUrl}" alt="" loading="lazy" onerror="this.remove()">` : ''}
     <div class="book-card-actions">
-      ${opts.showRemoveProgress && canManageBook ? `<button type="button" class="card-action-btn" data-action="remove-progress" title="Remover de Continuar Lendo" aria-label="Remover ${escapeHtml(title)} de Continuar Lendo">↩</button>` : ''}
+      ${opts.showRemoveProgress ? `<button type="button" class="card-action-btn" data-action="remove-progress" title="Remover de Continuar Lendo" aria-label="Remover ${escapeHtml(title)} de Continuar Lendo">↩</button>` : ''}
       ${showEdit ? `<button type="button" class="card-action-btn" data-action="edit" title="Editar" aria-label="Editar ${escapeHtml(title)}">✎</button>` : ''}
-      ${showDelete ? `<button type="button" class="card-action-btn" data-action="delete" title="${deleteLabel}" aria-label="${deleteAriaLabel}">${isBankPreview ? '🚫' : '🗑'}</button>` : ''}
+      ${showDelete ? `<button type="button" class="card-action-btn" data-action="delete" title="${deleteLabel}" aria-label="${deleteAriaLabel}">${isBankPreview ? '🚫' : isHideOnly ? '🙈' : '🗑'}</button>` : ''}
     </div>
     <span class="book-type">${type}</span>
     <div class="book-info-overlay">
@@ -590,18 +617,17 @@ function createBookCard(book, index, opts = {}) {
   return li;
 }
 
-// Tira o livro da fileira "Continuar Lendo" zerando o progresso salvo, sem apagar o livro.
+// Tira o livro da fileira "Continuar Lendo" apagando a própria linha de
+// progresso em book_reading_progress — não mexe no livro nem no progresso
+// de outros leitores. Reaparece normal se o usuário ler de novo.
 async function removeFromContinueReading(book) {
-  const { data, error } = await supabase
-    .from('books')
-    .update({ last_read_at: null, last_page: null, last_location: null })
-    .eq('id', book.id)
-    .select();
+  await ensureCurrentUserInfo();
+  const { error } = await supabase
+    .from('book_reading_progress')
+    .delete()
+    .eq('user_id', currentUserId)
+    .eq('book_id', book.id);
   if (error) { alert('Erro ao remover de Continuar Lendo: ' + error.message); return; }
-  if (!data || data.length === 0) {
-    alert('Não foi possível remover (sessão sem permissão). Tente sair e entrar de novo.');
-    return;
-  }
   await loadBookList();
 }
 
@@ -669,11 +695,33 @@ async function loadBookList() {
   await ensureCurrentUserInfo();
   const { data, error } = await supabase
     .from('books')
-    .select('id, title, mime_type, file_path, genre, last_page, last_location, last_read_at, patient_id, uploaded_by')
+    .select('id, title, mime_type, file_path, genre, patient_id, uploaded_by')
     .order('created_at', { ascending: false });
 
   if (error) { console.error('[BookReader] Erro na listagem:', error); return; }
   console.log('[BookReader] Livros encontrados:', data?.length);
+
+  // Progresso de leitura é por usuário (book_reading_progress), não mais
+  // nas colunas do livro — mescla aqui em cima dos livros carregados.
+  let progressMap = new Map();
+  if (currentUserId) {
+    const { data: progress } = await supabase
+      .from('book_reading_progress')
+      .select('book_id, last_page, last_location, last_read_at')
+      .eq('user_id', currentUserId);
+    progressMap = new Map((progress || []).map(p => [p.book_id, p]));
+  }
+  const withProgress = (data || []).map(b => ({ ...b, ...progressMap.get(b.id) }));
+
+  // Livros que o usuário ocultou da própria biblioteca (book_hidden_for_user)
+  // — só vale na biblioteca geral (fora de contexto de paciente); dentro do
+  // contexto o médico ainda precisa ver tudo pra poder liberar/gerenciar.
+  let hiddenIds = new Set();
+  if (currentUserId && !doctorPatientContext) {
+    const { data: hidden } = await supabase
+      .from('book_hidden_for_user').select('book_id').eq('user_id', currentUserId);
+    hiddenIds = new Set((hidden || []).map(h => h.book_id));
+  }
 
   if (doctorPatientContext) {
     const { data: flags } = await supabase
@@ -689,8 +737,8 @@ async function loadBookList() {
   // realmente aparece pro paciente. Mesmo espírito do redesenho do modal de
   // liberar (openPatientBooksModal em app.js).
   const filtered = doctorPatientContext
-    ? (data || []).filter(b => b.patient_id === doctorPatientContext.id || patientBookReleaseMap.get(b.id) === true)
-    : (data || []);
+    ? withProgress.filter(b => b.patient_id === doctorPatientContext.id || patientBookReleaseMap.get(b.id) === true)
+    : withProgress.filter(b => !hiddenIds.has(b.id));
 
   allBooksCache = filtered;
   coverUrlMap = await resolveCoverUrls(allBooksCache);
@@ -847,7 +895,10 @@ function saveProgress() {
     } else {
       return;
     }
-    const { error } = await supabase.from('books').update(payload).eq('id', currentBook.id);
+    // Progresso é por usuário (book_reading_progress), não na linha do
+    // livro — assim salva certo mesmo lendo um livro que não é seu.
+    const { error } = await supabase.from('book_reading_progress')
+      .upsert({ user_id: currentUserId, book_id: currentBook.id, ...payload });
     if (error) {
       console.warn('[BookReader] Erro ao salvar progresso:', error.message);
       return;
