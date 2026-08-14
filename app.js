@@ -2578,6 +2578,19 @@ function renderExerciseCards(exercisesArray) {
             releaseBadge.className = 'release-status-badge ' + (isReleased ? 'is-released' : 'is-not-released');
             releaseBadge.textContent = isReleased ? 'Liberado' : 'Não liberado';
             btn.appendChild(releaseBadge);
+
+            // Aqui "dentro" de um paciente o alvo é óbvio (o próprio
+            // activePatientContext), mesmo pra exercício do banco geral ou
+            // global liberado pra ele — diferente do banco geral do médico
+            // (fora de paciente), onde um exercício pode estar liberado pra
+            // vários pacientes ao mesmo tempo e não haveria um alvo único.
+            if (isReleased) {
+                btn.appendChild(createNotifyUsersButton(displayTitle, 'Exercício', {
+                    id: activePatientContext.id,
+                    name: activePatientContext.name,
+                    email: activePatientContext.email
+                }));
+            }
         }
 
         if (isAdmin) {
