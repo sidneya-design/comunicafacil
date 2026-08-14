@@ -576,12 +576,21 @@ function createBookCard(book, index, opts = {}) {
 
   const showEdit = canManageBook;
   const showDelete = true; // sempre tem alguma ação disponível (as 3 acima)
+  // Só mostra quando dá pra saber pra quem avisar: dentro do contexto de um
+  // paciente (avisa ele) ou fora dele pra quem pode fazer broadcast geral
+  // (editor/admin) — mesmo critério que exercícios/tópicos já usam em
+  // app.js (createNotifyUsersButton).
+  const showNotify = canManageBook && (doctorPatientContext || isEditorOrAdmin);
+  const notifyAriaLabel = doctorPatientContext
+    ? `Avisar ${escapeHtml(doctorPatientContext.name)} sobre ${escapeHtml(title)} por e-mail`
+    : `Avisar usuários sobre ${escapeHtml(title)} por e-mail`;
 
   li.innerHTML = `
     <div class="book-cover-fallback" style="background: ${bgGradient}"></div>
     ${coverUrl ? `<img class="book-cover" src="${coverUrl}" alt="" loading="lazy" onerror="this.remove()">` : ''}
     <div class="book-card-actions">
       ${opts.showRemoveProgress ? `<button type="button" class="card-action-btn" data-action="remove-progress" title="Remover de Continuar Lendo" aria-label="Remover ${escapeHtml(title)} de Continuar Lendo">↩</button>` : ''}
+      ${showNotify ? `<button type="button" class="card-action-btn" data-action="notify" title="Avisar por e-mail" aria-label="${notifyAriaLabel}">✉️</button>` : ''}
       ${showEdit ? `<button type="button" class="card-action-btn" data-action="edit" title="Editar" aria-label="Editar ${escapeHtml(title)}">✎</button>` : ''}
       ${showDelete ? `<button type="button" class="card-action-btn" data-action="delete" title="${deleteLabel}" aria-label="${deleteAriaLabel}">${isBankPreview ? '🚫' : isHideOnly ? '🙈' : '🗑'}</button>` : ''}
     </div>
@@ -601,6 +610,16 @@ function createBookCard(book, index, opts = {}) {
     }
   });
 
+  li.querySelector('[data-action="notify"]')?.addEventListener('click', async e => {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await sendBookNotification(title, doctorPatientContext);
+    } finally {
+      btn.disabled = false;
+    }
+  });
   li.querySelector('[data-action="edit"]')?.addEventListener('click', e => {
     e.stopPropagation();
     openEditModal(book);
@@ -615,6 +634,34 @@ function createBookCard(book, index, opts = {}) {
   });
 
   return li;
+}
+
+// Avisa por e-mail que um livro está disponível — mesmo mecanismo
+// (function 'notify-users') que exercícios/tópicos/módulos já usam em
+// app.js. Não existia em Livros até agora: outros tipos de conteúdo
+// chamam createNotifyUsersButton (definida em app.js), mas book-reader.js
+// roda isolado dele (é uma página/iframe à parte, com seu próprio client
+// Supabase importado de supabase.js) — nunca tinha sido ligado aqui.
+async function sendBookNotification(title, patient) {
+  const patientLabel = patient ? (patient.name || 'este paciente') : null;
+  const confirmed = patient
+    ? confirm(`Enviar um e-mail para ${patientLabel} avisando que "${title}" está disponível?`)
+    : confirm(`Enviar um e-mail para todos os usuários avisando que "${title}" está disponível?`);
+  if (!confirmed) return;
+
+  const { data, error } = await supabase.functions.invoke('notify-users', {
+    body: { title, category: 'Livro', patientId: patient ? patient.id : undefined }
+  });
+
+  if (error) {
+    console.error('Erro ao enviar aviso:', error);
+    alert('Não foi possível enviar o aviso. Verifique a configuração do Gmail e tente novamente.');
+    return;
+  }
+
+  alert(patient
+    ? (data?.recipientCount ? `Aviso enviado para ${patientLabel}.` : 'Não foi possível encontrar o e-mail deste paciente.')
+    : `Aviso enviado para ${data?.recipientCount ?? 0} usuário(s).`);
 }
 
 // Tira o livro da fileira "Continuar Lendo" apagando a própria linha de

@@ -402,7 +402,14 @@ function createOption(word, index, item) {
     button.dataset.word = word;
     button.draggable = true;
     button.setAttribute("aria-label", item.audioOnly ? `Opção: ${word}` : word);
-    button.innerHTML = item.audioOnly ? `<span aria-hidden="true">${item.icons[word]}</span>` : `<span>${word}</span>`;
+    // textContent (não innerHTML): word/icons vêm de exercícios que o médico
+    // cadastra em texto livre — interpolar como HTML permitia gravar
+    // <img onerror=...> numa opção e rodar script na sessão do paciente que
+    // jogasse aquele exercício.
+    const optionSpan = document.createElement("span");
+    if (item.audioOnly) optionSpan.setAttribute("aria-hidden", "true");
+    optionSpan.textContent = item.audioOnly ? (item.icons[word] || "") : word;
+    button.appendChild(optionSpan);
     button.addEventListener("click", () => selectOption(button));
     button.addEventListener("dragstart", event => {
         event.dataTransfer.setData("text/plain", button.id);

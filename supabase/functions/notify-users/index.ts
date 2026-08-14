@@ -115,7 +115,10 @@ Deno.serve(async (req) => {
     const genderAdjective = ["categoria", "atividade"].includes(categoryKey) ? "Nova" : "Novo";
     const introArticle = ["categoria", "atividade"].includes(categoryKey) ? "A" : "O";
     const introCategory = categoryKey === "jogo" ? "jogo" : categoryKey;
-    const introText = `${introArticle} ${introCategory} <strong>${safeTitle}</strong> já está disponível para você.`;
+    // category chega em texto livre do chamador (a UI só usa um enum fixo,
+    // mas a function em si não valida isso) — escapa igual title, senão dá
+    // pra injetar HTML no corpo do e-mail enviado a usuários reais.
+    const introText = `${introArticle} ${escapeHtml(introCategory)} <strong>${safeTitle}</strong> já está disponível para você.`;
     const linkHtml = APP_PUBLIC_URL
       ? `<p style="margin:20px 0 0"><a href="${escapeHtml(APP_PUBLIC_URL)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:700;font-size:16px;line-height:1">Abrir Comunica Fácil</a></p>`
       : "";

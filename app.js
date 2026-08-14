@@ -1616,10 +1616,30 @@ function _speakNative(text) {
 const azureTtsCache = new Map(); // texto -> Promise<string base64>
 const TTS_STORAGE_PREFIX = 'comunica_tts_v2:';
 
+// A function 'chat' agora exige sessão válida (fecha proxy aberto pro
+// serviço pago da Azure) — anexa o token do usuário logado em toda chamada
+// pra ela. Sem sessão, deixa sem header mesmo: o endpoint local de dev
+// (127.0.0.1:5001) não usa isso, e contra o Supabase a function recusa com
+// 401 (esperado, usuário não deveria estar usando o app deslogado).
+async function getIaEndpointHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    if (supabaseClient) {
+        try {
+            const { data } = await supabaseClient.auth.getSession();
+            const token = data?.session?.access_token;
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+                headers['apikey'] = supabaseKey;
+            }
+        } catch (e) { /* segue sem header */ }
+    }
+    return headers;
+}
+
 async function fetchTtsAudio(endpoint, text) {
     const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getIaEndpointHeaders(),
         body: JSON.stringify({ ttsText: text })
     });
     const data = await response.json();
@@ -12155,11 +12175,13 @@ btnIaRestart?.addEventListener('click', restartIaChat);
 
 async function postIaPayload(payload, useFormData = false) {
     let lastError = null;
+    const authedHeaders = await getIaEndpointHeaders();
+    if (useFormData) delete authedHeaders['Content-Type']; // deixa o browser definir o boundary do multipart
     for (const endpoint of IA_ENDPOINT_FALLBACKS) {
         try {
             const response = await fetch(endpoint, {
                 method: 'POST',
-                headers: useFormData ? undefined : { 'Content-Type': 'application/json' },
+                headers: authedHeaders,
                 body: useFormData ? payload : JSON.stringify(payload)
             });
             if (!response.ok) {
@@ -12554,6 +12576,75 @@ document.addEventListener('DOMContentLoaded', () => {
     // Gerador de IDs simples
     const generateId = () => 'id_' + Math.random().toString(36).substr(2, 9);
 
+    // Sanitiza o HTML dos campos editáveis do Carômetro (nome/idade/título):
+    // mantém só a formatação simples que o toolbar flutuante logo abaixo
+    // produz (negrito, itálico, sublinhado, cor, fonte), e descarta qualquer
+    // tag/atributo capaz de rodar script (<img onerror>, <script>, style com
+    // url()/expression() etc.). Sem isso, quem edita esses campos (médico)
+    // conseguia gravar HTML malicioso que rodava na sessão de quem visse o
+    // card depois — paciente, outro médico ou admin. Aplicada tanto ao ler
+    // (dados antigos já salvos) quanto ao salvar (dados novos).
+    const CAROMETRO_ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'SPAN', 'FONT', 'BR']);
+    const CAROMETRO_ALLOWED_STYLE_PROPS = new Set(['color', 'font-size', 'font-weight', 'font-style', 'text-decoration', 'font-family']);
+
+    function sanitizeCarometroStyle(styleValue) {
+        if (!styleValue) return '';
+        const out = [];
+        styleValue.split(';').forEach(decl => {
+            const idx = decl.indexOf(':');
+            if (idx === -1) return;
+            const prop = decl.slice(0, idx).trim().toLowerCase();
+            const value = decl.slice(idx + 1).trim();
+            if (!CAROMETRO_ALLOWED_STYLE_PROPS.has(prop)) return;
+            if (/url\s*\(|expression\s*\(|javascript:/i.test(value)) return;
+            out.push(`${prop}: ${value}`);
+        });
+        return out.join('; ');
+    }
+
+    function sanitizeCarometroNode(node, out) {
+        if (node.nodeType === Node.TEXT_NODE) {
+            out.appendChild(document.createTextNode(node.textContent));
+            return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+        const tag = node.tagName;
+        if (!CAROMETRO_ALLOWED_TAGS.has(tag)) {
+            node.childNodes.forEach(child => sanitizeCarometroNode(child, out));
+            return;
+        }
+
+        const clean = document.createElement(tag === 'FONT' ? 'span' : tag.toLowerCase());
+        if (tag === 'FONT') {
+            // O toolbar produz <font size="1..6"> pro seletor de tamanho (não
+            // CSS) — sem mapear esse atributo aqui, o tamanho escolhido se
+            // perdia silenciosamente ao salvar/recarregar o card.
+            const FONT_SIZE_KEYWORDS = ['xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large'];
+            const styleParts = [];
+            const color = node.getAttribute('color');
+            const face = node.getAttribute('face');
+            const size = node.getAttribute('size');
+            if (color && /^#?[0-9a-f]{3,8}$|^[a-z]+$/i.test(color)) styleParts.push(`color: ${color}`);
+            if (face) styleParts.push(`font-family: ${face.replace(/[^a-z0-9 ,'-]/gi, '')}`);
+            if (size && FONT_SIZE_KEYWORDS[Number(size) - 1]) styleParts.push(`font-size: ${FONT_SIZE_KEYWORDS[Number(size) - 1]}`);
+            if (styleParts.length) clean.setAttribute('style', styleParts.join('; '));
+        } else {
+            const style = sanitizeCarometroStyle(node.getAttribute('style'));
+            if (style) clean.setAttribute('style', style);
+        }
+        node.childNodes.forEach(child => sanitizeCarometroNode(child, clean));
+        out.appendChild(clean);
+    }
+
+    function sanitizeCarometroHTML(html) {
+        if (!html) return '';
+        const doc = new DOMParser().parseFromString(String(html), 'text/html');
+        const wrapper = document.createElement('div');
+        doc.body.childNodes.forEach(child => sanitizeCarometroNode(child, wrapper));
+        return wrapper.innerHTML;
+    }
+
     // Estrutura Padrão caso não haja dados
     const defaultData = [
         {
@@ -12589,13 +12680,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     const data = dbSectors.map(sec => {
                         const peopleForSector = (dbPeople || []).filter(p => p.sector_id === sec.id).map(p => ({
                             id: p.id,
-                            nameHTML: p.name_html,
-                            ageHTML: p.age_html,
+                            nameHTML: sanitizeCarometroHTML(p.name_html),
+                            ageHTML: sanitizeCarometroHTML(p.age_html),
                             photoSrc: p.photo_url || 'https://placehold.co/300x400/e2e8f0/a0aec0?text=Foto'
                         }));
                         return {
                             id: sec.id,
-                            titleHTML: sec.title_html,
+                            titleHTML: sanitizeCarometroHTML(sec.title_html),
                             people: peopleForSector
                         };
                     });
@@ -12628,15 +12719,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!titleEl) return;
             
             const sectorId = sec.dataset.id || generateId();
+            const cleanTitleHTML = sanitizeCarometroHTML(titleEl.innerHTML);
             const sectorData = {
                 id: sectorId,
-                titleHTML: titleEl.innerHTML,
+                titleHTML: cleanTitleHTML,
                 people: []
             };
-            
+
             dbSectors.push({
                 id: sectorId,
-                title_html: titleEl.innerHTML,
+                title_html: cleanTitleHTML,
                 order_index: sectorOrder++,
                 // Setor criado/editado por um médico "dentro" de um paciente (Fase
                 // 5c) já nasce escopado pra ele — sem isso, a RLS de escrita do
@@ -12652,18 +12744,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (nameEl && ageEl && imgEl) {
                     const personId = card.dataset.id || generateId();
+                    const cleanNameHTML = sanitizeCarometroHTML(nameEl.innerHTML);
+                    const cleanAgeHTML = sanitizeCarometroHTML(ageEl.innerHTML);
                     sectorData.people.push({
                         id: personId,
-                        nameHTML: nameEl.innerHTML,
-                        ageHTML: ageEl.innerHTML,
+                        nameHTML: cleanNameHTML,
+                        ageHTML: cleanAgeHTML,
                         photoSrc: imgEl.src
                     });
-                    
+
                     dbPeople.push({
                         id: personId,
                         sector_id: sectorId,
-                        name_html: nameEl.innerHTML,
-                        age_html: ageEl.innerHTML,
+                        name_html: cleanNameHTML,
+                        age_html: cleanAgeHTML,
                         photo_url: imgEl.src,
                         order_index: peopleOrder++
                     });

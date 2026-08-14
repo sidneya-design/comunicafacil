@@ -14,10 +14,12 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
  *  - fileName (nome original)
  *  - tmpPath (identificador único gerado pelo cliente)
  *
- * Cada chunk é armazenado temporariamente em `tmp/{tmpPath}/{chunkIndex}`.
- * Quando o último chunk chega, todos os chunks são concatenados em ordem e o
- * arquivo final é salvo em `books/{fileName}`. Metadados são inseridos na tabela
- * `books`.
+ * Requer sessão válida (Authorization: Bearer <access_token>) — o client usa
+ * a service_role key, que bypassa RLS, então essa checagem é a única
+ * barreira. Cada chunk é armazenado temporariamente em
+ * `tmp/{userId}/{tmpPath}/{chunkIndex}`. Quando o último chunk chega, todos
+ * os chunks são concatenados em ordem e o arquivo final é salvo em
+ * `{userId}/{uuid}-{fileName}`. Metadados são inseridos na tabela `books`.
  */
 
 serve(async (req) => {
@@ -26,12 +28,30 @@ serve(async (req) => {
     return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
   }
 
+  // Antes: só validava o usuário no ÚLTIMO chunk, e nem checava se a busca
+  // deu certo — sem token válido, `userId` ficava undefined e o insert em
+  // `books` seguia em frente assim mesmo (uploaded_by nulo). Como o client
+  // aqui usa a service_role key (bypassa RLS), essa era a única barreira —
+  // e ela não bloqueava nada. Move a checagem pro início: sem sessão válida,
+  // nenhum chunk é aceito.
+  const authHeader = req.headers.get("Authorization") || "";
+  const token = authHeader.replace("Bearer ", "");
+  const { data: userData, error: userError } = await supabase.auth.getUser(token);
+  const userId = userData?.user?.id;
+  if (userError || !userId) {
+    return new Response(JSON.stringify({ error: "Não autenticado." }), { status: 401 });
+  }
+
   const form = await req.formData();
   const file = form.get("file") as File | null;
   const chunkIndex = Number(form.get("chunkIndex"));
   const totalChunks = Number(form.get("totalChunks"));
   const fileName = (form.get("fileName") as string) ?? "unknown";
-  const tmpPath = (form.get("tmpPath") as string) ?? crypto.randomUUID();
+  // tmpPath prefixado pelo userId: um chunk de upload em andamento de um
+  // usuário nunca colide/sobrescreve o de outro, mesmo que ambos mandem o
+  // mesmo tmpPath por acidente ou de propósito.
+  const clientTmpPath = (form.get("tmpPath") as string) ?? crypto.randomUUID();
+  const tmpPath = `${userId}/${clientTmpPath}`;
 
   if (!file) {
     return new Response(JSON.stringify({ error: "Missing file chunk" }), { status: 400 });
@@ -72,21 +92,20 @@ serve(async (req) => {
       offset += p.length;
     }
     const finalBlob = new Blob([combined]);
-    const finalPath = `${fileName}`;
+    // Antes: finalPath era só `fileName`, escolhido pelo cliente, com
+    // upsert:true — qualquer usuário conseguia sobrescrever o arquivo de
+    // outro só mandando o mesmo nome. Prefixa com userId + um id aleatório
+    // pra cada upload ter um caminho próprio, sem colisão possível.
+    const finalPath = `${userId}/${crypto.randomUUID()}-${fileName}`;
     const finalUpload = await storage.upload(finalPath, finalBlob, {
       cacheControl: "3600",
-      upsert: true,
+      upsert: false,
       contentType: file.type,
     });
     if (finalUpload.error) {
       console.error("Final upload error", finalUpload.error);
       return new Response(JSON.stringify({ error: finalUpload.error.message }), { status: 500 });
     }
-    // Insert metadata into `books` table (assume authenticated user via JWT in Authorization header)
-    const authHeader = req.headers.get("Authorization") || "";
-    const token = authHeader.replace("Bearer ", "");
-    const { data: userData } = await supabase.auth.getUser(token);
-    const userId = userData?.user?.id;
     await supabase.from("books").insert({
       title: fileName,
       mime_type: file.type,

@@ -1,4 +1,5 @@
 import { encodeBase64 } from "https://deno.land/std@0.224.0/encoding/base64.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { edgeTtsSynthesize } from "./edge_tts.ts";
 
 const corsHeaders = {
@@ -10,6 +11,9 @@ const corsHeaders = {
 const AZURE_SPEECH_REGION = "eastus2";
 const AZURE_AI_AGENT_URL = "https://geniantis-org.services.ai.azure.com/api/projects/proj-geniantis-agente/openai/v1/responses";
 
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+
 Deno.serve(async (req) => {
   // Trata requisições OPTIONS (CORS)
   if (req.method === 'OPTIONS') {
@@ -17,6 +21,28 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Sem isso, essa function era um proxy aberto pro serviço pago da Azure
+    // (chat/STT/TTS) — qualquer um que descobrisse a URL conseguia gerar
+    // custo à vontade, sem estar logado no app.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    if (!token) {
+      return new Response(JSON.stringify({ error: "Não autenticado." }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401,
+      });
+    }
+    const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    const { data: callerData, error: callerError } = await callerClient.auth.getUser();
+    if (callerError || !callerData?.user) {
+      return new Response(JSON.stringify({ error: "Sessão inválida." }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401,
+      });
+    }
+
     // A chave só é exigida nos fluxos que falam com a Azure (chat com IA e STT).
     // O TTS das atividades (ttsText) funciona sem chave, via edge-tts gratuito.
     const apiKey = Deno.env.get("azure_ai_key");
