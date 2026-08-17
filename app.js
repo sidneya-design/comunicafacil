@@ -1187,7 +1187,7 @@ async function renderUsageDashboard(idPrefix = 'usage', allowedUserIds = null) {
     const filteredSessions = selectedUserId() ? aggregate.sessions.filter(s => s.userId === selectedUserId()) : aggregate.sessions;
 
     const activeSessions = filteredSessions.filter(session => session.status === 'active')
-        .sort((a, b) => new Date(b.lastSeenAt || b.startAt) - new Date(a.lastSeenAt || a.startAt))
+        .sort((a, b) => new Date(b.startAt) - new Date(a.startAt))
         .slice(0, 5)
         .map(session => ({
             label: session.email,
