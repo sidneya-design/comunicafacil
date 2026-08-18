@@ -131,8 +131,18 @@ async function uploadToSupabaseStorage(bucket, path, file) {
     const fileExt = (upload.name || file.name).split('.').pop();
     const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
     const filePath = `${path}/${fileName}`;
-    const { data, error } = await supabaseClient.storage.from(bucket).upload(filePath, upload);
-    if (error) throw error;
+    try {
+        const { error } = await supabaseClient.storage.from(bucket).upload(filePath, upload);
+        if (error) throw error;
+    } catch (e) {
+        // "Failed to fetch" costuma ser uma falha transitória de rede (não algo
+        // que vá se repetir); uma segunda tentativa depois de uma pausa curta
+        // evita que ela derrube o save inteiro.
+        console.warn('Upload falhou, tentando de novo:', e);
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        const { error: retryError } = await supabaseClient.storage.from(bucket).upload(filePath, upload);
+        if (retryError) throw retryError;
+    }
     const { data: publicUrlData } = supabaseClient.storage.from(bucket).getPublicUrl(filePath);
     return publicUrlData?.publicUrl || null;
 }
@@ -2177,14 +2187,18 @@ async function saveExercisePlaylistToDB(title, itemsArray, doctorUserId = null) 
     const shouldTrySupabase = supabaseClient && (!currentEditingExerciseId || currentEditingExerciseFromSupabase);
     if (shouldTrySupabase) {
         try {
-            // Fazer upload de todas as imagens para o Storage (em paralelo)
-            const uploadedItems = await Promise.all(itemsArray.map(async (item) => {
+            // Upload sequencial (não Promise.all): vários uploads simultâneos pesam
+            // bastante em conexões mais lentas/instáveis, e um deles falhando
+            // ("Failed to fetch") derrubava o Promise.all inteiro mesmo que os
+            // outros tivessem dado certo.
+            const uploadedItems = [];
+            for (const item of itemsArray) {
                 let image_url = item.image_url || null;
                 if (item.imageBlob instanceof Blob) {
                     image_url = await uploadToSupabaseStorage('media_uploads', 'images', item.imageBlob);
                 }
-                return { ...item, image_url };
-            }));
+                uploadedItems.push({ ...item, image_url });
+            }
 
             let targetExerciseId = currentEditingExerciseId;
             if (!targetExerciseId && currentEditingExerciseForkSource) {
@@ -3061,17 +3075,33 @@ function setupModals() {
         const d2File = document.getElementById('naming-set-image-d2').files[0] || null;
         if (!word) return;
 
-        if (editingNamingSetId !== null) {
-            await updateNamingSet(editingNamingSetId, word, correctFile, d1File, d2File);
-        } else if (isQuickCreate) {
-            if (!correctFile || !d1File || !d2File) { alert('Envie as três imagens (correta + 2 distrações).'); return; }
-            await addNamingSet(word, correctFile, d1File, d2File);
-        } else {
-            if (!correctFile || !d1File || !d2File) { alert('Envie as três imagens (correta + 2 distrações).'); return; }
-            namingDraftSets.push({ tempId: makeNamingSetId(), word, correctFile, d1File, d2File });
-            renderNamingManageGrid();
+        // Upload de 3 imagens pode levar bastante tempo numa conexão mais lenta;
+        // sem essa indicação a tela parecia travada e o médico fechava o modal
+        // antes de terminar (o save continuava em segundo plano de qualquer jeito).
+        const saveBtn = document.getElementById('btn-save-naming-set');
+        const saveBtnOriginalText = saveBtn.textContent;
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Enviando imagens...';
+
+        try {
+            if (editingNamingSetId !== null) {
+                await updateNamingSet(editingNamingSetId, word, correctFile, d1File, d2File);
+            } else if (isQuickCreate) {
+                if (!correctFile || !d1File || !d2File) { alert('Envie as três imagens (correta + 2 distrações).'); return; }
+                await addNamingSet(word, correctFile, d1File, d2File);
+            } else {
+                if (!correctFile || !d1File || !d2File) { alert('Envie as três imagens (correta + 2 distrações).'); return; }
+                namingDraftSets.push({ tempId: makeNamingSetId(), word, correctFile, d1File, d2File });
+                renderNamingManageGrid();
+            }
+            closeNamingSetModal();
+        } catch (err) {
+            console.error('Erro ao salvar palavra:', err);
+            alert('Não foi possível salvar a palavra: ' + (err?.message || err));
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.textContent = saveBtnOriginalText;
         }
-        closeNamingSetModal();
     });
 
     document.getElementById('btn-afasia-new-game').addEventListener('click', async () => {
@@ -8502,16 +8532,18 @@ async function addNamingSet(word, correctFile, distractorFile1, distractorFile2)
     const pairId = makeNamingSetId();
 
     if (container.fromSupabase) {
-        const [correctUrl, d1Url, d2Url] = await Promise.all([
-            uploadToSupabaseStorage('media_uploads', 'images', correctFile),
-            uploadToSupabaseStorage('media_uploads', 'images', distractorFile1),
-            uploadToSupabaseStorage('media_uploads', 'images', distractorFile2)
-        ]);
-        await supabaseClient.from('exercise_items').insert([
+        // Sequencial em vez de Promise.all: 3 uploads simultâneos pesam bastante
+        // em conexões mais lentas/instáveis e um deles falhando ("Failed to
+        // fetch") derrubava o Promise.all inteiro.
+        const correctUrl = await uploadToSupabaseStorage('media_uploads', 'images', correctFile);
+        const d1Url = await uploadToSupabaseStorage('media_uploads', 'images', distractorFile1);
+        const d2Url = await uploadToSupabaseStorage('media_uploads', 'images', distractorFile2);
+        const { error } = await supabaseClient.from('exercise_items').insert([
             { exercise_id: container.id, word, pair_id: pairId, role: 'correct', image_url: correctUrl, link: '' },
             { exercise_id: container.id, word, pair_id: pairId, role: 'distractor', image_url: d1Url, link: '' },
             { exercise_id: container.id, word, pair_id: pairId, role: 'distractor', image_url: d2Url, link: '' }
         ]);
+        if (error) throw error;
     } else {
         container.items = [
             ...(container.items || []),
@@ -8537,7 +8569,8 @@ async function updateNamingSet(pairId, word, correctFile, distractorFile1, distr
         for (const [item, file] of updates) {
             const update = { word };
             if (file) update.image_url = await uploadToSupabaseStorage('media_uploads', 'images', file);
-            await supabaseClient.from('exercise_items').update(update).eq('id', item.id);
+            const { error } = await supabaseClient.from('exercise_items').update(update).eq('id', item.id);
+            if (error) throw error;
         }
     } else {
         const setItems = (container.items || []).filter(it => it.pairId === pairId);
