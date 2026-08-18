@@ -2192,35 +2192,39 @@ async function saveExercisePlaylistToDB(title, itemsArray, doctorUserId = null) 
             }
 
             if (targetExerciseId) {
-                await supabaseClient.from('exercises').update({ title }).eq('id', targetExerciseId);
-                await supabaseClient.from('exercise_items').delete().eq('exercise_id', targetExerciseId);
+                const { error: updateErr } = await supabaseClient.from('exercises').update({ title }).eq('id', targetExerciseId);
+                if (updateErr) throw updateErr;
+                const { error: deleteErr } = await supabaseClient.from('exercise_items').delete().eq('exercise_id', targetExerciseId);
+                if (deleteErr) throw deleteErr;
                 const dbItems = uploadedItems.map(item => ({
                     exercise_id: targetExerciseId,
                     word: item.word, color: item.color, size: item.size, uppercase: item.uppercase,
                     bold: item.bold, link: item.videoLink || item.link || '', image_url: item.image_url
                 }));
-                await supabaseClient.from('exercise_items').insert(dbItems);
+                const { error: itemsErr } = await supabaseClient.from('exercise_items').insert(dbItems);
+                if (itemsErr) throw itemsErr;
             } else {
                 // Exercício de médico entra direto no banco dele (ninguém mais vê até
                 // ele liberar por paciente em "Meus Pacientes" — patient_exercise_flags).
                 const newExercisePayload = doctorUserId
                     ? { title, visible: true, doctor_user_id: doctorUserId }
                     : { title, visible: false };
-                const { data: exData } = await supabaseClient.from('exercises').insert([newExercisePayload]).select().single();
-                if (exData) {
-                    const dbItems = uploadedItems.map(item => ({
-                        exercise_id: exData.id,
-                        word: item.word, color: item.color, size: item.size, uppercase: item.uppercase,
-                        bold: item.bold, link: item.videoLink || item.link || '', image_url: item.image_url
-                    }));
-                    await supabaseClient.from('exercise_items').insert(dbItems);
-                }
+                const { data: exData, error: insertErr } = await supabaseClient.from('exercises').insert([newExercisePayload]).select().single();
+                if (insertErr) throw insertErr;
+                const dbItems = uploadedItems.map(item => ({
+                    exercise_id: exData.id,
+                    word: item.word, color: item.color, size: item.size, uppercase: item.uppercase,
+                    bold: item.bold, link: item.videoLink || item.link || '', image_url: item.image_url
+                }));
+                const { error: itemsErr } = await supabaseClient.from('exercise_items').insert(dbItems);
+                if (itemsErr) throw itemsErr;
             }
             currentEditingExerciseForkSource = null;
             loadExerciseCards();
             return;
         } catch (e) {
             console.warn('Erro ao salvar exercise no Supabase, caindo para local:', e);
+            alert('Não foi possível salvar o exercício no servidor (ficou salvo só neste dispositivo). Detalhe: ' + (e?.message || e));
         }
     }
 
