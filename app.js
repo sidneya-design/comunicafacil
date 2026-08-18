@@ -3504,6 +3504,18 @@ function renderCurrentPlaylistItem() {
         const nextItem = currentPlaylistItems[currentPlaylistIndex + 1];
         if (nextItem && !getEmbedUrl(nextItem.videoLink)) prefetchTts(nextItem.word);
 
+        // Pré-carrega a imagem dos slides vizinhos: sem isso, cada avanço só
+        // começa a buscar a imagem depois do clique, e em decks grandes
+        // (ex: abecedário com dezenas de slides) a troca fica visivelmente
+        // lenta. O navegador cacheia a imagem assim que o Image() carrega.
+        const prevItem = currentPlaylistItems[currentPlaylistIndex - 1];
+        [nextItem, prevItem].forEach(neighbor => {
+            if (neighbor && neighbor.image_url) {
+                const preloader = new Image();
+                preloader.src = neighbor.image_url;
+            }
+        });
+
         document.getElementById('btn-prev-presentation').disabled = (currentPlaylistIndex === 0);
         document.getElementById('btn-next-presentation').disabled = (currentPlaylistIndex === currentPlaylistItems.length - 1);
     } catch (e) {
