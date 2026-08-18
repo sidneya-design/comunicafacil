@@ -3510,9 +3510,23 @@ function renderCurrentPlaylistItem() {
         // lenta. O navegador cacheia a imagem assim que o Image() carrega.
         const prevItem = currentPlaylistItems[currentPlaylistIndex - 1];
         [nextItem, prevItem].forEach(neighbor => {
-            if (neighbor && neighbor.image_url) {
+            if (!neighbor) return;
+            if (neighbor.image_url) {
                 const preloader = new Image();
                 preloader.src = neighbor.image_url;
+            } else if (!(neighbor.imageBlob instanceof Blob)) {
+                // Sem imagem própria: o slide busca um pictograma automático no
+                // ARASAAC (serviço externo) na hora de exibir — chamando aqui
+                // adiantado, a busca já cai no arasaacCache, e ainda
+                // pré-carrega a imagem do pictograma em si (senão só a busca
+                // ficaria rápida, o download da imagem continuaria acontecendo
+                // só no clique).
+                fetchArasaacImage(neighbor.imgQuery || neighbor.word).then(url => {
+                    if (url) {
+                        const preloader = new Image();
+                        preloader.src = url;
+                    }
+                });
             }
         });
 
