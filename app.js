@@ -2502,7 +2502,7 @@ async function loadExerciseCards() {
         try {
             const { data: exData, error: exErr } = await supabaseClient.from('exercises').select('*');
             if (!exErr) {
-                const { data: itemData } = await supabaseClient.from('exercise_items').select('*');
+                const { data: itemData } = await supabaseClient.from('exercise_items').select('*').order('id', { ascending: true });
                 currentExercises = exData.map(ex => {
                     const inferredSeedKey = ex.seed_key || inferExerciseSeedKeyFromTitle(ex.title);
                     const inferredVisible = ex.visible !== undefined
