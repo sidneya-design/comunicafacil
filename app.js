@@ -2212,7 +2212,7 @@ async function saveExercisePlaylistToDB(title, itemsArray, doctorUserId = null) 
                 if (deleteErr) throw deleteErr;
                 const dbItems = uploadedItems.map(item => ({
                     exercise_id: targetExerciseId,
-                    word: item.word, color: item.color, size: item.size, uppercase: item.uppercase,
+                    word: item.word, syllables: item.syllables || null, color: item.color, size: item.size, uppercase: item.uppercase,
                     bold: item.bold, link: item.videoLink || item.link || '', image_url: item.image_url
                 }));
                 const { error: itemsErr } = await supabaseClient.from('exercise_items').insert(dbItems);
@@ -2227,7 +2227,7 @@ async function saveExercisePlaylistToDB(title, itemsArray, doctorUserId = null) 
                 if (insertErr) throw insertErr;
                 const dbItems = uploadedItems.map(item => ({
                     exercise_id: exData.id,
-                    word: item.word, color: item.color, size: item.size, uppercase: item.uppercase,
+                    word: item.word, syllables: item.syllables || null, color: item.color, size: item.size, uppercase: item.uppercase,
                     bold: item.bold, link: item.videoLink || item.link || '', image_url: item.image_url
                 }));
                 const { error: itemsErr } = await supabaseClient.from('exercise_items').insert(dbItems);
@@ -2252,6 +2252,61 @@ async function saveExercisePlaylistToDB(title, itemsArray, doctorUserId = null) 
     } else {
         db.transaction(['exercises'], 'readwrite').objectStore('exercises')
             .add({ title, items: itemsArray, visible: false })
+            .onsuccess = () => loadExerciseCards();
+    }
+}
+
+// Exercício de Sílabas: salvar é bem mais simples que o de Slides (sem
+// upload de imagem, sem fork) — função própria, com seu próprio estado de
+// edição (currentEditingSyllablesExerciseId etc.), pra não compartilhar
+// estado com o editor de Slides.
+let currentEditingSyllablesExerciseId = null;
+let currentEditingSyllablesExerciseFromSupabase = false;
+
+async function saveSyllablesExerciseToDB(title, size, color, font, itemsArray, doctorUserId = null) {
+    const shouldTrySupabase = supabaseClient && (!currentEditingSyllablesExerciseId || currentEditingSyllablesExerciseFromSupabase);
+    if (shouldTrySupabase) {
+        try {
+            const deckFields = { title, syllables_size: size || null, syllables_color: color || null, syllables_font: font || null };
+            let targetExerciseId = currentEditingSyllablesExerciseId;
+
+            if (targetExerciseId) {
+                const { error: updateErr } = await supabaseClient.from('exercises').update(deckFields).eq('id', targetExerciseId);
+                if (updateErr) throw updateErr;
+                const { error: deleteErr } = await supabaseClient.from('exercise_items').delete().eq('exercise_id', targetExerciseId);
+                if (deleteErr) throw deleteErr;
+            } else {
+                const newExercisePayload = doctorUserId
+                    ? { ...deckFields, visible: true, game_kind: 'syllables', doctor_user_id: doctorUserId }
+                    : { ...deckFields, visible: false, game_kind: 'syllables' };
+                const { data: exData, error: insertErr } = await supabaseClient.from('exercises').insert([newExercisePayload]).select().single();
+                if (insertErr) throw insertErr;
+                targetExerciseId = exData.id;
+            }
+
+            const dbItems = itemsArray.map(item => ({ exercise_id: targetExerciseId, word: item.word, syllables: item.syllables, link: '' }));
+            const { error: itemsErr } = await supabaseClient.from('exercise_items').insert(dbItems);
+            if (itemsErr) throw itemsErr;
+
+            loadExerciseCards();
+            return;
+        } catch (e) {
+            console.warn('Erro ao salvar exercício de sílabas no Supabase, caindo para local:', e);
+            alert('Não foi possível salvar o exercício no servidor (ficou salvo só neste dispositivo). Detalhe: ' + (e?.message || e));
+        }
+    }
+
+    const localPayload = { title, items: itemsArray, visible: false, gameKind: 'syllables', syllablesSize: size || null, syllablesColor: color || null, syllablesFont: font || null };
+    if (currentEditingSyllablesExerciseId) {
+        db.transaction(['exercises'], 'readonly').objectStore('exercises').get(currentEditingSyllablesExerciseId).onsuccess = (e) => {
+            const existing = e.target.result || {};
+            db.transaction(['exercises'], 'readwrite').objectStore('exercises')
+                .put({ ...existing, ...localPayload, id: currentEditingSyllablesExerciseId })
+                .onsuccess = () => loadExerciseCards();
+        };
+    } else {
+        db.transaction(['exercises'], 'readwrite').objectStore('exercises')
+            .add(localPayload)
             .onsuccess = () => loadExerciseCards();
     }
 }
@@ -2454,7 +2509,7 @@ async function loadExerciseCards() {
                         ? ex.visible !== false
                         : inferredSeedKey ? false : true;
                     const items = (itemData || []).filter(item => item.exercise_id === ex.id).map(item => ({
-                        word: item.word, color: item.color, size: item.size, uppercase: item.uppercase,
+                        word: item.word, syllables: item.syllables, color: item.color, size: item.size, uppercase: item.uppercase,
                         bold: item.bold, videoLink: item.link, image_url: item.image_url,
                         pairId: item.pair_id, role: item.role
                     }));
@@ -2468,7 +2523,10 @@ async function loadExerciseCards() {
                         patientId: ex.patient_id || null,
                         doctorUserId: ex.doctor_user_id || null,
                         forkedFrom: ex.forked_from || null,
-                        gameKind: ex.game_kind || null
+                        gameKind: ex.game_kind || null,
+                        syllablesSize: ex.syllables_size || null,
+                        syllablesColor: ex.syllables_color || null,
+                        syllablesFont: ex.syllables_font || null
                     };
                 });
             }
@@ -2546,6 +2604,7 @@ function renderExerciseCards(exercisesArray) {
     const openExerciseEditor = (ex) => {
         if (ex.gameKind === 'naming') openNamingDeckManage(ex);
         else if (ex.gameKind === 'afasia') openAfasiaDeckManage(ex);
+        else if (ex.gameKind === 'syllables') openEditSyllablesExercise(ex);
         else openEditExercise(ex);
     };
     const openExerciseCard = (ex) => {
@@ -2576,6 +2635,18 @@ function renderExerciseCards(exercisesArray) {
             }
         } else {
             imgContainer.innerHTML = '<i class="fas fa-folder word-btn-icon" aria-hidden="true"></i>';
+        }
+
+        // Selo de vídeo: exercício de slides pode ter link de vídeo em
+        // qualquer um dos itens, não só no primeiro — sem esse selo não dava
+        // pra saber, olhando a grade, quais decks tinham vídeo escondido.
+        const hasVideo = (ex.items || []).some(item => !!(item.videoLink || item.link));
+        if (hasVideo) {
+            const videoBadge = document.createElement('span');
+            videoBadge.className = 'video-badge';
+            videoBadge.setAttribute('aria-label', 'Contém vídeo');
+            videoBadge.innerHTML = '<i class="fas fa-video" aria-hidden="true"></i>';
+            imgContainer.appendChild(videoBadge);
         }
 
         const textEl = document.createElement('div');
@@ -2760,6 +2831,7 @@ function getEmbedUrl(url) {
 let currentAudio = null;
 let currentPlaylistItems = [];
 let currentPlaylistIndex = 0;
+let currentPlaylistDeckStyle = null;
 
 function createExerciseBlockHtml(blockId, isEdit = false, hasOldImage = false) {
     return `
@@ -2833,6 +2905,57 @@ function updateBlockTitles() {
     });
 }
 
+// Exercício de Sílabas: bloco por palavra bem mais simples que o de Slides
+// (só palavra + sílabas) — funções separadas de propósito, pra não arriscar
+// mexer no fluxo de Slides que já funciona.
+let syllablesBlockCounter = 0;
+
+function createSyllablesItemBlockHtml(blockId, isEdit = false) {
+    return `
+        <div class="syllables-item-block" data-block-id="${blockId}">
+            <div class="block-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="margin:0;" class="block-title">Palavra</h4>
+                ${isEdit ? '<button type="button" class="btn-remove-block" style="background:#ff4d4f;color:white;border:none;padding:5px 10px;border-radius:8px;cursor:pointer;"><i class="fas fa-trash" aria-hidden="true"></i> Remover</button>' : ''}
+            </div>
+            <div class="form-group">
+                <label>Palavra Escrita</label>
+                <input type="text" class="syll-item-word" placeholder="Ex: casa" required>
+            </div>
+            <div class="form-group">
+                <label>Sílabas</label>
+                <input type="text" class="syll-item-syllables" placeholder="Ex: ca-sa" required>
+            </div>
+        </div>
+    `;
+}
+
+function addSyllablesItemBlock(isEdit = false) {
+    const container = document.getElementById('syllables-items-container');
+    const blockId = syllablesBlockCounter++;
+
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = createSyllablesItemBlockHtml(blockId, isEdit);
+    const blockEl = wrapper.firstElementChild;
+
+    const removeBtn = blockEl.querySelector('.btn-remove-block');
+    if (removeBtn) {
+        removeBtn.addEventListener('click', () => {
+            container.removeChild(blockEl);
+            updateSyllablesBlockTitles();
+        });
+    }
+
+    container.appendChild(blockEl);
+    updateSyllablesBlockTitles();
+}
+
+function updateSyllablesBlockTitles() {
+    const blocks = document.querySelectorAll('.syllables-item-block');
+    blocks.forEach((b, index) => {
+        b.querySelector('.block-title').textContent = `Palavra ${index + 1}`;
+    });
+}
+
 function openEditExercise(ex) {
     // Médico editando um exercício global do admin (Fase 23): se ele já tem
     // uma cópia própria (fork) desse exercício, edita a cópia — não o
@@ -2885,6 +3008,35 @@ function openEditExercise(ex) {
         if (item.imageBlob) {
             currentEditingBlobs[index] = item.imageBlob;
         }
+    });
+}
+
+function openEditSyllablesExercise(ex) {
+    currentEditingSyllablesExerciseId = ex.id;
+    currentEditingSyllablesExerciseFromSupabase = !!ex.fromSupabase;
+    syllablesBlockCounter = 0;
+
+    document.getElementById('syllables-exercise-modal').style.display = 'flex';
+    document.getElementById('syllables-exercise-modal').querySelector('h2').textContent = "Editar Exercício (Sílabas)";
+
+    const parts = (ex.title || '').split('|');
+    const displayTitle = parts[0];
+    const colorClass = parts[1] || 'pink';
+
+    document.getElementById('syllables-exercise-title').value = displayTitle;
+    document.getElementById('syllables-exercise-color').value = colorClass;
+    document.getElementById('syllables-text-size').value = ex.syllablesSize || '100';
+    document.getElementById('syllables-text-color').value = ex.syllablesColor || '#1f1f1f';
+    document.getElementById('syllables-font').value = ex.syllablesFont || "'Outfit', sans-serif";
+
+    const container = document.getElementById('syllables-items-container');
+    container.innerHTML = '';
+
+    ex.items.forEach((item, index) => {
+        addSyllablesItemBlock(true);
+        const blockEl = container.querySelector(`[data-block-id="${index}"]`);
+        blockEl.querySelector('.syll-item-word').value = item.word || '';
+        blockEl.querySelector('.syll-item-syllables').value = item.syllables || '';
     });
 }
 
@@ -3391,6 +3543,59 @@ function setupModals() {
         closeExerciseUpload();
     });
 
+    const openSyllablesExerciseCreator = () => {
+        closeExerciseType();
+        currentEditingSyllablesExerciseId = null;
+        currentEditingSyllablesExerciseFromSupabase = false;
+        syllablesBlockCounter = 0;
+
+        document.getElementById('syllables-exercise-modal').style.display = 'flex';
+        document.getElementById('syllables-exercise-modal').querySelector('h2').textContent = "Novo Exercício (Sílabas)";
+        document.getElementById('syllables-exercise-form').reset();
+
+        const container = document.getElementById('syllables-items-container');
+        container.innerHTML = '';
+        addSyllablesItemBlock();
+    };
+    document.getElementById('btn-create-syllables-exercise').addEventListener('click', openSyllablesExerciseCreator);
+
+    const closeSyllablesExerciseUpload = () => { document.getElementById('syllables-exercise-modal').style.display = 'none'; document.getElementById('syllables-exercise-form').reset(); };
+    document.getElementById('btn-close-syllables-exercise').addEventListener('click', closeSyllablesExerciseUpload);
+    document.getElementById('btn-cancel-syllables-exercise').addEventListener('click', closeSyllablesExerciseUpload);
+
+    document.getElementById('btn-add-syllables-item').addEventListener('click', () => {
+        addSyllablesItemBlock(true);
+    });
+
+    document.getElementById('syllables-exercise-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (!isAdmin && !isDoctor) {
+            alert('Apenas administradores ou médicos podem salvar exercícios.');
+            return;
+        }
+        const titleVal = document.getElementById('syllables-exercise-title').value.trim();
+        const colorVal = document.getElementById('syllables-exercise-color').value;
+        const finalTitle = `${titleVal}|${colorVal}`;
+        const sizeVal = document.getElementById('syllables-text-size').value;
+        const colorTextVal = document.getElementById('syllables-text-color').value;
+        const fontVal = document.getElementById('syllables-font').value;
+
+        const blocks = document.querySelectorAll('.syllables-item-block');
+        if (blocks.length === 0) return alert("Adicione pelo menos uma palavra.");
+
+        const itemsArray = [];
+        blocks.forEach(block => {
+            itemsArray.push({
+                word: block.querySelector('.syll-item-word').value,
+                syllables: block.querySelector('.syll-item-syllables').value
+            });
+        });
+
+        const targetDoctorUserId = isDoctor ? currentUserId : null;
+        saveSyllablesExerciseToDB(finalTitle, sizeVal, colorTextVal, fontVal, itemsArray, targetDoctorUserId);
+        closeSyllablesExerciseUpload();
+    });
+
     document.getElementById('btn-close-video').addEventListener('click', () => {
         document.getElementById('video-modal').style.display = 'none';
         document.getElementById('video-player').pause();
@@ -3404,6 +3609,16 @@ function setupModals() {
 
     document.getElementById('btn-prev-presentation').addEventListener('click', () => navigatePlaylist(-1));
     document.getElementById('btn-next-presentation').addEventListener('click', () => navigatePlaylist(1));
+    document.addEventListener('keydown', (e) => {
+        if (document.getElementById('presentation-modal').style.display !== 'flex') return;
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (currentPlaylistIndex > 0) navigatePlaylist(-1);
+        } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (currentPlaylistIndex < currentPlaylistItems.length - 1) navigatePlaylist(1);
+        }
+    });
     document.getElementById('btn-speak-presentation').addEventListener('click', () => {
         const item = currentPlaylistItems[currentPlaylistIndex];
         if (item) {
@@ -3453,6 +3668,9 @@ function openPresentationPlaylist(ex) {
 
     currentPlaylistItems = ex.items;
     currentPlaylistIndex = 0;
+    currentPlaylistDeckStyle = ex.gameKind === 'syllables'
+        ? { size: ex.syllablesSize, color: ex.syllablesColor, font: ex.syllablesFont }
+        : null;
 
     document.getElementById('presentation-modal').style.display = 'flex';
     const activityLabel = (ex.title || '').split('|')[0] || ex.title || 'Exercício';
@@ -3478,15 +3696,47 @@ function renderCurrentPlaylistItem() {
         wordEl.style.fontWeight = (item.isBold !== undefined ? item.isBold : true) ? '800' : '400';
 
         const imgEl = document.getElementById('presentation-image');
-        if (item.imageBlob && item.imageBlob instanceof Blob) {
-            imgEl.src = URL.createObjectURL(item.imageBlob);
-        } else if (item.image_url) {
-            imgEl.src = item.image_url;
-        } else {
+        const syllablesEl = document.getElementById('presentation-syllables');
+        if (item.syllables) {
+            imgEl.style.display = 'none';
             imgEl.src = '';
-            fetchArasaacImage(item.imgQuery || item.word).then(url => {
-                if (url && currentPlaylistItems[currentPlaylistIndex] === item) imgEl.src = url;
-            });
+            syllablesEl.style.display = 'inline-block';
+            // Espaço de largura zero depois do ponto: sem ele, o navegador não tem
+            // onde quebrar linha (não há espaço nenhum na string) e parte no meio
+            // de uma sílaba de qualquer jeito — com ele, só quebra entre sílabas.
+            syllablesEl.textContent = item.syllables.replace(/[-.]/g, '.​');
+            if (currentPlaylistDeckStyle) {
+                const { size, color, font } = currentPlaylistDeckStyle;
+                [wordEl, syllablesEl].forEach(el => {
+                    el.style.fontFamily = font || "'Outfit', sans-serif";
+                    el.style.color = color || '#1f1f1f';
+                    el.style.fontSize = (size || 100) + 'px';
+                });
+            }
+            // Sem quebra de linha nem scroll: palavra tem que caber inteira numa
+            // linha só, então em vez disso a fonte encolhe até caber.
+            const syllablesContainer = syllablesEl.parentElement;
+            let fitAttempts = 0;
+            while (fitAttempts < 40 && syllablesEl.scrollWidth > syllablesContainer.clientWidth * 0.92) {
+                const currentSize = parseFloat(getComputedStyle(syllablesEl).fontSize);
+                const nextSize = currentSize - 2;
+                if (nextSize < 16) break;
+                syllablesEl.style.fontSize = nextSize + 'px';
+                fitAttempts++;
+            }
+        } else {
+            imgEl.style.display = '';
+            syllablesEl.style.display = 'none';
+            if (item.imageBlob && item.imageBlob instanceof Blob) {
+                imgEl.src = URL.createObjectURL(item.imageBlob);
+            } else if (item.image_url) {
+                imgEl.src = item.image_url;
+            } else {
+                imgEl.src = '';
+                fetchArasaacImage(item.imgQuery || item.word).then(url => {
+                    if (url && currentPlaylistItems[currentPlaylistIndex] === item) imgEl.src = url;
+                });
+            }
         }
 
         const embedUrl = getEmbedUrl(item.videoLink);
@@ -3510,7 +3760,7 @@ function renderCurrentPlaylistItem() {
         // lenta. O navegador cacheia a imagem assim que o Image() carrega.
         const prevItem = currentPlaylistItems[currentPlaylistIndex - 1];
         [nextItem, prevItem].forEach(neighbor => {
-            if (!neighbor) return;
+            if (!neighbor || neighbor.syllables) return;
             if (neighbor.image_url) {
                 const preloader = new Image();
                 preloader.src = neighbor.image_url;
