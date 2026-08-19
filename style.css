@@ -943,11 +943,32 @@ body {
     border-left: 1px solid rgba(0, 120, 255, 0.15);
     padding-left: 40px;
 }
+.presentation-image-wrap {
+    position: relative;
+    display: flex; justify-content: center; align-items: center;
+    max-width: 100%; max-height: 100%;
+}
 .presentation-image {
     /* max-height em vez de 100%: a foto enchia a coluna inteira (altura da tela)
        e dominava o slide; agora fica num tamanho proporcional ao resto. */
     width: auto; height: auto; max-width: 100%; max-height: 60vh;
     object-fit: contain; border-radius: 20px; display: block;
+}
+.presentation-image-caption {
+    display: none;
+    position: absolute;
+    left: 50%; bottom: 14px;
+    transform: translateX(-50%);
+    max-width: 92%;
+    box-sizing: border-box;
+    background: rgba(0,0,0,0.65);
+    color: #fff;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 800;
+    font-size: clamp(1rem, 2.6vw, 1.6rem);
+    padding: 6px 16px;
+    border-radius: 999px;
+    white-space: nowrap;
 }
 .presentation-syllables {
     display: none;

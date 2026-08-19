@@ -2844,6 +2844,10 @@ function createExerciseBlockHtml(blockId, isEdit = false, hasOldImage = false) {
                 <label>Palavra Escrita</label>
                 <input type="text" class="item-word" placeholder="Ex: PÓ" required>
             </div>
+            <div class="form-group">
+                <label>Sílabas (opcional) — ex: ca-sa. Aparece como legenda sobre a imagem.</label>
+                <input type="text" class="item-syllables" placeholder="Ex: ca-sa">
+            </div>
             <div style="display: flex; gap: 10px; margin-bottom: 15px;">
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
                     <label>Cor do Texto</label>
@@ -2996,6 +3000,7 @@ function openEditExercise(ex) {
 
         const blockEl = container.querySelector(`[data-block-id="${index}"]`);
         blockEl.querySelector('.item-word').value = item.word || '';
+        blockEl.querySelector('.item-syllables').value = item.syllables || '';
         blockEl.querySelector('.item-link').value = item.videoLink || item.link || '';
         blockEl.querySelector('.item-color').value = item.color || item.textColor || '#333333';
         blockEl.querySelector('.item-size').value = item.size || item.textSize || '100';
@@ -3528,6 +3533,7 @@ function setupModals() {
 
             itemsArray.push({
                 word: block.querySelector('.item-word').value,
+                syllables: block.querySelector('.item-syllables').value.trim(),
                 color: block.querySelector('.item-color').value,
                 size: block.querySelector('.item-size').value,
                 uppercase: block.querySelector('.item-uppercase').checked,
@@ -3683,6 +3689,21 @@ function openPresentationPlaylist(ex) {
     renderCurrentPlaylistItem();
 }
 
+// Encolhe a fonte de `el` até caber numa linha só dentro de `container`
+// (sem quebrar linha, sem scroll) — usado tanto pelas sílabas do Exercício
+// de Sílabas dedicado quanto pela legenda de sílabas sobre a foto no
+// Exercício com Slides.
+function fitTextToWidth(el, container, minSize = 16) {
+    let attempts = 0;
+    while (attempts < 40 && el.scrollWidth > container.clientWidth * 0.92) {
+        const currentSize = parseFloat(getComputedStyle(el).fontSize);
+        const nextSize = currentSize - 2;
+        if (nextSize < minSize) break;
+        el.style.fontSize = nextSize + 'px';
+        attempts++;
+    }
+}
+
 function renderCurrentPlaylistItem() {
     try {
         const item = currentPlaylistItems[currentPlaylistIndex];
@@ -3697,36 +3718,31 @@ function renderCurrentPlaylistItem() {
 
         const imgEl = document.getElementById('presentation-image');
         const syllablesEl = document.getElementById('presentation-syllables');
-        if (item.syllables) {
+        const captionEl = document.getElementById('presentation-image-caption');
+        // Espaço de largura zero depois do ponto: sem ele, o navegador não tem
+        // onde quebrar linha (não há espaço nenhum na string) e parte no meio
+        // de uma sílaba de qualquer jeito — com ele, só quebra entre sílabas
+        // (mesmo com white-space:nowrap, esse texto pode entrar num elemento
+        // sem esse cuidado no futuro, então normaliza sempre).
+        const displaySyllables = (item.syllables || '').replace(/[-.]/g, '.​');
+
+        if (item.syllables && currentPlaylistDeckStyle) {
+            // Exercício de Sílabas dedicado: sílabas substituem a imagem por completo.
             imgEl.style.display = 'none';
             imgEl.src = '';
+            captionEl.style.display = 'none';
             syllablesEl.style.display = 'inline-block';
-            // Espaço de largura zero depois do ponto: sem ele, o navegador não tem
-            // onde quebrar linha (não há espaço nenhum na string) e parte no meio
-            // de uma sílaba de qualquer jeito — com ele, só quebra entre sílabas.
-            syllablesEl.textContent = item.syllables.replace(/[-.]/g, '.​');
-            if (currentPlaylistDeckStyle) {
-                const { size, color, font } = currentPlaylistDeckStyle;
-                [wordEl, syllablesEl].forEach(el => {
-                    el.style.fontFamily = font || "'Outfit', sans-serif";
-                    el.style.color = color || '#1f1f1f';
-                    el.style.fontSize = (size || 100) + 'px';
-                });
-            }
-            // Sem quebra de linha nem scroll: palavra tem que caber inteira numa
-            // linha só, então em vez disso a fonte encolhe até caber.
-            const syllablesContainer = syllablesEl.parentElement;
-            let fitAttempts = 0;
-            while (fitAttempts < 40 && syllablesEl.scrollWidth > syllablesContainer.clientWidth * 0.92) {
-                const currentSize = parseFloat(getComputedStyle(syllablesEl).fontSize);
-                const nextSize = currentSize - 2;
-                if (nextSize < 16) break;
-                syllablesEl.style.fontSize = nextSize + 'px';
-                fitAttempts++;
-            }
+            syllablesEl.textContent = displaySyllables;
+            const { size, color, font } = currentPlaylistDeckStyle;
+            [wordEl, syllablesEl].forEach(el => {
+                el.style.fontFamily = font || "'Outfit', sans-serif";
+                el.style.color = color || '#1f1f1f';
+                el.style.fontSize = (size || 100) + 'px';
+            });
+            fitTextToWidth(syllablesEl, syllablesEl.parentElement);
         } else {
-            imgEl.style.display = '';
             syllablesEl.style.display = 'none';
+            imgEl.style.display = '';
             if (item.imageBlob && item.imageBlob instanceof Blob) {
                 imgEl.src = URL.createObjectURL(item.imageBlob);
             } else if (item.image_url) {
@@ -3736,6 +3752,21 @@ function renderCurrentPlaylistItem() {
                 fetchArasaacImage(item.imgQuery || item.word).then(url => {
                     if (url && currentPlaylistItems[currentPlaylistIndex] === item) imgEl.src = url;
                 });
+            }
+
+            // Exercício com Slides: sílabas (se preenchidas) viram legenda
+            // sobre a foto, sem substituir a imagem.
+            if (item.syllables) {
+                captionEl.style.display = 'inline-block';
+                captionEl.style.fontSize = ''; // reseta pro tamanho padrão do CSS antes de reencolher
+                captionEl.textContent = displaySyllables;
+                // Mede contra .presentation-right (largura estável), não o wrap da
+                // imagem — o wrap só ganha tamanho real depois que a imagem carrega
+                // (ou o pictograma do ARASAAC chega, que é assíncrono), e medir
+                // contra ele antes disso encolheria a legenda à toa.
+                fitTextToWidth(captionEl, captionEl.closest('.presentation-right'), 12);
+            } else {
+                captionEl.style.display = 'none';
             }
         }
 
@@ -3760,7 +3791,10 @@ function renderCurrentPlaylistItem() {
         // lenta. O navegador cacheia a imagem assim que o Image() carrega.
         const prevItem = currentPlaylistItems[currentPlaylistIndex - 1];
         [nextItem, prevItem].forEach(neighbor => {
-            if (!neighbor || neighbor.syllables) return;
+            // Só pula a imagem quando as sílabas SUBSTITUEM ela de vez (deck do
+            // Exercício de Sílabas dedicado) — no Exercício com Slides, sílabas
+            // são só uma legenda sobre a foto, que continua precisando carregar.
+            if (!neighbor || (neighbor.syllables && currentPlaylistDeckStyle)) return;
             if (neighbor.image_url) {
                 const preloader = new Image();
                 preloader.src = neighbor.image_url;
