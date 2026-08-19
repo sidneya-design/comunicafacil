@@ -3758,7 +3758,9 @@ function renderCurrentPlaylistItem() {
             // sobre a foto, sem substituir a imagem.
             if (item.syllables) {
                 captionEl.style.display = 'inline-block';
-                captionEl.style.fontSize = ''; // reseta pro tamanho padrão do CSS antes de reencolher
+                // Mesmo tamanho da palavra escrita à esquerda — só encolhe
+                // (fitTextToWidth) se não couber na largura disponível.
+                captionEl.style.fontSize = ((item.textSize || 100) * 0.7) + 'px';
                 captionEl.textContent = displaySyllables;
                 // Mede contra .presentation-right (largura estável), não o wrap da
                 // imagem — o wrap só ganha tamanho real depois que a imagem carrega

@@ -944,8 +944,8 @@ body {
     padding-left: 40px;
 }
 .presentation-image-wrap {
-    position: relative;
-    display: flex; justify-content: center; align-items: center;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    gap: 12px;
     max-width: 100%; max-height: 100%;
 }
 .presentation-image {
@@ -956,19 +956,13 @@ body {
 }
 .presentation-image-caption {
     display: none;
-    position: absolute;
-    left: 50%; bottom: 14px;
-    transform: translateX(-50%);
-    max-width: 92%;
+    max-width: 100%;
     box-sizing: border-box;
-    background: rgba(0,0,0,0.65);
-    color: #fff;
+    color: #1f1f1f;
     font-family: 'Outfit', sans-serif;
     font-weight: 800;
-    font-size: clamp(1rem, 2.6vw, 1.6rem);
-    padding: 6px 16px;
-    border-radius: 999px;
     white-space: nowrap;
+    text-align: center;
 }
 .presentation-syllables {
     display: none;
@@ -1020,7 +1014,7 @@ body {
         justify-content: flex-start;
     }
     #presentation-word-text {
-        font-size: 22px !important;
+        font-size: 34px !important;
         margin-bottom: 2px; letter-spacing: -0.5px; text-align: center;
     }
     .presentation-word-row { justify-content: center; gap: 12px; width: 100%; }
@@ -1032,18 +1026,23 @@ body {
         margin-bottom: 0;
     }
     .presentation-right {
-        flex: none; width: 100%;
+        flex: 1; width: 100%; min-height: 0;
         display: flex; justify-content: center;
         margin-top: 5px;
-        height: 22vh;
         border-left: none;
         border-top: 1px solid rgba(0, 120, 255, 0.15);
         padding-left: 0;
         padding-top: 10px;
     }
-    .presentation-image { 
-        max-height: 100%; width: auto; max-width: 85%; 
-        object-fit: contain; 
+    .presentation-image-wrap {
+        height: 100%; gap: 4px;
+    }
+    .presentation-image {
+        max-height: 78%; width: auto; max-width: 85%;
+        object-fit: contain;
+    }
+    .presentation-image-caption {
+        font-size: 24px !important;
     }
     .nav-arrow { 
         position: fixed;
