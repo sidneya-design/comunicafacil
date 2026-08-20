@@ -2484,6 +2484,19 @@ function createNotifyUsersButton(title, category = 'Atividade', patient = null) 
 
 let currentExercises = [];
 let lastMergedExercises = [];
+let exerciseFilterQuery = '';
+let exerciseFilterStatus = 'all';
+const normalizeExerciseSearchText = s => (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+// "Cont\u00e9m em qualquer posi\u00e7\u00e3o" deixava buscas de 1 letra (ex: "s") baterem em
+// quase tudo \u2014 a maioria dos t\u00edtulos tem "s" em algum lugar (S\u00edlaba, Sons,
+// Frase...). Casar por in\u00edcio de cada palavra do t\u00edtulo resolve isso e ainda
+// cobre o caso de digitar s\u00f3 a letra do exerc\u00edcio (ex: "g" acha "Letra G - J").
+function exerciseTitleMatchesQuery(title, rawQuery) {
+    const queryTokens = normalizeExerciseSearchText(rawQuery).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    if (queryTokens.length === 0) return true;
+    const titleTokens = normalizeExerciseSearchText(title).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    return queryTokens.every(qt => titleTokens.some(tt => tt.startsWith(qt)));
+}
 async function loadExerciseCards() {
     // Tela "olho" de Exercícios (enterPatientContext) mostra o banco inteiro do
     // médico, não só o que está liberado pro paciente — sem isso, um card novo
@@ -2613,7 +2626,31 @@ function renderExerciseCards(exercisesArray) {
         else openPresentationPlaylist(ex);
     };
 
-    const cardsToRender = canEditHere ? baseExercises : baseExercises.filter(ex => ex.visible !== false);
+    let cardsToRender = canEditHere ? baseExercises : baseExercises.filter(ex => ex.visible !== false);
+
+    // Busca/filtro (Fase 25): busca por nome pra todo mundo (médico, admin e
+    // paciente) — o filtro por "letra" não ganhou campo próprio porque os
+    // títulos já trazem a letra no texto ("Letra G - J", "Sons do C"), então
+    // a busca por nome já cobre. Já o dropdown de status (Liberado/Não
+    // liberado) só faz sentido dentro do "modo paciente" do médico (tela
+    // "olho" via enterPatientContext, ver updatePatientContextBanners) —
+    // é onde existe esse conceito por paciente; fora daí fica escondido.
+    const filterBar = document.getElementById('exercise-filter-bar');
+    const filterStatusSelect = document.getElementById('exercise-filter-status');
+    if (filterBar) filterBar.style.display = 'flex';
+    if (filterStatusSelect) filterStatusSelect.style.display = inDoctorPatientContext ? '' : 'none';
+
+    if (exerciseFilterQuery.trim()) {
+        cardsToRender = cardsToRender.filter(ex => exerciseTitleMatchesQuery((ex.title || '').split('|')[0], exerciseFilterQuery));
+    }
+    if (inDoctorPatientContext && exerciseFilterStatus !== 'all') {
+        cardsToRender = cardsToRender.filter(ex => {
+            const isReleased = ex.patientId === activePatientContext.id
+                || patientExerciseReleaseMap.get(String(ex.id)) === true;
+            return exerciseFilterStatus === 'released' ? isReleased : !isReleased;
+        });
+    }
+
     cardsToRender.forEach(ex => {
         const parts = (ex.title || '').split('|');
         const displayTitle = parts[0];
@@ -3429,6 +3466,16 @@ function setupModals() {
         if (readyBankTile) readyBankTile.style.display = isDoctor ? 'flex' : 'none';
         document.getElementById('exercise-type-modal').style.display = 'flex';
     });
+
+    document.getElementById('exercise-filter-search')?.addEventListener('input', (e) => {
+        exerciseFilterQuery = e.target.value;
+        renderExerciseCards(lastMergedExercises);
+    });
+    document.getElementById('exercise-filter-status')?.addEventListener('change', (e) => {
+        exerciseFilterStatus = e.target.value;
+        renderExerciseCards(lastMergedExercises);
+    });
+
     document.getElementById('btn-close-exercise-type').addEventListener('click', closeExerciseType);
     document.getElementById('btn-cancel-exercise-type').addEventListener('click', closeExerciseType);
     document.getElementById('btn-create-slides-exercise').addEventListener('click', openSlidesExerciseCreator);
@@ -4171,7 +4218,16 @@ async function renderExerciseActivities() {
     // por renderExerciseCards (na mesma grade). exerciseActivities continua
     // com as entradas intactas (openGame/resolveActivityTitle dependem
     // delas), só não desenha mais os atalhos fixos antigos.
-    const staticActivities = exerciseActivities.filter(a => a.id !== 'naming' && a.id !== 'afasia');
+    let staticActivities = exerciseActivities.filter(a => a.id !== 'naming' && a.id !== 'afasia');
+
+    // Mesma busca por nome da grade de exercícios (renderExerciseCards) — sem
+    // isso, cards estáticos como "Complete a Frase" ignoravam o filtro e
+    // ficavam sempre visíveis, já que essa função roda de novo no fim de
+    // renderExerciseCards pra desenhá-los junto na mesma grade.
+    if (exerciseFilterQuery.trim()) {
+        staticActivities = staticActivities.filter(a => exerciseTitleMatchesQuery(a.title, exerciseFilterQuery));
+    }
+
     await renderActivityCards(
         container,
         staticActivities,

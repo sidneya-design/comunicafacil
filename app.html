@@ -189,6 +189,17 @@
                         </button>
                         <p class="media-hint">Cards com sequências de slides (palavra + imagem, vídeo opcional).</p>
                     </div>
+                    <div id="exercise-filter-bar" class="exercise-filter-bar" style="display:none;">
+                        <div class="exercise-filter-search-wrap">
+                            <i class="fas fa-search" aria-hidden="true"></i>
+                            <input type="text" id="exercise-filter-search" placeholder="Buscar por nome...">
+                        </div>
+                        <select id="exercise-filter-status" style="display:none;">
+                            <option value="all">Status: Todos</option>
+                            <option value="released">Liberado</option>
+                            <option value="not-released">Não liberado</option>
+                        </select>
+                    </div>
                     <div id="patient-context-banner-exercises" style="display:none; background:#fff3cd; color:#664d03; padding:10px 16px; border-radius:8px; margin-bottom:10px; align-items:center; justify-content:space-between; gap:10px;">
                         <span id="patient-context-banner-exercises-text"></span>
                         <button type="button" id="btn-clear-patient-context-exercises" class="btn-secondary" style="padding:4px 10px;">Sair do modo paciente</button>
@@ -1813,12 +1824,12 @@
         }
     </style>
 
-    <link rel="stylesheet" href="style.css?v=26">
+    <link rel="stylesheet" href="style.css?v=27">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script defer src="app.js?v=52"></script>
+    <script defer src="app.js?v=53"></script>
 </body>
 
 

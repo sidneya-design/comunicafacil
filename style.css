@@ -357,6 +357,20 @@ body {
 }
 .native-keyboard-actions .action-btn { width: 200px; height: 60px; font-size: 24px; border-radius: 12px;}
 .media-header { display: flex; align-items: center; gap: 20px; padding: 15px; background: white; border-radius: var(--radius); margin-bottom: 15px;}
+.exercise-filter-bar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 10px 15px; background: white; border-radius: var(--radius); margin-bottom: 15px;
+}
+.exercise-filter-search-wrap {
+    display: flex; align-items: center; gap: 8px; flex: 1; min-width: 200px;
+    border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; color: #888;
+}
+.exercise-filter-search-wrap input {
+    flex: 1; border: none; outline: none; font-size: 15px; color: #111; background: transparent;
+}
+#exercise-filter-status {
+    border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; font-size: 15px; color: #111; background: white;
+}
 /* Mesmo visual do .media-header, mas fora do seletor global de showEditBars() —
    o cabeçalho de "Meus Pacientes" precisa ficar visível pra isDoctor, não isAdmin. */
 .doctor-patients-header { display: flex; align-items: center; gap: 20px; padding: 15px; background: white; border-radius: var(--radius); margin-bottom: 15px;}
