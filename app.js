@@ -2676,6 +2676,13 @@ function renderExerciseCards(exercisesArray) {
         });
     }
 
+    // Ordem alfabética pelo nome exibido (não pelo id/ordem de criação) —
+    // localeCompare com 'pt-BR' + numeric pra "Sílaba 2" vir antes de
+    // "Sílaba 10", em vez de ordem lexicográfica pura.
+    cardsToRender = cardsToRender.slice().sort((a, b) =>
+        (a.title || '').split('|')[0].localeCompare((b.title || '').split('|')[0], 'pt-BR', { numeric: true, sensitivity: 'base' })
+    );
+
     cardsToRender.forEach(ex => {
         const parts = (ex.title || '').split('|');
         const displayTitle = parts[0];
