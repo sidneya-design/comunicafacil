@@ -2497,6 +2497,31 @@ function exerciseTitleMatchesQuery(title, rawQuery) {
     const titleTokens = normalizeExerciseSearchText(title).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
     return queryTokens.every(qt => titleTokens.some(tt => tt.startsWith(qt)));
 }
+// O Supabase (PostgREST) corta resultado em 1000 linhas por padrão — um
+// `.select('*')` sem `.range()` em exercise_items ficava truncado depois que
+// a tabela passou de 1000 linhas (confirmado em produção: content-range
+// "0-999/1081"). Como o corte pega as linhas mais ANTIGAS primeiro (ordenado
+// por id), os itens mais recentes — os exercícios criados hoje — ficavam de
+// fora inteiros: card salvava certinho, mas abria sem nenhum item (parecia
+// não abrir a apresentação/edição). Buscar em páginas de 1000 resolve pra
+// qualquer tamanho de tabela, sem depender de mudar configuração no projeto.
+async function fetchAllExerciseItems() {
+    const pageSize = 1000;
+    let allItems = [];
+    let from = 0;
+    while (true) {
+        const { data, error } = await supabaseClient
+            .from('exercise_items')
+            .select('*')
+            .order('id', { ascending: true })
+            .range(from, from + pageSize - 1);
+        if (error || !data) break;
+        allItems = allItems.concat(data);
+        if (data.length < pageSize) break;
+        from += pageSize;
+    }
+    return allItems;
+}
 async function loadExerciseCards() {
     // Tela "olho" de Exercícios (enterPatientContext) mostra o banco inteiro do
     // médico, não só o que está liberado pro paciente — sem isso, um card novo
@@ -2515,7 +2540,7 @@ async function loadExerciseCards() {
         try {
             const { data: exData, error: exErr } = await supabaseClient.from('exercises').select('*');
             if (!exErr) {
-                const { data: itemData } = await supabaseClient.from('exercise_items').select('*').order('id', { ascending: true });
+                const itemData = await fetchAllExerciseItems();
                 currentExercises = exData.map(ex => {
                     const inferredSeedKey = ex.seed_key || inferExerciseSeedKeyFromTitle(ex.title);
                     const inferredVisible = ex.visible !== undefined
