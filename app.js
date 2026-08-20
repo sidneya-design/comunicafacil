@@ -2625,11 +2625,24 @@ function renderExerciseCards(exercisesArray) {
         const imgContainer = document.createElement('div');
         imgContainer.className = 'word-btn-img-container';
 
-        if (ex.items && ex.items.length > 0) {
-            if (ex.items[0].imageBlob instanceof Blob) {
-                imgContainer.innerHTML = `<img src="${URL.createObjectURL(ex.items[0].imageBlob)}" class="word-btn-img" alt="" />`;
-            } else if (ex.items[0].image_url) {
-                imgContainer.innerHTML = `<img src="${ex.items[0].image_url}" class="word-btn-img" alt="" />`;
+        const firstItem = ex.items && ex.items.length > 0 ? ex.items[0] : null;
+
+        // Exercício de Sílabas não tem imagem nenhuma nos itens (as sílabas
+        // substituem a foto na apresentação, ver renderCurrentPlaylistItem) —
+        // sem esse caso a capa caía sempre no ícone de pasta genérico.
+        if (ex.gameKind === 'syllables' && firstItem && (firstItem.syllables || firstItem.word)) {
+            const displaySyllables = (firstItem.syllables || firstItem.word).replace(/[-.]/g, '.​');
+            const previewEl = document.createElement('span');
+            previewEl.className = 'word-btn-syllables-preview';
+            previewEl.textContent = displaySyllables;
+            previewEl.style.fontFamily = ex.syllablesFont || "'Outfit', sans-serif";
+            previewEl.style.color = ex.syllablesColor || '#1f1f1f';
+            imgContainer.appendChild(previewEl);
+        } else if (firstItem) {
+            if (firstItem.imageBlob instanceof Blob) {
+                imgContainer.innerHTML = `<img src="${URL.createObjectURL(firstItem.imageBlob)}" class="word-btn-img" alt="" />`;
+            } else if (firstItem.image_url) {
+                imgContainer.innerHTML = `<img src="${firstItem.image_url}" class="word-btn-img" alt="" />`;
             } else {
                 imgContainer.innerHTML = '<i class="fas fa-folder word-btn-icon" aria-hidden="true"></i>';
             }
