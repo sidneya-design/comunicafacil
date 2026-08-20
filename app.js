@@ -3753,9 +3753,16 @@ function openPresentationPlaylist(ex) {
 // (sem quebrar linha, sem scroll) — usado tanto pelas sílabas do Exercício
 // de Sílabas dedicado quanto pela legenda de sílabas sobre a foto no
 // Exercício com Slides.
-function fitTextToWidth(el, container, minSize = 16) {
+// `reservedPx`: pixels fixos a descontar da largura do container antes de
+// medir — as setas de navegação (.nav-arrow, 80px + 20px de margem) ficam
+// posicionadas absolute por cima do canto direito de .presentation-right,
+// bem perto da borda dela; sem esse desconto, palavras longas em sílabas
+// (ex: "Hu.ma.ni.da.de") cabiam nos 92% do container mas mesmo assim
+// ficavam cortadas visualmente atrás da seta.
+function fitTextToWidth(el, container, minSize = 16, reservedPx = 0) {
     let attempts = 0;
-    while (attempts < 40 && el.scrollWidth > container.clientWidth * 0.92) {
+    const maxWidth = Math.max(0, container.clientWidth - reservedPx) * 0.92;
+    while (attempts < 40 && el.scrollWidth > maxWidth) {
         const currentSize = parseFloat(getComputedStyle(el).fontSize);
         const nextSize = currentSize - 2;
         if (nextSize < minSize) break;
@@ -3799,7 +3806,7 @@ function renderCurrentPlaylistItem() {
                 el.style.color = color || '#1f1f1f';
                 el.style.fontSize = (size || 100) + 'px';
             });
-            fitTextToWidth(syllablesEl, syllablesEl.parentElement);
+            fitTextToWidth(syllablesEl, syllablesEl.parentElement, 16, 110);
         } else {
             syllablesEl.style.display = 'none';
             imgEl.style.display = '';
@@ -3826,7 +3833,7 @@ function renderCurrentPlaylistItem() {
                 // imagem — o wrap só ganha tamanho real depois que a imagem carrega
                 // (ou o pictograma do ARASAAC chega, que é assíncrono), e medir
                 // contra ele antes disso encolheria a legenda à toa.
-                fitTextToWidth(captionEl, captionEl.closest('.presentation-right'), 12);
+                fitTextToWidth(captionEl, captionEl.closest('.presentation-right'), 12, 110);
             } else {
                 captionEl.style.display = 'none';
             }
