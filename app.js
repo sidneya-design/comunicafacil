@@ -2664,10 +2664,16 @@ function renderExerciseCards(exercisesArray) {
 
         const firstItem = ex.items && ex.items.length > 0 ? ex.items[0] : null;
 
-        // Exercício de Sílabas não tem imagem nenhuma nos itens (as sílabas
-        // substituem a foto na apresentação, ver renderCurrentPlaylistItem) —
-        // sem esse caso a capa caía sempre no ícone de pasta genérico.
-        if (ex.gameKind === 'syllables' && firstItem && (firstItem.syllables || firstItem.word)) {
+        // Sem imagem nenhuma (nem upload, nem URL) a capa caía sempre no ícone
+        // de pasta genérico — tanto no Exercício de Sílabas dedicado (que nunca
+        // tem imagem, ver renderCurrentPlaylistItem) quanto no Exercício com
+        // Slides quando o item foi criado sem foto (usa só sílabas/palavra
+        // como legenda). Nesses casos mostra a sílaba/palavra do 1º item.
+        if (firstItem && firstItem.imageBlob instanceof Blob) {
+            imgContainer.innerHTML = `<img src="${URL.createObjectURL(firstItem.imageBlob)}" class="word-btn-img" alt="" />`;
+        } else if (firstItem && firstItem.image_url) {
+            imgContainer.innerHTML = `<img src="${firstItem.image_url}" class="word-btn-img" alt="" />`;
+        } else if (firstItem && (firstItem.syllables || firstItem.word)) {
             const displaySyllables = (firstItem.syllables || firstItem.word).replace(/[-.]/g, '.​');
             const previewEl = document.createElement('span');
             previewEl.className = 'word-btn-syllables-preview';
@@ -2675,14 +2681,6 @@ function renderExerciseCards(exercisesArray) {
             previewEl.style.fontFamily = ex.syllablesFont || "'Outfit', sans-serif";
             previewEl.style.color = ex.syllablesColor || '#1f1f1f';
             imgContainer.appendChild(previewEl);
-        } else if (firstItem) {
-            if (firstItem.imageBlob instanceof Blob) {
-                imgContainer.innerHTML = `<img src="${URL.createObjectURL(firstItem.imageBlob)}" class="word-btn-img" alt="" />`;
-            } else if (firstItem.image_url) {
-                imgContainer.innerHTML = `<img src="${firstItem.image_url}" class="word-btn-img" alt="" />`;
-            } else {
-                imgContainer.innerHTML = '<i class="fas fa-folder word-btn-icon" aria-hidden="true"></i>';
-            }
         } else {
             imgContainer.innerHTML = '<i class="fas fa-folder word-btn-icon" aria-hidden="true"></i>';
         }
@@ -3815,9 +3813,19 @@ function renderCurrentPlaylistItem() {
             } else if (item.image_url) {
                 imgEl.src = item.image_url;
             } else {
+                // Sem imagem própria nem ainda o pictograma do ARASAAC: esconde o
+                // <img> em vez de deixar src="" — um <img> com src vazio mostra o
+                // ícone de imagem quebrada do navegador (parece bug pro usuário),
+                // mesmo sendo o comportamento esperado quando não tem foto nem o
+                // ARASAAC acha nada pra essa palavra.
+                imgEl.style.display = 'none';
                 imgEl.src = '';
                 fetchArasaacImage(item.imgQuery || item.word).then(url => {
-                    if (url && currentPlaylistItems[currentPlaylistIndex] === item) imgEl.src = url;
+                    if (currentPlaylistItems[currentPlaylistIndex] !== item) return;
+                    if (url) {
+                        imgEl.src = url;
+                        imgEl.style.display = '';
+                    }
                 });
             }
 
