@@ -10574,7 +10574,13 @@ async function loadDoctorPatients() {
             btnMedias.className = 'admin-edit-password-btn';
             btnMedias.addEventListener('click', () => openPatientMediasModal(p));
 
-            tdActions.append(btnPassword, btnModules, btnExercises, btnViewExercises, btnTopics, btnVirtues, btnCarometro, btnCarometroGlobal, btnBooks, btnReleaseBooks, btnMedias, btnToggleActive);
+            const btnViewMedias = document.createElement('button');
+            btnViewMedias.innerHTML = '<i class="fas fa-eye" aria-hidden="true"></i>';
+            btnViewMedias.title = 'Ver mídias deste paciente';
+            btnViewMedias.className = 'admin-edit-password-btn';
+            btnViewMedias.addEventListener('click', () => enterPatientContext(p, 'view-media'));
+
+            tdActions.append(btnPassword, btnModules, btnExercises, btnViewExercises, btnTopics, btnVirtues, btnCarometro, btnCarometroGlobal, btnBooks, btnReleaseBooks, btnMedias, btnViewMedias, btnToggleActive);
             tr.append(tdName, tdEmail, tdStatus, tdCreated, tdLastSignIn, tdActions);
             tbody.appendChild(tr);
         });
