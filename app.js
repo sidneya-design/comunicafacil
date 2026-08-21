@@ -2000,7 +2000,21 @@ async function toggleMediaVisibility(media) {
 let currentMedias = [];
 let lastMergedMedias = [];
 let mediaFilterQuery = '';
+let patientMediaReleaseMap = new Map();
 async function loadMediaCards() {
+    // Mesmo mapa que loadExerciseCards monta pra patient_exercise_flags: sem
+    // isso, renderMediaCards não tinha como saber quais itens do banco (sem
+    // patientId direto) foram liberados pra esse paciente via toggle em
+    // "Meus Pacientes" — o selo de liberado e o aviso por e-mail ficavam sem
+    // efeito pra esse caso, só funcionando pra mídia escopada direto.
+    if (supabaseClient && isDoctor && activePatientContext) {
+        const { data: flags } = await supabaseClient
+            .from('patient_media_flags').select('media_id, visible').eq('patient_id', activePatientContext.id);
+        patientMediaReleaseMap = new Map((flags || []).map(f => [String(f.media_id), f.visible]));
+    } else {
+        patientMediaReleaseMap = new Map();
+    }
+
     if (supabaseClient) {
         try {
             const { data, error } = await supabaseClient.from('medias').select('*');
@@ -2123,6 +2137,28 @@ function renderMediaCards(mediasArray) {
         btn.appendChild(imgContainer);
         btn.appendChild(textEl);
 
+        if (inDoctorPatientContext) {
+            // Mídia escopada direto a esse paciente (media.patientId) já nasce
+            // liberada pra ele — as demais (banco geral/global) só ficam
+            // liberadas depois de marcadas em patient_media_flags (toggle em
+            // "Meus Pacientes"). Mesmo raciocínio do selo/aviso em
+            // renderExerciseCards.
+            const isReleased = media.patientId === activePatientContext.id
+                || patientMediaReleaseMap.get(String(media.id)) === true;
+            const releaseBadge = document.createElement('div');
+            releaseBadge.className = 'release-status-badge ' + (isReleased ? 'is-released' : 'is-not-released');
+            releaseBadge.textContent = isReleased ? 'Liberado' : 'Não liberado';
+            btn.appendChild(releaseBadge);
+
+            if (isReleased) {
+                btn.appendChild(createNotifyUsersButton(media.title, 'Mídia', {
+                    id: activePatientContext.id,
+                    name: activePatientContext.name,
+                    email: activePatientContext.email
+                }));
+            }
+        }
+
         if (isAdmin) {
             const isVisible = media.visible !== false;
             const toggleBtn = document.createElement('button');
@@ -2153,14 +2189,7 @@ function renderMediaCards(mediasArray) {
             btn.appendChild(delBtn);
         } else if (inDoctorPatientContext && media.patientId === activePatientContext.id) {
             // Médico só apaga as mídias do próprio paciente — as globais
-            // aparecem como referência, sem esse botão. Alvo do aviso é óbvio
-            // aqui (o próprio activePatientContext), mesma lógica do notify
-            // button em renderExerciseCards.
-            btn.appendChild(createNotifyUsersButton(media.title, 'Mídia', {
-                id: activePatientContext.id,
-                name: activePatientContext.name,
-                email: activePatientContext.email
-            }));
+            // aparecem como referência, sem esse botão.
 
             const delBtn = document.createElement('button');
             delBtn.className = 'delete-media-btn'; delBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>'; delBtn.setAttribute('aria-label', 'Excluir');
