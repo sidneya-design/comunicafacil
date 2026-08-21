@@ -1982,6 +1982,36 @@ async function saveMediaToDB(title, fileBlob, mimeType, colorClass, mediaUrl, pa
         .onsuccess = () => loadMediaCards();
 }
 
+async function updateMediaInDB(media, title, fileBlob, mimeType, colorClass, mediaUrl) {
+    const updateFields = { title, color_class: colorClass };
+    if (fileBlob) {
+        const url = await uploadToSupabaseStorage('media_uploads', 'medias', fileBlob);
+        updateFields.media_url = url;
+        updateFields.is_video = mimeType.startsWith('video');
+    } else if (mediaUrl) {
+        updateFields.media_url = mediaUrl;
+        updateFields.is_video = true;
+    }
+    // Sem arquivo novo nem link novo (aba "Arquivo" sem trocar o arquivo):
+    // mantém media_url/is_video como estavam, só título/cor mudam.
+
+    if (media.fromSupabase && supabaseClient) {
+        await supabaseClient.from('medias').update(updateFields).eq('id', media.id);
+        loadMediaCards();
+        return;
+    }
+    db.transaction(['medias'], 'readonly').objectStore('medias').get(media.id).onsuccess = (e) => {
+        const rec = e.target.result;
+        if (!rec) return;
+        const updatedRec = {
+            ...rec, title, colorClass,
+            media_url: updateFields.media_url !== undefined ? updateFields.media_url : rec.media_url,
+            isVideo: updateFields.is_video !== undefined ? updateFields.is_video : rec.isVideo
+        };
+        db.transaction(['medias'], 'readwrite').objectStore('medias').put(updatedRec).onsuccess = () => loadMediaCards();
+    };
+}
+
 async function toggleMediaVisibility(media) {
     const newVisible = !(media.visible !== false);
     if (media.fromSupabase && supabaseClient) {
@@ -2000,6 +2030,8 @@ async function toggleMediaVisibility(media) {
 let currentMedias = [];
 let lastMergedMedias = [];
 let mediaFilterQuery = '';
+let currentEditingMediaId = null;
+let currentEditingMediaFromSupabase = false;
 let patientMediaReleaseMap = new Map();
 async function loadMediaCards() {
     // Mesmo mapa que loadExerciseCards monta pra patient_exercise_flags: sem
@@ -2021,7 +2053,8 @@ async function loadMediaCards() {
             if (!error) {
                 currentMedias = data.map(m => ({
                     id: m.id, title: m.title, isVideo: m.is_video, colorClass: m.color_class, media_url: m.media_url,
-                    visible: m.visible !== false, fromSupabase: true, patientId: m.patient_id || null
+                    visible: m.visible !== false, fromSupabase: true, patientId: m.patient_id || null,
+                    doctorUserId: m.doctor_user_id || null
                 }));
             }
         } catch(e) {}
@@ -2187,9 +2220,19 @@ function renderMediaCards(mediasArray) {
                 }
             };
             btn.appendChild(delBtn);
-        } else if (inDoctorPatientContext && media.patientId === activePatientContext.id) {
-            // Médico só apaga as mídias do próprio paciente — as globais
-            // aparecem como referência, sem esse botão.
+
+            const editBtn = document.createElement('button');
+            editBtn.className = 'edit-media-btn'; editBtn.innerHTML = '<i class="fas fa-pencil-alt" aria-hidden="true"></i>'; editBtn.setAttribute('aria-label', 'Editar');
+            editBtn.onclick = (ev) => {
+                ev.stopPropagation();
+                openMediaEditor(media);
+            };
+            btn.appendChild(editBtn);
+        } else if (isDoctor && ((media.doctorUserId && media.doctorUserId === currentUserId)
+            || (inDoctorPatientContext && media.patientId === activePatientContext.id))) {
+            // Médico só edita/apaga as próprias mídias — do banco dele
+            // (doctorUserId) ou escopadas direto ao paciente ativo. As
+            // globais do admin aparecem como referência, sem esses botões.
 
             const delBtn = document.createElement('button');
             delBtn.className = 'delete-media-btn'; delBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>'; delBtn.setAttribute('aria-label', 'Excluir');
@@ -2201,6 +2244,14 @@ function renderMediaCards(mediasArray) {
                 }
             };
             btn.appendChild(delBtn);
+
+            const editBtn = document.createElement('button');
+            editBtn.className = 'edit-media-btn'; editBtn.innerHTML = '<i class="fas fa-pencil-alt" aria-hidden="true"></i>'; editBtn.setAttribute('aria-label', 'Editar');
+            editBtn.onclick = (ev) => {
+                ev.stopPropagation();
+                openMediaEditor(media);
+            };
+            btn.appendChild(editBtn);
         }
         btn.addEventListener('click', () => playMedia(media));
         container.appendChild(btn);
@@ -2911,6 +2962,21 @@ function renderExerciseCards(exercisesArray) {
     renderExerciseActivities();
 }
 
+function openMediaEditor(media) {
+    currentEditingMediaId = media.id;
+    currentEditingMediaFromSupabase = media.fromSupabase;
+    document.getElementById('upload-modal-title').textContent = 'Editar Mídia';
+    document.querySelector('#upload-form button[type="submit"]').textContent = 'Salvar Alterações';
+    document.getElementById('media-title').value = media.title || '';
+    document.getElementById('media-color').value = 'color-' + (media.colorClass || 'orange');
+    document.querySelector('input[name="media-source"][value="link"]').checked = true;
+    document.getElementById('media-file-group').style.display = 'none';
+    document.getElementById('media-link-group').style.display = 'block';
+    document.getElementById('media-link').value = media.media_url || media.link || '';
+    document.getElementById('media-file').value = '';
+    document.getElementById('upload-modal').style.display = 'flex';
+}
+
 function getEmbedUrl(url) {
     if (!url) return '';
     let urlToParse = url.trim();
@@ -3455,9 +3521,22 @@ function setupModals() {
         // banco próprio dele — não precisa mais de activePatientContext
         // pra abrir o modal (só o submit é que decide o destino).
         if (!isAdmin && !isDoctor) return;
+        currentEditingMediaId = null;
+        currentEditingMediaFromSupabase = false;
+        document.getElementById('upload-modal-title').textContent = 'Nova Mídia';
+        document.querySelector('#upload-form button[type="submit"]').textContent = 'Salvar Mídia';
         document.getElementById('upload-modal').style.display = 'flex';
     });
-    const closeUpload = () => { document.getElementById('upload-modal').style.display = 'none'; document.getElementById('upload-form').reset(); };
+    const closeUpload = () => {
+        document.getElementById('upload-modal').style.display = 'none';
+        document.getElementById('upload-form').reset();
+        document.getElementById('upload-modal-title').textContent = 'Nova Mídia';
+        document.querySelector('#upload-form button[type="submit"]').textContent = 'Salvar Mídia';
+        document.getElementById('media-file-group').style.display = 'block';
+        document.getElementById('media-link-group').style.display = 'none';
+        currentEditingMediaId = null;
+        currentEditingMediaFromSupabase = false;
+    };
     document.getElementById('btn-close-upload').addEventListener('click', closeUpload);
     document.getElementById('btn-cancel-upload').addEventListener('click', closeUpload);
 
@@ -3488,12 +3567,32 @@ function setupModals() {
         const title = document.getElementById('media-title').value.trim();
         const color = document.getElementById('media-color').value.split('-')[1];
         const source = document.querySelector('input[name="media-source"]:checked').value;
-        const targetPatientId = (isDoctor && activePatientContext) ? activePatientContext.id : null;
 
         if (!title) {
             alert('Por favor informe um título para a mídia.');
             return;
         }
+
+        if (currentEditingMediaId !== null) {
+            const media = lastMergedMedias.find(m => m.id === currentEditingMediaId && m.fromSupabase === currentEditingMediaFromSupabase);
+            if (!media) { closeUpload(); return; }
+            if (source === 'link') {
+                const link = document.getElementById('media-link').value.trim();
+                if (!link) {
+                    alert('Informe o link do YouTube, Vimeo ou Google Drive.');
+                    return;
+                }
+                updateMediaInDB(media, title, null, '', color, link);
+            } else {
+                // Aba "Arquivo" sem trocar o arquivo = mantém o arquivo/link atual.
+                const file = document.getElementById('media-file').files[0] || null;
+                updateMediaInDB(media, title, file, file ? file.type : '', color, null);
+            }
+            closeUpload();
+            return;
+        }
+
+        const targetPatientId = (isDoctor && activePatientContext) ? activePatientContext.id : null;
 
         if (source === 'link') {
             const link = document.getElementById('media-link').value.trim();
