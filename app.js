@@ -3532,6 +3532,18 @@ function setupModals() {
         mediaFilterQuery = e.target.value;
         renderMediaCards(lastMergedMedias);
     });
+    document.getElementById('topics-filter-search')?.addEventListener('input', (e) => {
+        topicsFilterQuery = e.target.value;
+        renderTopicsFolders();
+    });
+    document.getElementById('virtues-filter-search')?.addEventListener('input', (e) => {
+        virtuesFilterQuery = e.target.value;
+        renderVirtueFolders();
+    });
+    document.getElementById('games-filter-search')?.addEventListener('input', (e) => {
+        gamesFilterQuery = e.target.value;
+        renderGamesList();
+    });
 
     document.getElementById('btn-close-exercise-type').addEventListener('click', closeExerciseType);
     document.getElementById('btn-cancel-exercise-type').addEventListener('click', closeExerciseType);
@@ -4276,12 +4288,20 @@ async function renderActivityCards(container, activities, isCurrent = () => true
     }
 }
 
+let gamesFilterQuery = '';
 async function renderGamesList() {
     const container = document.getElementById('grid-games-list');
     if (!container) return;
     const renderVersion = ++gamesRenderVersion;
     container.innerHTML = '';
-    await renderActivityCards(container, gamesList, () => renderVersion === gamesRenderVersion);
+
+    const filterBar = document.getElementById('games-filter-bar');
+    if (filterBar) filterBar.style.display = 'flex';
+    const gamesToRender = gamesFilterQuery.trim()
+        ? gamesList.filter(game => titleMatchesQuery(game.title, gamesFilterQuery))
+        : gamesList;
+
+    await renderActivityCards(container, gamesToRender, () => renderVersion === gamesRenderVersion);
 }
 
 async function renderExerciseActivities() {
@@ -4347,6 +4367,8 @@ function openGame(gameId) {
         document.getElementById('btn-exercises-back').style.display = 'flex';
     } else {
         document.getElementById('grid-games-list').style.display = 'none';
+        const gamesFilterBar = document.getElementById('games-filter-bar');
+        if (gamesFilterBar) gamesFilterBar.style.display = 'none';
         placeGamesBackButton(gameId);
         document.getElementById('btn-games-back').style.display = 'flex';
     }
@@ -4422,6 +4444,9 @@ function closeGame() {
 
     const elGamesList = document.getElementById('grid-games-list');
     if (elGamesList) elGamesList.style.display = 'grid';
+
+    const elGamesFilterBar = document.getElementById('games-filter-bar');
+    if (elGamesFilterBar) elGamesFilterBar.style.display = 'flex';
 
     const elExercises = document.getElementById('grid-exercises');
     if (elExercises) elExercises.style.display = 'grid';
@@ -11582,6 +11607,7 @@ async function renderFlatGrid(cards, containerId, section) {
 }
 
 // ---- TÓPICOS (Fringe) ----
+let topicsSeedAttempted = false;
 async function loadTopicsAndRender() {
     if (supabaseClient) {
         try {
@@ -11593,7 +11619,14 @@ async function loadTopicsAndRender() {
             // dá 0 linhas, sem erro, e tem que renderizar vazio, não semear).
             // Só admin/editor tem permissão de escrita em topics globais, então
             // só faz sentido tentar o bootstrap nesse caso.
-            if (catData && catData.length === 0 && isAdmin) {
+            // topicsSeedAttempted trava numa tentativa só por sessão: sem isso,
+            // um "admin" sem sessão real autenticada no Supabase (bypass do
+            // localhost, ver isLocalAppHost) tem o insert sempre rejeitado pela
+            // RLS (exige authenticated) — cada seedCatErr silencioso levava a
+            // outra chamada recursiva, num loop infinito de 401 (visto em
+            // produção: console tomado por "Semeando Supabase com tópicos...").
+            if (catData && catData.length === 0 && isAdmin && !topicsSeedAttempted) {
+                topicsSeedAttempted = true;
                 console.log('Semeando Supabase com tópicos...');
                 for (const t of topics) {
                     const { data: newCat, error: seedCatErr } = await supabaseClient.from('topics')
@@ -11690,6 +11723,7 @@ async function getOrCreateTopicFolderFork(sourceRecord) {
     return { id: created.id, folder: created.folder, styleClass: created.style_class, items: sourceRecord.items || [], doctorUserId: currentUserId, forkedFrom: sourceRecord.id };
 }
 
+let topicsFilterQuery = '';
 async function renderTopicsFolders() {
     const container = document.getElementById('grid-topics-folders');
     const wordGrid = document.getElementById('grid-topic-words');
@@ -11700,7 +11734,13 @@ async function renderTopicsFolders() {
     if (wordGrid) wordGrid.style.display = 'none';
     if (backBtn) backBtn.style.display = 'none';
 
-    for (const record of currentTopicsFolders) {
+    const filterBar = document.getElementById('topics-filter-bar');
+    if (filterBar) filterBar.style.display = 'flex';
+    const foldersToRender = topicsFilterQuery.trim()
+        ? currentTopicsFolders.filter(record => titleMatchesQuery(record.folder, topicsFilterQuery))
+        : currentTopicsFolders;
+
+    for (const record of foldersToRender) {
         const btn = document.createElement('button');
         btn.className = `word-btn ${record.styleClass}`;
 
@@ -11818,6 +11858,8 @@ async function renderTopicsWords(record) {
     const folderGrid = document.getElementById('grid-topics-folders');
     const wordGrid = document.getElementById('grid-topic-words');
     const backBtn = document.getElementById('btn-topic-back');
+    const topicsFilterBar = document.getElementById('topics-filter-bar');
+    if (topicsFilterBar) topicsFilterBar.style.display = 'none';
     if (folderGrid) folderGrid.style.display = 'none';
     if (wordGrid) { wordGrid.style.display = 'grid'; wordGrid.innerHTML = ''; }
     if (backBtn) backBtn.style.display = 'flex';
@@ -11925,6 +11967,7 @@ async function renderTopicsWords(record) {
 }
 
 // ---- FOMES E FORÇAS (Virtues) ----
+let virtuesSeedAttempted = false;
 async function loadVirtuesAndRender() {
     if (supabaseClient) {
         try {
@@ -11938,7 +11981,12 @@ async function loadVirtuesAndRender() {
             // admin/editor escrever) ou a RLS filtrando pra um paciente sem
             // nada liberado — nesse segundo caso é pra renderizar vazio, não
             // semear nem cair no cache local de outra sessão.
-            if (catData && catData.length === 0 && isAdmin) {
+            // virtuesSeedAttempted trava numa tentativa só por sessão — mesmo
+            // guard e mesmo motivo de topicsSeedAttempted em
+            // loadTopicsAndRender (sem sessão autenticada de verdade, o insert
+            // é sempre rejeitado pela RLS e virava loop infinito de 401).
+            if (catData && catData.length === 0 && isAdmin && !virtuesSeedAttempted) {
+                virtuesSeedAttempted = true;
                 console.log('Semeando Supabase com categorias de fomes e forças...');
                 for (const v of virtues) {
                     const { data: newCat, error: seedCatErr } = await supabaseClient
@@ -12060,6 +12108,7 @@ async function renameVirtueFolder(record) {
     }
 }
 
+let virtuesFilterQuery = '';
 async function renderVirtueFolders() {
     const container = document.getElementById('grid-virtues-folders');
     const wordGrid = document.getElementById('grid-virtue-words');
@@ -12070,7 +12119,13 @@ async function renderVirtueFolders() {
     if (wordGrid) wordGrid.style.display = 'none';
     if (backBtn) backBtn.style.display = 'none';
 
-    for (const record of currentVirtueFolders) {
+    const filterBar = document.getElementById('virtues-filter-bar');
+    if (filterBar) filterBar.style.display = 'flex';
+    const foldersToRender = virtuesFilterQuery.trim()
+        ? currentVirtueFolders.filter(record => titleMatchesQuery(record.folder, virtuesFilterQuery))
+        : currentVirtueFolders;
+
+    for (const record of foldersToRender) {
         const btn = document.createElement('button');
         btn.className = `word-btn ${record.styleClass}`;
 
@@ -12141,6 +12196,7 @@ async function renderVirtueFolders() {
         btn.addEventListener('click', () => {
             currentOpenFolderRecord = record;
             container.style.display = 'none';
+            if (filterBar) filterBar.style.display = 'none';
             if (wordGrid) wordGrid.style.display = 'grid';
             if (backBtn) backBtn.style.display = '';
             renderVirtueWords(record);
