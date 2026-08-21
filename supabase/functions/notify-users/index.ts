@@ -112,8 +112,9 @@ Deno.serve(async (req) => {
 
     const safeTitle = escapeHtml(title);
     const categoryKey = category.toLowerCase();
-    const genderAdjective = ["categoria", "atividade"].includes(categoryKey) ? "Nova" : "Novo";
-    const introArticle = ["categoria", "atividade"].includes(categoryKey) ? "A" : "O";
+    const feminineCategories = ["categoria", "atividade", "mídia"];
+    const genderAdjective = feminineCategories.includes(categoryKey) ? "Nova" : "Novo";
+    const introArticle = feminineCategories.includes(categoryKey) ? "A" : "O";
     const introCategory = categoryKey === "jogo" ? "jogo" : categoryKey;
     // category chega em texto livre do chamador (a UI só usa um enum fixo,
     // mas a function em si não valida isso) — escapa igual title, senão dá
