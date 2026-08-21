@@ -1998,6 +1998,8 @@ async function toggleMediaVisibility(media) {
 }
 
 let currentMedias = [];
+let lastMergedMedias = [];
+let mediaFilterQuery = '';
 async function loadMediaCards() {
     if (supabaseClient) {
         try {
@@ -2019,6 +2021,7 @@ async function loadMediaCards() {
 }
 
 function renderMediaCards(mediasArray) {
+    lastMergedMedias = mediasArray;
     const container = document.getElementById('grid-media');
     if (!container) return;
     container.innerHTML = '';
@@ -2031,7 +2034,14 @@ function renderMediaCards(mediasArray) {
     const baseMedias = inDoctorPatientContext
         ? mediasArray.filter(m => !m.patientId || m.patientId === activePatientContext.id)
         : mediasArray;
-    const cardsToRender = canEditHere ? baseMedias : baseMedias.filter(m => m.visible !== false);
+    let cardsToRender = canEditHere ? baseMedias : baseMedias.filter(m => m.visible !== false);
+
+    const filterBar = document.getElementById('media-filter-bar');
+    if (filterBar) filterBar.style.display = 'flex';
+    if (mediaFilterQuery.trim()) {
+        cardsToRender = cardsToRender.filter(m => titleMatchesQuery(m.title, mediaFilterQuery));
+    }
+
     cardsToRender.forEach(media => {
         const btn = document.createElement('button');
         btn.className = `word-btn border-${media.colorClass}` + (isAdmin && media.visible === false ? ' card-hidden' : '');
@@ -2123,6 +2133,10 @@ function renderMediaCards(mediasArray) {
             toggleBtn.onclick = (ev) => { ev.stopPropagation(); toggleMediaVisibility(media); };
             btn.appendChild(toggleBtn);
 
+            if (isVisible) {
+                btn.appendChild(createNotifyUsersButton(media.title, 'Mídia'));
+            }
+
             const delBtn = document.createElement('button');
             delBtn.className = 'delete-media-btn'; delBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>'; delBtn.setAttribute('aria-label', 'Excluir');
             delBtn.onclick = async (ev) => {
@@ -2139,7 +2153,15 @@ function renderMediaCards(mediasArray) {
             btn.appendChild(delBtn);
         } else if (inDoctorPatientContext && media.patientId === activePatientContext.id) {
             // Médico só apaga as mídias do próprio paciente — as globais
-            // aparecem como referência, sem esse botão.
+            // aparecem como referência, sem esse botão. Alvo do aviso é óbvio
+            // aqui (o próprio activePatientContext), mesma lógica do notify
+            // button em renderExerciseCards.
+            btn.appendChild(createNotifyUsersButton(media.title, 'Mídia', {
+                id: activePatientContext.id,
+                name: activePatientContext.name,
+                email: activePatientContext.email
+            }));
+
             const delBtn = document.createElement('button');
             delBtn.className = 'delete-media-btn'; delBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>'; delBtn.setAttribute('aria-label', 'Excluir');
             delBtn.onclick = async (ev) => {
@@ -2486,15 +2508,16 @@ let currentExercises = [];
 let lastMergedExercises = [];
 let exerciseFilterQuery = '';
 let exerciseFilterStatus = 'all';
-const normalizeExerciseSearchText = s => (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const normalizeSearchText = s => (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 // "Cont\u00e9m em qualquer posi\u00e7\u00e3o" deixava buscas de 1 letra (ex: "s") baterem em
 // quase tudo \u2014 a maioria dos t\u00edtulos tem "s" em algum lugar (S\u00edlaba, Sons,
 // Frase...). Casar por in\u00edcio de cada palavra do t\u00edtulo resolve isso e ainda
 // cobre o caso de digitar s\u00f3 a letra do exerc\u00edcio (ex: "g" acha "Letra G - J").
-function exerciseTitleMatchesQuery(title, rawQuery) {
-    const queryTokens = normalizeExerciseSearchText(rawQuery).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+// Usado tanto por Exerc\u00edcios quanto por M\u00eddias.
+function titleMatchesQuery(title, rawQuery) {
+    const queryTokens = normalizeSearchText(rawQuery).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
     if (queryTokens.length === 0) return true;
-    const titleTokens = normalizeExerciseSearchText(title).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    const titleTokens = normalizeSearchText(title).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
     return queryTokens.every(qt => titleTokens.some(tt => tt.startsWith(qt)));
 }
 // O Supabase (PostgREST) corta resultado em 1000 linhas por padrão — um
@@ -2666,7 +2689,7 @@ function renderExerciseCards(exercisesArray) {
     if (filterStatusSelect) filterStatusSelect.style.display = inDoctorPatientContext ? '' : 'none';
 
     if (exerciseFilterQuery.trim()) {
-        cardsToRender = cardsToRender.filter(ex => exerciseTitleMatchesQuery((ex.title || '').split('|')[0], exerciseFilterQuery));
+        cardsToRender = cardsToRender.filter(ex => titleMatchesQuery((ex.title || '').split('|')[0], exerciseFilterQuery));
     }
     if (inDoctorPatientContext && exerciseFilterStatus !== 'all') {
         cardsToRender = cardsToRender.filter(ex => {
@@ -3505,6 +3528,10 @@ function setupModals() {
         exerciseFilterStatus = e.target.value;
         renderExerciseCards(lastMergedExercises);
     });
+    document.getElementById('media-filter-search')?.addEventListener('input', (e) => {
+        mediaFilterQuery = e.target.value;
+        renderMediaCards(lastMergedMedias);
+    });
 
     document.getElementById('btn-close-exercise-type').addEventListener('click', closeExerciseType);
     document.getElementById('btn-cancel-exercise-type').addEventListener('click', closeExerciseType);
@@ -4272,7 +4299,7 @@ async function renderExerciseActivities() {
     // ficavam sempre visíveis, já que essa função roda de novo no fim de
     // renderExerciseCards pra desenhá-los junto na mesma grade.
     if (exerciseFilterQuery.trim()) {
-        staticActivities = staticActivities.filter(a => exerciseTitleMatchesQuery(a.title, exerciseFilterQuery));
+        staticActivities = staticActivities.filter(a => titleMatchesQuery(a.title, exerciseFilterQuery));
     }
 
     await renderActivityCards(
