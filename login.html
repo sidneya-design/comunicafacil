@@ -425,7 +425,36 @@
         const supabaseKey = useStagingSupabase
             ? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxaWlpbGRkb2R0dHZyeG9kd2JkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYzNjg4NjEsImV4cCI6MjEwMTk0NDg2MX0.Po7_bLntUw-RFt92Lw2WIsrJoasrrg1VBWl7zm1vDSM'
             : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJydWJtdnlraW5kdmlscHRqaG1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0ODE2OTksImV4cCI6MjA5ODA1NzY5OX0.4eKcRhUReuaKaaq4ftIOWe6vvB9qxL4Sjiii-3QX5eM';
-        const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+        // O app.html cacheia áudio de TTS no localStorage sem limite (chaves comunica_tts_v1:/v2:),
+        // o que pode estourar a quota do navegador com o tempo. Se isso acontecer, um setItem comum
+        // do SDK falha ao persistir o token de sessão após o login, e o usuário cai num loop
+        // (login funciona, mas a sessão nunca fica salva, então volta pra tela de login). Ao estourar,
+        // libera esse cache (facilmente reconstruído) e tenta salvar de novo.
+        function evictTtsLocalStorageCache() {
+            try {
+                const keysToRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && (key.startsWith('comunica_tts_v1:') || key.startsWith('comunica_tts_v2:'))) {
+                        keysToRemove.push(key);
+                    }
+                }
+                keysToRemove.forEach(k => localStorage.removeItem(k));
+            } catch (e) { /* localStorage indisponível: nada a fazer */ }
+        }
+        const resilientAuthStorage = {
+            getItem: (key) => { try { return localStorage.getItem(key); } catch (e) { return null; } },
+            setItem: (key, value) => {
+                try {
+                    localStorage.setItem(key, value);
+                } catch (e) {
+                    evictTtsLocalStorageCache();
+                    try { localStorage.setItem(key, value); } catch (e2) { /* segue sem persistir sessão */ }
+                }
+            },
+            removeItem: (key) => { try { localStorage.removeItem(key); } catch (e) { /* ignore */ } }
+        };
+        const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey, { auth: { storage: resilientAuthStorage } });
         const appRedirectUrl = 'app.html' + (useStagingSupabase ? '?sb=staging' : '');
 
         const form = document.getElementById('login-form');

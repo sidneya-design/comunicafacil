@@ -303,7 +303,22 @@ function getTtsAudio(text) {
         } else {
             audioBase64 = await fetchTtsAudio(SUPABASE_TTS_ENDPOINT, normalizedText);
         }
-        try { localStorage.setItem(TTS_STORAGE_PREFIX + normalizedText, audioBase64); } catch (error) { /* cache cheio */ }
+        try {
+            localStorage.setItem(TTS_STORAGE_PREFIX + normalizedText, audioBase64);
+        } catch (error) {
+            // Cache cheio: libera as entradas de TTS antigas (facilmente reconstruídas) e
+            // tenta de novo, pra não deixar a quota do localStorage lotada — o que impediria
+            // o Supabase de persistir o token de sessão depois.
+            try {
+                const keysToRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith(TTS_STORAGE_PREFIX)) keysToRemove.push(key);
+                }
+                keysToRemove.forEach(k => localStorage.removeItem(k));
+                localStorage.setItem(TTS_STORAGE_PREFIX + normalizedText, audioBase64);
+            } catch (error2) { /* cache cheio: só memória */ }
+        }
         return audioBase64;
     })();
     promise.catch(() => ttsCache.delete(normalizedText));
