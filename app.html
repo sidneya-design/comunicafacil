@@ -361,6 +361,39 @@
                         </div>
 
 
+                        <!-- JOGO: NOMEAÇÃO POR FALA (protótipo, ID: speech-naming) — banco de
+                             palavras/imagens PRÓPRIO, independente do Reconhecimento de Palavras -->
+                        <div id="game-speech-naming-container" style="display:none; height:100%; flex-direction:column; gap:15px;">
+                            <div class="memory-header">
+                                <button class="add-media-btn" id="btn-speech-naming-new-game" style="background: linear-gradient(135deg, #43e97b, #38f9d7); color: #1a1a2e;">
+                                    <i class="fas fa-rotate" aria-hidden="true"></i> Novo Jogo
+                                </button>
+                                <div class="memory-status-bar">
+                                    <span id="speech-naming-score">0/0 correto</span>
+                                </div>
+                                <button class="edit-mode-btn" id="btn-edit-speech-naming" style="display:none;"><i class="fas fa-pen" aria-hidden="true"></i> Editar</button>
+                            </div>
+                            <p id="speech-naming-status-live" class="sr-only" role="status" aria-live="polite"></p>
+
+                            <div class="naming-play-area" id="speech-naming-play-area" style="display:none;">
+                                <p class="naming-instruction">Fale o nome do que você vê na imagem:</p>
+                                <div class="afasia-image-frame" style="margin:0 auto;">
+                                    <img id="speech-naming-image" alt="">
+                                </div>
+                                <div id="speech-naming-feedback" style="min-height:28px; font-weight:700; text-align:center; padding:0 16px;"></div>
+                                <div class="naming-controls">
+                                    <button type="button" class="btn-secondary" id="btn-speech-naming-record" style="background:#f44336; color:#fff;">
+                                        <i class="fas fa-microphone" aria-hidden="true"></i> Gravar
+                                    </button>
+                                    <button type="button" class="btn-secondary" id="btn-speech-naming-help"><i class="fas fa-lightbulb" aria-hidden="true"></i> Ajuda</button>
+                                    <button type="button" class="btn-secondary" id="btn-speech-naming-skip"><i class="fas fa-forward" aria-hidden="true"></i> Passa</button>
+                                    <button type="button" class="btn-secondary" id="btn-speech-naming-stop"><i class="fas fa-right-from-bracket" aria-hidden="true"></i> Sair</button>
+                                </div>
+                            </div>
+
+                            <div class="memory-grid" id="grid-speech-naming" style="display:none;"></div>
+                        </div>
+
                         <!-- JOGO: TRILHA DE APRENDIZADO DE FORÇAS (ID: jogo2) -->
                         <div id="game-jogo2-container" class="jogo2-game" style="display:none;">
                             <div class="memory-header jogo2-header">
@@ -1647,6 +1680,32 @@
                 <div class="modal-footer">
                     <button type="button" class="btn-secondary" id="btn-cancel-naming-set">Cancelar</button>
                     <button type="submit" class="btn-primary" id="btn-save-naming-set">Salvar Palavra</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal independente: Nomeação por Fala (protótipo) — palavra + 1 imagem só, sem distratores -->
+    <div class="modal-overlay" id="speech-naming-set-modal" role="dialog" aria-modal="true" aria-labelledby="speech-naming-set-modal-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="speech-naming-set-modal-title">Nova Palavra</h2>
+                <button class="close-modal-btn" id="btn-close-speech-naming-set" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <p style="font-size:13px;color:#666;margin-bottom:15px;">Envie a imagem que a pessoa vai precisar nomear em voz alta.</p>
+            <form id="speech-naming-set-form">
+                <div class="form-group">
+                    <label for="speech-naming-set-word">Palavra</label>
+                    <input type="text" id="speech-naming-set-word" required placeholder="Ex: Café">
+                </div>
+                <div class="form-group">
+                    <img id="speech-naming-set-img-preview" alt="Pré-visualização da imagem" style="max-width:120px;max-height:120px;display:none;border-radius:8px;object-fit:contain;margin-bottom:8px;">
+                    <label for="speech-naming-set-image">Imagem</label>
+                    <input type="file" id="speech-naming-set-image" accept="image/*">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="btn-cancel-speech-naming-set">Cancelar</button>
+                    <button type="submit" class="btn-primary" id="btn-save-speech-naming-set">Salvar Palavra</button>
                 </div>
             </form>
         </div>

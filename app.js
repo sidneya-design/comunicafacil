@@ -3419,6 +3419,62 @@ function setupModals() {
     });
     document.getElementById('btn-naming-stop').addEventListener('click', () => closeGame());
 
+    document.getElementById('btn-speech-naming-record')?.addEventListener('click', toggleSpeechNamingRecording);
+    document.getElementById('btn-speech-naming-help')?.addEventListener('click', speechNamingHelp);
+    document.getElementById('btn-speech-naming-skip')?.addEventListener('click', speechNamingSkip);
+    document.getElementById('btn-speech-naming-stop')?.addEventListener('click', () => closeGame());
+
+    document.getElementById('btn-speech-naming-new-game')?.addEventListener('click', () => {
+        if (editModes.speechNaming) {
+            editModes.speechNaming = false;
+            updateEditBtn('speechNaming', 'btn-edit-speech-naming', 'Salvar');
+        }
+        startSpeechNamingGame();
+    });
+
+    document.getElementById('btn-edit-speech-naming')?.addEventListener('click', () => {
+        if (editModes.speechNaming) {
+            editModes.speechNaming = false;
+            updateEditBtn('speechNaming', 'btn-edit-speech-naming', 'Salvar');
+            startSpeechNamingGame();
+        } else {
+            editModes.speechNaming = true;
+            updateEditBtn('speechNaming', 'btn-edit-speech-naming', 'Salvar');
+            document.getElementById('speech-naming-play-area').style.display = 'none';
+            document.getElementById('grid-speech-naming').style.display = 'grid';
+            renderSpeechNamingManageGrid();
+        }
+    });
+
+    document.getElementById('btn-close-speech-naming-set')?.addEventListener('click', closeSpeechNamingSetModal);
+    document.getElementById('btn-cancel-speech-naming-set')?.addEventListener('click', closeSpeechNamingSetModal);
+    document.getElementById('speech-naming-set-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const word = document.getElementById('speech-naming-set-word').value.trim();
+        const imageFile = document.getElementById('speech-naming-set-image').files[0] || null;
+        if (!word) return;
+        if (!editingSpeechNamingItem && !imageFile) { alert('Envie a imagem da palavra.'); return; }
+
+        const saveBtn = document.getElementById('btn-save-speech-naming-set');
+        const originalText = saveBtn.textContent;
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Enviando imagem...';
+        try {
+            if (editingSpeechNamingItem) {
+                await updateSpeechNamingItem(editingSpeechNamingItem, word, imageFile);
+            } else {
+                await addSpeechNamingItem(word, imageFile);
+            }
+            closeSpeechNamingSetModal();
+        } catch (err) {
+            console.error('Erro ao salvar palavra:', err);
+            alert('Não foi possível salvar a palavra: ' + (err?.message || err));
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.textContent = originalText;
+        }
+    });
+
     document.getElementById('btn-close-naming-set').addEventListener('click', closeNamingSetModal);
     document.getElementById('btn-cancel-naming-set').addEventListener('click', closeNamingSetModal);
     document.getElementById('naming-set-form').addEventListener('submit', async (e) => {
@@ -4104,7 +4160,8 @@ function renderCurrentPlaylistItem() {
 const gamesList = [
     { id: 'memory', title: 'Jogo da Memória', icon: 'fa-clone', styleClass: 'border-blue' },
     { id: 'memory-alphabet', title: 'Memória do Alfabeto', icon: 'fa-font', styleClass: 'border-green' },
-    { id: 'jogo2', title: 'Trilha de Aprendizado de Forças', icon: 'fa-route', styleClass: 'border-orange' }
+    { id: 'jogo2', title: 'Trilha de Aprendizado de Forças', icon: 'fa-route', styleClass: 'border-orange' },
+    { id: 'speech-naming', title: 'Nomeação por Fala (protótipo)', icon: 'fa-microphone-alt', styleClass: 'border-pink' }
 ];
 
 const exerciseActivities = [
@@ -4469,7 +4526,8 @@ function placeGamesBackButton(gameId) {
     const gameContainers = {
         memory: 'game-memory-container',
         'memory-alphabet': 'game-alphabet-memory-container',
-        jogo2: 'game-jogo2-container'
+        jogo2: 'game-jogo2-container',
+        'speech-naming': 'game-speech-naming-container'
     };
     const gameContainer = document.getElementById(gameContainers[gameId]);
     const gameHeader = gameContainer?.querySelector('.memory-header');
@@ -4525,6 +4583,9 @@ function openGame(gameId) {
         const frame = document.getElementById('complete-sentence-frame');
         container.style.display = 'flex';
         if (!frame.src) refreshCompleteSentenceFrameSrc();
+    } else if (gameId === 'speech-naming') {
+        document.getElementById('game-speech-naming-container').style.display = 'flex';
+        startSpeechNamingGame();
     }
 
     const activityInfo = getActivityTrackingMeta(gameId);
@@ -4599,6 +4660,13 @@ function closeGame() {
 
     const elAfasia = document.getElementById('game-afasia-container');
     if (elAfasia) elAfasia.style.display = 'none';
+
+    const elSpeechNaming = document.getElementById('game-speech-naming-container');
+    if (elSpeechNaming) elSpeechNaming.style.display = 'none';
+    if (speechNamingRecording) {
+        speechNamingRecording = false;
+        stopWavRecording().catch(() => {}); // descarta a gravação em andamento, só solta o mic
+    }
 
     const elCompleteSentence = document.getElementById('game-complete-sentence-container');
     if (elCompleteSentence) elCompleteSentence.style.display = 'none';
@@ -9520,6 +9588,347 @@ function namingSkip() {
 }
 
 // =============================================
+// NOMEAÇÃO POR FALA (protótipo, ver ideia discutida em 2026-08-24)
+// Inverso do Jogo de Reconhecimento de Palavras: em vez de apontar a imagem
+// certa pra uma palavra dada, mostra só a imagem e a pessoa PRECISA FALAR o
+// nome em voz alta — testa produção de fala, não só reconhecimento. Banco de
+// palavras/imagens PRÓPRIO (autônomo, não amarrado ao Reconhecimento de
+// Palavras) — mesmo padrão de container de memory/naming/afasia
+// (getOrCreateGameContainer/resolveGameContainer), só que cada item é
+// {word, image_url}, sem distratores. Transcrição via Azure STT
+// (TRANSCRIBE_ENDPOINT, só local por enquanto — ver server.py /transcribe).
+// =============================================
+const SPEECH_NAMING_SEED_KEY = 'speech-naming-game-container';
+const SPEECH_NAMING_TITLE = 'Jogo de Nomeação por Fala|pink';
+
+function makeSpeechNamingItemId() {
+    return 'speech-naming-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+}
+
+async function getSpeechNamingContainer() {
+    return isDoctor && currentUserId
+        ? getOrCreateGameContainer(doctorScopedSeedKey(SPEECH_NAMING_SEED_KEY, currentUserId), SPEECH_NAMING_TITLE, currentUserId)
+        : getOrCreateGameContainer(SPEECH_NAMING_SEED_KEY, SPEECH_NAMING_TITLE);
+}
+
+function resolveActiveSpeechNamingContainer() {
+    return resolveGameContainer(SPEECH_NAMING_SEED_KEY);
+}
+
+function getSpeechNamingItems() {
+    const container = resolveActiveSpeechNamingContainer();
+    return (container && container.items) || [];
+}
+
+async function addSpeechNamingItem(word, imageFile) {
+    const container = await getSpeechNamingContainer();
+    if (container.fromSupabase) {
+        const imageUrl = await uploadToSupabaseStorage('media_uploads', 'images', imageFile);
+        const { error } = await supabaseClient.from('exercise_items')
+            .insert([{ exercise_id: container.id, word, image_url: imageUrl, link: '' }]);
+        if (error) throw error;
+    } else {
+        container.items = [...(container.items || []), { localId: makeSpeechNamingItemId(), word, imageBlob: imageFile, image_url: null }];
+        await putLocalGameContainer(container);
+    }
+    await loadExerciseCards();
+    renderSpeechNamingManageGrid();
+}
+
+async function updateSpeechNamingItem(item, word, imageFile) {
+    const container = await getSpeechNamingContainer();
+    if (container.fromSupabase) {
+        const update = { word };
+        if (imageFile) update.image_url = await uploadToSupabaseStorage('media_uploads', 'images', imageFile);
+        const { error } = await supabaseClient.from('exercise_items').update(update).eq('id', item.id);
+        if (error) throw error;
+    } else {
+        container.items = (container.items || []).map(it => it.localId === item.localId
+            ? { ...it, word, imageBlob: imageFile || it.imageBlob }
+            : it);
+        await putLocalGameContainer(container);
+    }
+    await loadExerciseCards();
+    renderSpeechNamingManageGrid();
+}
+
+async function deleteSpeechNamingItem(item) {
+    const container = await getSpeechNamingContainer();
+    if (container.fromSupabase) {
+        const { error } = await supabaseClient.from('exercise_items').delete().eq('id', item.id);
+        if (error) throw error;
+    } else {
+        container.items = (container.items || []).filter(it => it.localId !== item.localId);
+        await putLocalGameContainer(container);
+    }
+    await loadExerciseCards();
+    renderSpeechNamingManageGrid();
+}
+
+function renderSpeechNamingManageGrid() {
+    const container = document.getElementById('grid-speech-naming');
+    if (!container) return;
+    container.innerHTML = '';
+
+    getSpeechNamingItems().forEach(item => {
+        const btn = document.createElement('button');
+        btn.className = 'word-btn border-pink';
+        btn.type = 'button';
+
+        const imgContainer = document.createElement('div');
+        imgContainer.className = 'word-btn-img-container';
+        const imgEl = document.createElement('img');
+        imgEl.className = 'word-btn-img';
+        imgEl.alt = '';
+        imgEl.src = resolveNamingImageSrc(item);
+        imgContainer.appendChild(imgEl);
+
+        const textEl = document.createElement('div');
+        textEl.className = 'word-btn-text';
+        textEl.textContent = item.word;
+
+        btn.appendChild(imgContainer);
+        btn.appendChild(textEl);
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'delete-media-btn';
+        delBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>';
+        delBtn.setAttribute('aria-label', 'Excluir palavra');
+        delBtn.onclick = (ev) => {
+            ev.stopPropagation();
+            if (confirm(`Excluir a palavra "${item.word}"?`)) deleteSpeechNamingItem(item);
+        };
+        btn.appendChild(delBtn);
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'edit-media-btn';
+        editBtn.innerHTML = '<i class="fas fa-pencil-alt" aria-hidden="true"></i>';
+        editBtn.setAttribute('aria-label', 'Editar palavra');
+        editBtn.onclick = (ev) => { ev.stopPropagation(); openSpeechNamingSetModal(item); };
+        btn.appendChild(editBtn);
+
+        container.appendChild(btn);
+    });
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'word-btn border-gray';
+    addBtn.type = 'button';
+    addBtn.innerHTML = '<div class="word-btn-img-container"><i class="fas fa-plus word-btn-icon" style="color:#888" aria-hidden="true"></i></div><div class="word-btn-text">Nova Palavra</div>';
+    addBtn.addEventListener('click', () => openSpeechNamingSetModal(null));
+    container.appendChild(addBtn);
+}
+
+let editingSpeechNamingItem = null;
+
+function openSpeechNamingSetModal(item) {
+    editingSpeechNamingItem = item || null;
+    const isEdit = !!item;
+    document.getElementById('speech-naming-set-modal-title').textContent = isEdit ? 'Editar Palavra' : 'Nova Palavra';
+    document.getElementById('speech-naming-set-word').value = isEdit ? item.word : '';
+    document.getElementById('speech-naming-set-image').value = '';
+    document.getElementById('speech-naming-set-image').required = !isEdit;
+
+    const previewEl = document.getElementById('speech-naming-set-img-preview');
+    const src = isEdit ? resolveNamingImageSrc(item) : '';
+    if (src) { previewEl.src = src; previewEl.style.display = 'block'; }
+    else { previewEl.style.display = 'none'; }
+
+    document.getElementById('speech-naming-set-modal').style.display = 'flex';
+}
+
+function closeSpeechNamingSetModal() {
+    document.getElementById('speech-naming-set-modal').style.display = 'none';
+    editingSpeechNamingItem = null;
+}
+
+let speechNamingQueue = [];
+let speechNamingIndex = 0;
+let speechNamingCorrectCount = 0;
+let speechNamingTotalCount = 0;
+let speechNamingBusy = false;
+let speechNamingRecording = false;
+
+function announceSpeechNamingStatus(text) {
+    const el = document.getElementById('speech-naming-status-live');
+    if (el) el.textContent = text;
+}
+
+function updateSpeechNamingScore() {
+    const el = document.getElementById('speech-naming-score');
+    if (el) el.textContent = `${speechNamingCorrectCount}/${speechNamingTotalCount} correto`;
+}
+
+// Compara a transcrição com a palavra-alvo ignorando acento/maiúsculas/
+// pontuação, e aceita a palavra tanto isolada quanto dentro de uma frase
+// (ex.: alvo "cachorro", transcrição "é um cachorro" também conta).
+function normalizeSpeechText(text) {
+    // Reaproveita normalizeSearchText (remove acento/maiúscula, já usado nos
+    // filtros de busca por nome) e só acrescenta a remoção de pontuação.
+    return normalizeSearchText(text).replace(/[^\p{L}\p{N}\s]/gu, '').trim();
+}
+
+function speechAnswerMatchesWord(transcription, word) {
+    const normTranscription = normalizeSpeechText(transcription);
+    const normWord = normalizeSpeechText(word);
+    if (!normTranscription || !normWord) return false;
+    return normTranscription === normWord || normTranscription.split(/\s+/).includes(normWord);
+}
+
+async function startSpeechNamingGame() {
+    // loadExerciseCards() popula lastMergedExercises (de onde vem o
+    // container próprio deste jogo) — sem isso, abrir "Jogos" direto sem
+    // passar por "Exercícios" antes deixava o banco vazio na primeira vez.
+    await loadExerciseCards();
+    const items = getSpeechNamingItems();
+    speechNamingCorrectCount = 0;
+    speechNamingTotalCount = 0;
+    speechNamingBusy = false;
+    speechNamingRecording = false;
+    updateSpeechNamingScore();
+
+    document.getElementById('grid-speech-naming').style.display = 'none';
+    const playArea = document.getElementById('speech-naming-play-area');
+    playArea.style.display = 'flex';
+
+    const feedback = document.getElementById('speech-naming-feedback');
+    const image = document.getElementById('speech-naming-image');
+
+    if (items.length < 1) {
+        image.src = '';
+        feedback.style.color = '#555';
+        feedback.textContent = 'Crie palavras (em "Editar") para gerar o jogo.';
+        announceSpeechNamingStatus(feedback.textContent);
+        return;
+    }
+
+    if (!TRANSCRIBE_ENDPOINT) {
+        feedback.style.color = '#c0392b';
+        feedback.textContent = 'Protótipo disponível só rodando localmente (python3 server.py) por enquanto.';
+    }
+
+    speechNamingQueue = shuffleArray([...items]);
+    speechNamingIndex = 0;
+    preloadGameImages(speechNamingQueue.map(resolveNamingImageSrc));
+    announceSpeechNamingStatus('Novo jogo iniciado.');
+    renderSpeechNamingRound();
+}
+
+function renderSpeechNamingRound() {
+    if (speechNamingIndex >= speechNamingQueue.length) {
+        speechNamingQueue = shuffleArray([...speechNamingQueue]);
+        speechNamingIndex = 0;
+    }
+    speechNamingBusy = false;
+
+    const item = speechNamingQueue[speechNamingIndex];
+    if (!item) return;
+    document.getElementById('speech-naming-image').src = resolveNamingImageSrc(item);
+
+    const feedback = document.getElementById('speech-naming-feedback');
+    feedback.textContent = '';
+
+    const recordBtn = document.getElementById('btn-speech-naming-record');
+    if (recordBtn) {
+        recordBtn.disabled = !TRANSCRIBE_ENDPOINT;
+        recordBtn.innerHTML = '<i class="fas fa-microphone" aria-hidden="true"></i> Gravar';
+    }
+
+    announceSpeechNamingStatus('Fale o nome da imagem.');
+}
+
+function speechNamingHelp() {
+    const item = speechNamingQueue[speechNamingIndex];
+    if (!item) return;
+    speak(item.word);
+    announceSpeechNamingStatus(`Dica: ${item.word}`);
+}
+
+function speechNamingSkip() {
+    if (speechNamingBusy || speechNamingRecording) return;
+    speechNamingIndex++;
+    renderSpeechNamingRound();
+}
+
+async function toggleSpeechNamingRecording() {
+    if (speechNamingBusy || !TRANSCRIBE_ENDPOINT) return;
+    const recordBtn = document.getElementById('btn-speech-naming-record');
+    const feedback = document.getElementById('speech-naming-feedback');
+
+    if (speechNamingRecording) {
+        speechNamingRecording = false;
+        recordBtn.disabled = true;
+        recordBtn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i> Processando...';
+        try {
+            const audioBlob = await stopWavRecording();
+            await evaluateSpeechNamingAnswer(audioBlob);
+        } catch (error) {
+            console.error('Erro ao processar gravação:', error);
+            feedback.style.color = '#c0392b';
+            feedback.textContent = 'Não foi possível processar o áudio. Tente de novo.';
+        } finally {
+            recordBtn.disabled = false;
+            recordBtn.innerHTML = '<i class="fas fa-microphone" aria-hidden="true"></i> Gravar';
+        }
+    } else {
+        try {
+            await startWavRecording();
+            speechNamingRecording = true;
+            recordBtn.innerHTML = '<i class="fas fa-stop" aria-hidden="true"></i> Parar';
+            feedback.style.color = '#c0392b';
+            feedback.textContent = '🔴 Gravando... fale agora!';
+        } catch (error) {
+            console.error('Erro ao acessar microfone:', error);
+            alert('Erro ao acessar microfone. Certifique-se de conceder a permissão no navegador.');
+        }
+    }
+}
+
+async function evaluateSpeechNamingAnswer(audioBlob) {
+    const set = speechNamingQueue[speechNamingIndex];
+    const feedback = document.getElementById('speech-naming-feedback');
+    if (!set) return;
+
+    feedback.style.color = '#555';
+    feedback.textContent = 'Ouvindo...';
+
+    try {
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'audio.wav');
+        const response = await fetch(TRANSCRIBE_ENDPOINT, { method: 'POST', body: formData });
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+
+        const transcription = data.transcription || '';
+        const isCorrect = speechAnswerMatchesWord(transcription, set.word);
+
+        if (isCorrect) {
+            speechNamingBusy = true;
+            speechNamingTotalCount++;
+            speechNamingCorrectCount++;
+            updateSpeechNamingScore();
+            document.getElementById('btn-speech-naming-record').disabled = true;
+            feedback.style.color = '#16b84e';
+            feedback.textContent = `✓ Muito bem! Ouvi: "${transcription}"`;
+            announceSpeechNamingStatus(`Correto, ${set.word}!`);
+            setTimeout(() => {
+                speechNamingIndex++;
+                renderSpeechNamingRound();
+            }, 1200);
+        } else {
+            feedback.style.color = '#c0392b';
+            feedback.textContent = transcription
+                ? `Ouvi: "${transcription}". Tente de novo, ou toque em Passa.`
+                : 'Não consegui entender. Tente de novo, ou toque em Passa.';
+            announceSpeechNamingStatus('Tente de novo.');
+        }
+    } catch (error) {
+        console.error('Erro ao transcrever áudio:', error);
+        feedback.style.color = '#c0392b';
+        feedback.textContent = 'Não foi possível transcrever o áudio. Tente de novo.';
+    }
+}
+
+// =============================================
 // ATIVIDADES PARA AFASIA (IMAGEM → PALAVRA)
 // Inverso do Jogo de Reconhecimento: mostra uma imagem com uma pergunta e a pessoa
 // escolhe a palavra certa entre 3 opções escritas. Cada atividade são 3 itens amarrados
@@ -11497,7 +11906,7 @@ changePasswordForm?.addEventListener('submit', async (e) => {
 });
 
 // Estado global
-const editModes = { core: false, virtue: false, topic: false, memory: false, naming: false, alphabetMemory: false, afasia: false };
+const editModes = { core: false, virtue: false, topic: false, memory: false, naming: false, alphabetMemory: false, afasia: false, speechNaming: false };
 let cardEditorState = { section: null, cardId: null, folderRecord: null };
 let currentVirtueFolders = [];
 let currentOpenFolderRecord = null;
@@ -11512,7 +11921,7 @@ function showEditBars() {
     });
     // Naming/afasia/memória/alfabeto/tópicos/virtudes: médico também
     // gerencia o próprio banco (Fases 10-11, 15-18).
-    ['btn-edit-naming', 'btn-edit-afasia', 'btn-edit-memory', 'btn-edit-alphabet-memory', 'btn-edit-topics', 'btn-edit-virtues'].forEach(id => {
+    ['btn-edit-naming', 'btn-edit-afasia', 'btn-edit-memory', 'btn-edit-alphabet-memory', 'btn-edit-topics', 'btn-edit-virtues', 'btn-edit-speech-naming'].forEach(id => {
         const btn = document.getElementById(id);
         if (btn) btn.style.display = (isAdmin || isDoctor) ? 'inline-block' : 'none';
     });
@@ -12836,6 +13245,12 @@ const AZURE_AI_ENDPOINT = isLocalhost
 const IA_ENDPOINT_FALLBACKS = isLocalhost
     ? [AZURE_AI_ENDPOINT, SUPABASE_CHAT_ENDPOINT]
     : [SUPABASE_CHAT_ENDPOINT];
+
+// Protótipo do jogo "Nomeação por Fala" (ver ideia discutida em 2026-08-24):
+// só transcrição, sem passar pelo agente de IA. Só existe rota local por
+// enquanto (server.py /transcribe) — sem Edge Function equivalente ainda,
+// então em produção o jogo fica desabilitado até essa decisão ser tomada.
+const TRANSCRIBE_ENDPOINT = isLocalhost ? "http://127.0.0.1:5001/transcribe" : null;
 
 
 const iaChatInput = document.getElementById('ia-chat-input');

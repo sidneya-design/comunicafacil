@@ -196,6 +196,21 @@ def tts_route():
         print(f"Erro na rota /tts: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/transcribe', methods=['POST'])
+def transcribe_route():
+    # Protótipo do jogo "Nomeação por Fala": só transcreve o áudio (sem
+    # passar pelo agente de IA nem gerar resposta em voz), pra comparar a
+    # transcrição com a palavra-alvo do jogo.
+    try:
+        if 'audio' not in request.files:
+            return jsonify({"error": "Nenhum áudio recebido"}), 400
+        audio_bytes = request.files['audio'].read()
+        transcription = transcribe_audio(audio_bytes)
+        return jsonify({"transcription": transcription})
+    except Exception as e:
+        print(f"Erro na rota /transcribe: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
