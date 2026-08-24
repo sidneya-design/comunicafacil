@@ -91,7 +91,41 @@ const supabaseUrl = useStagingSupabase
 const supabaseKey = useStagingSupabase
     ? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxaWlpbGRkb2R0dHZyeG9kd2JkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYzNjg4NjEsImV4cCI6MjEwMTk0NDg2MX0.Po7_bLntUw-RFt92Lw2WIsrJoasrrg1VBWl7zm1vDSM'
     : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJydWJtdnlraW5kdmlscHRqaG1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0ODE2OTksImV4cCI6MjA5ODA1NzY5OX0.4eKcRhUReuaKaaq4ftIOWe6vvB9qxL4Sjiii-3QX5eM';
-const supabaseClient = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
+// O cache de TTS em áudio (ver getTtsAudio) cresce sem limite no localStorage — uma entrada
+// por frase falada, nunca removida. Com o tempo isso estoura a quota do navegador, e daí um
+// setItem comum do SDK do Supabase falha ao tentar persistir o token de sessão, deixando a
+// sessão sem ser salva e causando um loop de login (usuário loga, o app não confirma sessão
+// salva, manda de volta pra tela de login). Libera esse cache (facilmente reconstruído) quando
+// necessário.
+function evictTtsLocalStorageCache() {
+    try {
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && (key.startsWith('comunica_tts_v1:') || key.startsWith('comunica_tts_v2:'))) {
+                keysToRemove.push(key);
+            }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+    } catch (e) { /* localStorage indisponível: nada a fazer */ }
+}
+function createResilientAuthStorage() {
+    return {
+        getItem: (key) => { try { return localStorage.getItem(key); } catch (e) { return null; } },
+        setItem: (key, value) => {
+            try {
+                localStorage.setItem(key, value);
+            } catch (e) {
+                evictTtsLocalStorageCache();
+                try { localStorage.setItem(key, value); } catch (e2) { /* segue sem persistir sessão */ }
+            }
+        },
+        removeItem: (key) => { try { localStorage.removeItem(key); } catch (e) { /* ignore */ } }
+    };
+}
+const supabaseClient = window.supabase
+    ? window.supabase.createClient(supabaseUrl, supabaseKey, { auth: { storage: createResilientAuthStorage() } })
+    : null;
 
 // Reduz fotos grandes antes do upload (celular manda imagem de vários MB, que depois
 // demora a aparecer nos jogos). Redimensiona para no máx. 1200px e reexporta comprimido;
@@ -1671,7 +1705,12 @@ function getTtsAudio(text) {
             if (AZURE_AI_ENDPOINT === SUPABASE_CHAT_ENDPOINT) throw primaryError;
             audioBase64 = await fetchTtsAudio(SUPABASE_CHAT_ENDPOINT, text);
         }
-        try { localStorage.setItem(TTS_STORAGE_PREFIX + text, audioBase64); } catch (e) { /* quota cheia: só memória */ }
+        try {
+            localStorage.setItem(TTS_STORAGE_PREFIX + text, audioBase64);
+        } catch (e) {
+            evictTtsLocalStorageCache();
+            try { localStorage.setItem(TTS_STORAGE_PREFIX + text, audioBase64); } catch (e2) { /* quota cheia: só memória */ }
+        }
         return audioBase64;
     })();
     promise.catch(() => azureTtsCache.delete(text)); // falha não fica em cache; próximo clique tenta de novo
