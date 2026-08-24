@@ -844,7 +844,21 @@ function buildQuestionFromForm() {
 }
 
 function saveCustomQuestions() {
-    localStorage.setItem(CUSTOM_QUESTIONS_KEY, JSON.stringify(customQuestions));
+    try {
+        localStorage.setItem(CUSTOM_QUESTIONS_KEY, JSON.stringify(customQuestions));
+    } catch (e) {
+        // Quota cheia: libera o cache de TTS (fácil de reconstruir) e tenta de novo, pra
+        // não perder a pergunta que o admin/médico acabou de cadastrar.
+        try {
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith(TTS_STORAGE_PREFIX)) keysToRemove.push(key);
+            }
+            keysToRemove.forEach(k => localStorage.removeItem(k));
+            localStorage.setItem(CUSTOM_QUESTIONS_KEY, JSON.stringify(customQuestions));
+        } catch (e2) { console.warn('Erro ao salvar pergunta customizada (possível limite de quota):', e2); }
+    }
 }
 
 function showSavedToast(message) {

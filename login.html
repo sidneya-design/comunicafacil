@@ -524,7 +524,9 @@
                 window.location.href = appRedirectUrl;
             }
         }
-        checkSession();
+        // Sem o catch, uma rejeição aqui (ex.: erro ao ler o storage) fica pendurada em
+        // silêncio e quem já está logado nunca é redirecionado pro app automaticamente.
+        checkSession().catch(e => console.warn('Erro ao checar sessão existente:', e));
 
         supabaseClient.auth.onAuthStateChange((event) => {
             if (event === 'PASSWORD_RECOVERY') {

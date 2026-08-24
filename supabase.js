@@ -46,7 +46,18 @@ const resilientAuthStorage = {
     removeItem: (key) => { try { localStorage.removeItem(key); } catch (e) { /* ignore */ } }
 };
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { storage: resilientAuthStorage } });
+// Este módulo é carregado tanto dentro de iframes embutidos em app.html (Livros, Complete a
+// Frase) quanto, potencialmente, de forma isolada. Quando embutido, app.js (janela pai) já
+// mantém sua própria instância do cliente Supabase renovando a sessão sozinha — se esta
+// instância também tentasse renovar o mesmo token compartilhado no localStorage, as duas
+// competiriam pela rotação do refresh token (o Supabase invalida o token anterior a cada
+// renovação), podendo derrubar a sessão do usuário do nada. Só a instância "dona" da aba
+// (não embutida) deve renovar; a embutida só lê a sessão que o pai já mantém em dia.
+const isEmbeddedContext = window.self !== window.top || new URLSearchParams(window.location.search).get('embedded') === '1';
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { storage: resilientAuthStorage, autoRefreshToken: !isEmbeddedContext }
+});
 
 // Optionally expose for debugging
 window.supabase = supabase;

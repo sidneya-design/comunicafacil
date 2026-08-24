@@ -527,6 +527,10 @@ function ensureSessionRecord(user) {
         lastSeenAt: new Date().toISOString()
     };
     state.sessions.unshift(session);
+    // Sem esse corte, esse array cresce pra sempre (uma entrada por sessão de uso, nunca
+    // removida) e é regravado inteiro no localStorage a cada heartbeat de 10s — o mesmo
+    // padrão que estourou a quota de storage com o cache de TTS (ver evictTtsLocalStorageCache).
+    if (state.sessions.length > 50) state.sessions.length = 50;
     const record = ensureUserUsageRecord(user);
     record.totalSessions = (record.totalSessions || 0) + 1;
     saveUsageState();
@@ -6390,10 +6394,35 @@ function updateJogo2SetupPlayersList() {
                 if (!file) return;
                 const reader = new FileReader();
                 reader.onload = ev => {
-                    player.avatar = ev.target.result;
-                    localStorage.setItem(`jogo2_player${i + 1}_avatar`, ev.target.result);
-                    updateJogo2SetupPlayersList();
-                    renderJogo2PlayerLegend();
+                    // Redimensiona/comprime antes de guardar (mesmo padrão do Carômetro):
+                    // uma foto de celular sem compressão pode ter vários MB em base64 e
+                    // sozinha estourar a quota do localStorage — que é a mesma usada pelo
+                    // token de sessão do Supabase.
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const max = 400;
+                        let width = img.width, height = img.height;
+                        if (width > height) {
+                            if (width > max) { height = Math.round(height * max / width); width = max; }
+                        } else {
+                            if (height > max) { width = Math.round(width * max / height); height = max; }
+                        }
+                        canvas.width = width;
+                        canvas.height = height;
+                        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+                        const compressed = canvas.toDataURL('image/jpeg', 0.8);
+                        player.avatar = compressed;
+                        try {
+                            localStorage.setItem(`jogo2_player${i + 1}_avatar`, compressed);
+                        } catch (err) {
+                            evictTtsLocalStorageCache();
+                            try { localStorage.setItem(`jogo2_player${i + 1}_avatar`, compressed); } catch (err2) { /* segue só em memória */ }
+                        }
+                        updateJogo2SetupPlayersList();
+                        renderJogo2PlayerLegend();
+                    };
+                    img.src = ev.target.result;
                 };
                 reader.readAsDataURL(file);
             });
@@ -10446,8 +10475,13 @@ if (supabaseClient) {
                 .from('user_roles')
                 .select('role')
                 .eq('user_id', userId)
-                .single();
+                .maybeSingle();
 
+            // maybeSingle() não gera erro quando o usuário ainda não tem linha em
+            // user_roles (conta recém-criada) — só quando a query de fato falhou (rede,
+            // RLS, etc.). Nos dois casos o app segue tratando como "viewer", mas loga pra
+            // não confundir "realmente é viewer" com "falha ao carregar o papel real".
+            if (error) console.warn('Erro ao carregar papel do usuário (tratando como viewer):', error);
             const role = roleData?.role || 'viewer';
             isAdmin = isCompleteSentenceLocalDemo() || role === 'editor' || role === 'admin';
             canManageUsers = role === 'admin';
@@ -10512,6 +10546,17 @@ if (supabaseClient) {
         }
 
         showEditBars();
+    });
+
+    // A checagem acima roda uma única vez, no carregamento — sem isto, se a sessão cair
+    // depois (token expirado sem conseguir renovar, acesso revogado, corrida de refresh
+    // entre as várias instâncias do cliente Supabase nos iframes), o app fica "meio-logado":
+    // a UI continua mostrando tudo como se a pessoa estivesse logada, e cada chamada ao
+    // Supabase passa a falhar em silêncio. Reage ao SIGNED_OUT mandando de volta pra landing.
+    supabaseClient.auth.onAuthStateChange((event) => {
+        if (event === 'SIGNED_OUT' && !isLocalAppHost()) {
+            window.location.href = 'index.html';
+        }
     });
 }
 
@@ -13962,7 +14007,15 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         } catch (e) {
-            console.warn('Erro ao salvar no localStorage (possível limite de quota):', e);
+            // Estado inteiro (com fotos em base64 de todos os setores/pessoas) cresce a
+            // cada pessoa nova e nunca é podado — mesma quota do token de sessão do
+            // Supabase. Libera o cache de TTS (fácil de reconstruir) e tenta de novo.
+            evictTtsLocalStorageCache();
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            } catch (e2) {
+                console.warn('Erro ao salvar no localStorage (possível limite de quota):', e2);
+            }
         }
     }
 

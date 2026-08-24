@@ -12,12 +12,15 @@ const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB
 function isLocalAppHost() {
   return ['localhost', '127.0.0.1'].includes(window.location.hostname) || window.location.protocol === 'file:';
 }
-const isEmbedded = window.self !== window.top;
-
 // Contexto de médico "dentro" de um paciente (Fase 6c) — app.html passa
 // esses parâmetros na URL do iframe quando o médico clica "Livros" na tela
 // de pacientes (ver enterPatientContext/buildBooksFrameUrl em app.js).
 const urlParams = new URLSearchParams(window.location.search);
+// buildBooksFrameUrl() em app.js sempre inclui ?embedded=1 nessa URL — usar esse marcador
+// explícito (em vez de só `window.self !== window.top`) evita que qualquer iframe de
+// terceiros que carregue book-reader.html seja tratado como "dentro do app" e escape do
+// redirect de sessão (mesmo padrão de embeddedMode em complete-frase.js).
+const isEmbedded = urlParams.get('embedded') === '1';
 const doctorPatientContext = urlParams.get('patientId')
   ? { id: urlParams.get('patientId'), name: urlParams.get('patientName') || '' }
   : null;
@@ -26,7 +29,7 @@ supabase.auth.getSession().then(({ data }) => {
   if (!data?.session && !isLocalAppHost() && !isEmbedded) {
     window.location.href = 'index.html';
   }
-});
+}).catch(e => console.warn('Erro ao checar sessão:', e));
 
 supabase.auth.onAuthStateChange((event) => {
   if (event === 'SIGNED_OUT' && !isLocalAppHost() && !isEmbedded) {
@@ -89,7 +92,21 @@ function loadCustomGenres() {
 }
 
 function saveCustomGenres(list) {
-  localStorage.setItem(CUSTOM_GENRES_KEY, JSON.stringify(list));
+  try {
+    localStorage.setItem(CUSTOM_GENRES_KEY, JSON.stringify(list));
+  } catch (e) {
+    // Quota cheia: libera o cache de TTS (fácil de reconstruir, gravado por app.js/
+    // complete-frase.js) e tenta de novo, pra não perder o gênero recém-cadastrado.
+    try {
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('comunica_tts_v1:') || key.startsWith('comunica_tts_v2:'))) keysToRemove.push(key);
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+      localStorage.setItem(CUSTOM_GENRES_KEY, JSON.stringify(list));
+    } catch (e2) { console.warn('Erro ao salvar gênero customizado (possível limite de quota):', e2); }
+  }
 }
 
 // Gêneros fixos + os cadastrados pelo usuário, sempre com "Outros" por último.
