@@ -1662,6 +1662,15 @@ function setupNavigation() {
                 );
             }
 
+            // Saiu da aba Áudios com algo tocando (player normal ou os dois
+            // slots do modo comparar) — sem isso o clipe seguia tocando por
+            // baixo da tela nova, sem controle nenhum visível pra pausar.
+            if (targetView !== 'view-audio') {
+                audioPlayerEl.pause();
+                audioPlayerElA.pause();
+                audioPlayerElB.pause();
+            }
+
             // Pré-carrega áudios de todos os cards da aba que acabou de abrir
             prefetchViewAudio(targetView);
             
