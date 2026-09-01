@@ -4014,11 +4014,12 @@ function setupAudioModuleControls() {
     audioPlayerEl.addEventListener('play', () => setAudioPlayButtonIcon(true));
     audioPlayerEl.addEventListener('pause', () => setAudioPlayButtonIcon(false));
     audioPlayerEl.addEventListener('ended', () => {
-        if (audioRepeatOn && audioClipOrder.length === 1) {
+        // Ao terminar, só repete o clipe atual se "repetir" estiver ligado —
+        // nunca avança pro próximo card sozinho; isso só acontece por clique
+        // explícito (card da grade ou botões prev/next).
+        if (audioRepeatOn) {
             audioPlayerEl.currentTime = 0;
             audioPlayerEl.play();
-        } else {
-            goToAdjacentAudioClip(1, true);
         }
     });
 
