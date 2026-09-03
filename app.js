@@ -4798,6 +4798,11 @@ function numbersPressDigit(digit) {
     numbersCurrentValue += digit;
     renderNumbersDisplay();
     pulseNumbersDisplay();
+    // Começa a gerar o áudio já a cada dígito (em vez de só ao confirmar) —
+    // diferente do resto do app, o número não existe antes do usuário digitar,
+    // então não dá pra pré-carregar com antecedência; isso pelo menos usa o
+    // tempo de digitação pra já ter o áudio pronto (ou quase) quando confirmar.
+    prefetchTts(numbersCurrentValue);
 }
 
 function numbersBackspace() {
