@@ -1503,6 +1503,43 @@ button, .action-btn { touch-action: manipulation; }
     #btn-manage-complete-sentence { margin-left: auto; padding: 7px 10px; }
 }
 
+/* Jogo: Números — teclado numérico com leitura por voz */
+.numbers-game-play {
+    display: flex; flex-direction: column; align-items: center; gap: 24px;
+    padding: 10px 16px 24px; max-width: 420px; margin: 0 auto; width: 100%;
+}
+.numbers-display {
+    width: 100%; min-height: 96px; background: white; border: 3px solid var(--color-blue);
+    border-radius: 18px; display: flex; align-items: center; justify-content: center;
+    font-size: 56px; font-weight: 800; color: #0b3d5c; letter-spacing: 2px;
+    box-shadow: 0 6px 18px rgba(79, 195, 247, 0.25);
+}
+.numbers-display-empty { color: #b0bec5; }
+.numbers-display-pulse { animation: numbers-pop 0.22s ease-out; }
+@keyframes numbers-pop {
+    0% { transform: scale(1.08); }
+    100% { transform: scale(1); }
+}
+.numbers-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%; }
+.numbers-key {
+    border: 2px solid var(--color-blue); background: white; color: #0b3d5c;
+    border-radius: 16px; font-size: 30px; font-weight: 700; min-height: 68px;
+    cursor: pointer; transition: transform 0.1s ease, background 0.15s ease;
+}
+.numbers-key:hover { background: #e1f5fe; }
+.numbers-key:active { transform: scale(0.94); }
+.numbers-key-backspace, .numbers-key-enter { font-size: 20px; border: none; color: white; }
+.numbers-key-backspace { background: #9E9E9E; }
+.numbers-key-backspace:hover { background: #8a8a8a; }
+.numbers-key-enter { background: #4CAF50; }
+.numbers-key-enter:hover { background: #43a047; }
+.numbers-key-enter:disabled { background: #c8e6c9; cursor: not-allowed; }
+
+@media (max-width: 480px) {
+    .numbers-display { font-size: 42px; min-height: 76px; }
+    .numbers-key { font-size: 24px; min-height: 58px; }
+}
+
 /* Jornada das Forças */
 .strengths-board-game {
     height: 100%;
