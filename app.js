@@ -341,6 +341,7 @@ const USAGE_VIEW_LABELS = {
     'view-audio': 'Áudios',
     'view-exercises': 'Exercícios',
     'view-games': 'Jogos',
+    'view-numeric-keyboard': 'Teclado Numérico',
     'view-ia': 'IA',
     'view-admin': 'Admin',
     'view-doctor-patients': 'Meus Pacientes'
@@ -770,6 +771,7 @@ function getSectionLabel(sectionId) {
         'view-audio': 'Tela: Áudios',
         'view-exercises': 'Tela: Exercícios',
         'view-games': 'Tela: Jogos',
+        'view-numeric-keyboard': 'Tela: Teclado Numérico',
         'view-ia': 'Tela: Assistente IA',
         'view-admin': 'Tela: Admin',
         'view-doctor-patients': 'Tela: Meus Pacientes',
@@ -1676,7 +1678,7 @@ function setupNavigation() {
             
             // Oculta a barra de mensagens nas telas que não usam composição de frases.
             if (messageBar) {
-                if (targetView === 'view-topics' || targetView === 'view-virtues' || targetView === 'view-media' || targetView === 'view-audio' || targetView === 'view-ia' || targetView === 'view-exercises' || targetView === 'view-games' || targetView === 'view-admin' || targetView === 'view-books' || targetView === 'view-doctor-patients') {
+                if (targetView === 'view-topics' || targetView === 'view-virtues' || targetView === 'view-media' || targetView === 'view-audio' || targetView === 'view-ia' || targetView === 'view-exercises' || targetView === 'view-games' || targetView === 'view-numeric-keyboard' || targetView === 'view-admin' || targetView === 'view-books' || targetView === 'view-doctor-patients') {
                     messageBar.style.display = 'none';
                 } else {
                     messageBar.style.display = 'flex';
@@ -1697,6 +1699,10 @@ function setupNavigation() {
 
             if (targetView === 'view-audio') {
                 loadAudioClips();
+            }
+
+            if (targetView === 'view-numeric-keyboard') {
+                initNumericKeyboard();
             }
         });
     });
@@ -4612,6 +4618,30 @@ function setupModals() {
     });
     document.getElementById('btn-naming-stop').addEventListener('click', () => closeGame());
 
+    document.getElementById('numbers-keypad')?.addEventListener('click', (e) => {
+        const digitBtn = e.target.closest('.numbers-key[data-digit]');
+        if (digitBtn) numbersPressDigit(digitBtn.dataset.digit);
+    });
+    document.getElementById('btn-numbers-backspace')?.addEventListener('click', numbersBackspace);
+    document.getElementById('btn-numbers-enter')?.addEventListener('click', numbersEnter);
+
+    // Teclado físico (0-9, Backspace, Enter) além do teclado na tela — vale tanto
+    // pro teclado de um computador quanto pro de um celular/tablet com teclado
+    // bluetooth conectado, já que os dois disparam o mesmo evento 'keydown'.
+    document.addEventListener('keydown', (e) => {
+        if (!document.getElementById('view-numeric-keyboard')?.classList.contains('active')) return;
+        if (e.key >= '0' && e.key <= '9') {
+            e.preventDefault();
+            numbersPressDigit(e.key);
+        } else if (e.key === 'Backspace') {
+            e.preventDefault();
+            numbersBackspace();
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            numbersEnter();
+        }
+    });
+
     document.getElementById('btn-close-naming-set').addEventListener('click', closeNamingSetModal);
     document.getElementById('btn-cancel-naming-set').addEventListener('click', closeNamingSetModal);
     document.getElementById('naming-set-form').addEventListener('submit', async (e) => {
@@ -5584,6 +5614,7 @@ const ALL_MODULES = [
     { id: 'view-books', name: 'Livros', icon: 'fa-book' },
     { id: 'view-exercises', name: 'Exercícios', icon: 'fa-dumbbell' },
     { id: 'view-games', name: 'Jogos', icon: 'fa-gamepad' },
+    { id: 'view-numeric-keyboard', name: 'Teclado Numérico', icon: 'fa-sort-numeric-up' },
     { id: 'view-ia', name: 'Assistente IA', icon: 'fa-robot' }
 ];
 
@@ -6003,6 +6034,57 @@ function closeGame() {
     }
     
     restoreGamesBackButton();
+}
+
+// =============================================
+// TECLADO NUMÉRICO (view-numeric-keyboard) — teclado numérico que fala
+// o número digitado ao confirmar (botão verde), usando o mesmo speak()/voz
+// do resto do app. Aba própria (segue ALL_MODULES/liberação por módulo),
+// não um jogo dentro de view-games — por isso não usa openGame/closeGame.
+// =============================================
+const NUMBERS_MAX_DIGITS = 6; // acima disso o visor estoura e o TTS demora demais pra ler
+let numbersCurrentValue = '';
+
+function initNumericKeyboard() {
+    numbersCurrentValue = '';
+    renderNumbersDisplay();
+}
+
+function renderNumbersDisplay() {
+    const displayEl = document.getElementById('numbers-display-value');
+    if (!displayEl) return;
+    displayEl.textContent = numbersCurrentValue || '—';
+    displayEl.classList.toggle('numbers-display-empty', !numbersCurrentValue);
+
+    const enterBtn = document.getElementById('btn-numbers-enter');
+    if (enterBtn) enterBtn.disabled = !numbersCurrentValue;
+}
+
+function pulseNumbersDisplay() {
+    const displayEl = document.getElementById('numbers-display-value');
+    if (!displayEl) return;
+    displayEl.classList.remove('numbers-display-pulse');
+    void displayEl.offsetWidth; // força reflow pra reiniciar a animação em toques seguidos
+    displayEl.classList.add('numbers-display-pulse');
+}
+
+function numbersPressDigit(digit) {
+    if (numbersCurrentValue.length >= NUMBERS_MAX_DIGITS) return;
+    numbersCurrentValue += digit;
+    renderNumbersDisplay();
+    pulseNumbersDisplay();
+}
+
+function numbersBackspace() {
+    if (!numbersCurrentValue) return;
+    numbersCurrentValue = numbersCurrentValue.slice(0, -1);
+    renderNumbersDisplay();
+}
+
+function numbersEnter() {
+    if (!numbersCurrentValue) return;
+    pulseNumbersDisplay();
+    speak(numbersCurrentValue);
 }
 
 // =============================================
