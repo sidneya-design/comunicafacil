@@ -2925,6 +2925,45 @@ function setReadingTextButtonPlaying(button, isPlaying) {
     else button.title = isPlaying ? 'Parar' : 'Ouvir esta frase';
 }
 
+// Barra de progresso do player de Leitura de Texto: sempre reflete
+// currentAudio (só toca um por vez) — clique/arraste na trilha pula pro
+// ponto, e o botão de 5s volta um pouco, pra reler um trecho sem começar
+// tudo de novo.
+function formatReadingTextTime(seconds) {
+    if (!isFinite(seconds) || seconds < 0) seconds = 0;
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function hideReadingTextProgress() {
+    const wrap = document.getElementById('reading-text-progress-wrap');
+    if (wrap) wrap.style.display = 'none';
+    const fill = document.getElementById('reading-text-progress-fill');
+    if (fill) fill.style.width = '0%';
+}
+
+function wireReadingTextProgress(audio) {
+    const wrap = document.getElementById('reading-text-progress-wrap');
+    const fill = document.getElementById('reading-text-progress-fill');
+    const timeEl = document.getElementById('reading-text-progress-time');
+    const durationEl = document.getElementById('reading-text-progress-duration');
+    if (!wrap || !fill || !timeEl || !durationEl) return;
+
+    wrap.style.display = 'block';
+    fill.style.width = '0%';
+    timeEl.textContent = '0:00';
+    durationEl.textContent = isFinite(audio.duration) ? formatReadingTextTime(audio.duration) : '0:00';
+
+    const update = () => {
+        if (audio.duration) fill.style.width = ((audio.currentTime / audio.duration) * 100) + '%';
+        timeEl.textContent = formatReadingTextTime(audio.currentTime);
+        durationEl.textContent = formatReadingTextTime(audio.duration);
+    };
+    audio.addEventListener('timeupdate', update);
+    audio.addEventListener('loadedmetadata', update);
+}
+
 async function toggleReadingTextPlayback(text, button, activityDetail) {
     if (!text) return;
     if (readingTextActiveButton === button) {
@@ -2932,11 +2971,13 @@ async function toggleReadingTextPlayback(text, button, activityDetail) {
         if ('speechSynthesis' in window) window.speechSynthesis.cancel();
         setReadingTextButtonPlaying(button, false);
         readingTextActiveButton = null;
+        hideReadingTextProgress();
         return;
     }
     if (readingTextActiveButton) setReadingTextButtonPlaying(readingTextActiveButton, false);
     readingTextActiveButton = button;
     setReadingTextButtonPlaying(button, true);
+    hideReadingTextProgress();
 
     const label = usageCurrentActivity?.label || 'Exercício';
     trackUsageActivity(label, {
@@ -2947,10 +2988,12 @@ async function toggleReadingTextPlayback(text, button, activityDetail) {
     const rateKey = document.getElementById('reading-text-speed')?.value || '1';
     await speakWithAzure(text, rateKey);
     if (readingTextActiveButton === button && currentAudio) {
+        wireReadingTextProgress(currentAudio);
         currentAudio.addEventListener('ended', () => {
             if (readingTextActiveButton === button) {
                 setReadingTextButtonPlaying(button, false);
                 readingTextActiveButton = null;
+                hideReadingTextProgress();
             }
         }, { once: true });
     }
@@ -5617,12 +5660,47 @@ function setupModals() {
         if ('speechSynthesis' in window) window.speechSynthesis.cancel();
         setReadingTextButtonPlaying(document.getElementById('btn-play-reading-text'), false);
         readingTextActiveButton = null;
+        hideReadingTextProgress();
     });
 
     document.getElementById('btn-play-reading-text').addEventListener('click', (e) => {
         const text = document.getElementById('reading-text-player-body').dataset.text || '';
         toggleReadingTextPlayback(text, e.currentTarget, 'Ouviu leitura de texto');
     });
+
+    // Clique/arraste na trilha pula pro ponto tocado; setas quando a trilha
+    // está focada fazem o mesmo em passos pequenos; o botão volta 5s — tudo
+    // opera sobre currentAudio, que é sempre o único áudio tocando.
+    (() => {
+        const track = document.getElementById('reading-text-progress-track');
+        const rewindBtn = document.getElementById('btn-reading-text-rewind');
+        if (!track || !rewindBtn) return;
+
+        const seekToClientX = (clientX) => {
+            if (!currentAudio || !currentAudio.duration) return;
+            const rect = track.getBoundingClientRect();
+            const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+            currentAudio.currentTime = ratio * currentAudio.duration;
+        };
+
+        track.addEventListener('click', (e) => seekToClientX(e.clientX));
+
+        track.addEventListener('keydown', (e) => {
+            if (!currentAudio) return;
+            if (e.key === 'ArrowRight') {
+                currentAudio.currentTime = Math.min(currentAudio.duration || 0, currentAudio.currentTime + 5);
+                e.preventDefault();
+            } else if (e.key === 'ArrowLeft') {
+                currentAudio.currentTime = Math.max(0, currentAudio.currentTime - 5);
+                e.preventDefault();
+            }
+        });
+
+        rewindBtn.addEventListener('click', () => {
+            if (!currentAudio) return;
+            currentAudio.currentTime = Math.max(0, currentAudio.currentTime - 5);
+        });
+    })();
 
     document.getElementById('btn-close-video').addEventListener('click', () => {
         document.getElementById('video-modal').style.display = 'none';

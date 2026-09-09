@@ -1729,6 +1729,20 @@
                     </select>
                 </label>
             </div>
+            <div id="reading-text-progress-wrap" style="display:none; padding: 4px 4px 10px;">
+                <div id="reading-text-progress-track" role="slider" aria-label="Posição na leitura" tabindex="0"
+                    style="position:relative; height:8px; background:#e2e8f0; border-radius:999px; cursor:pointer;">
+                    <div id="reading-text-progress-fill" style="position:absolute; left:0; top:0; height:100%; width:0%; background:#2563eb; border-radius:999px; pointer-events:none;"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+                    <span id="reading-text-progress-time" style="font-size:12px; color:#64748b; font-variant-numeric:tabular-nums;">0:00</span>
+                    <button type="button" id="btn-reading-text-rewind" title="Voltar 5 segundos"
+                        style="background:none; border:1px solid #cbd5e1; border-radius:8px; padding:4px 10px; font-size:12px; color:#475569; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                        <i class="fas fa-rotate-left" aria-hidden="true"></i> 5s
+                    </button>
+                    <span id="reading-text-progress-duration" style="font-size:12px; color:#64748b; font-variant-numeric:tabular-nums;">0:00</span>
+                </div>
+            </div>
             <div id="reading-text-player-phrases" style="margin-top: 10px;"></div>
         </div>
     </div>
