@@ -3090,7 +3090,13 @@ function renderExerciseCards(exercisesArray) {
         // tem imagem, ver renderCurrentPlaylistItem) quanto no Exercício com
         // Slides quando o item foi criado sem foto (usa só sílabas/palavra
         // como legenda). Nesses casos mostra a sílaba/palavra do 1º item.
-        if (firstItem && firstItem.imageBlob instanceof Blob) {
+        if (ex.gameKind === 'reading-text') {
+            // Leitura de Texto: a capa mostrando o parágrafo inteiro (via
+            // fallback abaixo) ficava ilegível, espremido num card pequeno —
+            // troca por um ícone de parágrafo, igual ao padrão de ícone dos
+            // outros tipos sem imagem própria.
+            imgContainer.innerHTML = '<i class="fas fa-align-left word-btn-icon" aria-hidden="true"></i>';
+        } else if (firstItem && firstItem.imageBlob instanceof Blob) {
             imgContainer.innerHTML = `<img src="${URL.createObjectURL(firstItem.imageBlob)}" class="word-btn-img" alt="" />`;
         } else if (firstItem && firstItem.image_url) {
             imgContainer.innerHTML = `<img src="${firstItem.image_url}" class="word-btn-img" alt="" />`;
