@@ -118,12 +118,23 @@ class FrameParser {
   }
 }
 
+export interface EdgeTtsWordBoundary {
+  text: string;
+  offsetMs: number;
+  durationMs: number;
+}
+
+export interface EdgeTtsResult {
+  audio: Uint8Array;
+  words: EdgeTtsWordBoundary[];
+}
+
 export async function edgeTtsSynthesize(
   text: string,
   voice = "pt-BR-FranciscaNeural",
   rate = "-15%",
   timeoutMs = 60000,
-): Promise<Uint8Array> {
+): Promise<EdgeTtsResult> {
   const secMsGec = await generateSecMsGec();
   const query =
     `?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}&Sec-MS-GEC=${secMsGec}` +
@@ -182,7 +193,7 @@ export async function edgeTtsSynthesize(
         "Content-Type:application/json; charset=utf-8\r\n" +
         "Path:speech.config\r\n\r\n" +
         '{"context":{"synthesis":{"audio":{"metadataoptions":{' +
-        '"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},' +
+        '"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"true"},' +
         '"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}\r\n',
     ));
     const ssml =
@@ -202,6 +213,7 @@ export async function edgeTtsSynthesize(
     // --- Recebe frames até turn.end ---
     const parser = new FrameParser();
     const audioChunks: Uint8Array[] = [];
+    const words: EdgeTtsWordBoundary[] = [];
     // Bytes que sobraram depois dos headers do handshake já podem conter frames
     const leftover = response.subarray(headerEnd + 4);
     let pending = parser.push(leftover);
@@ -210,8 +222,28 @@ export async function edgeTtsSynthesize(
     while (true) {
       for (const msg of pending) {
         if (msg.opcode === 0x1) {
-          // frame de texto: só interessa o fim do turno
-          if (new TextDecoder().decode(msg.payload).includes("Path:turn.end")) break reading;
+          // frame de texto: turn.end encerra a leitura; audio.metadata traz os
+          // boundaries de palavra (offset/duration em unidades de 100ns) usados
+          // pra destacar a palavra sendo lida no player de Leitura de Texto.
+          const text = new TextDecoder().decode(msg.payload);
+          if (text.includes("Path:turn.end")) break reading;
+          if (text.includes("Path:audio.metadata")) {
+            const bodyStart = text.indexOf("\r\n\r\n");
+            if (bodyStart >= 0) {
+              try {
+                const meta = JSON.parse(text.slice(bodyStart + 4));
+                for (const item of meta.Metadata || []) {
+                  if (item.Type === "WordBoundary" && item.Data) {
+                    words.push({
+                      text: item.Data.text?.Text ?? "",
+                      offsetMs: item.Data.Offset / 10000,
+                      durationMs: item.Data.Duration / 10000,
+                    });
+                  }
+                }
+              } catch (_) { /* metadata mal formado: ignora, cai no fallback proporcional no cliente */ }
+            }
+          }
         } else if (msg.opcode === 0x2) {
           // frame binário: 2 bytes de tamanho do header + headers + áudio.
           // O áudio começa em headerLength + 2 (mesmo recorte do edge-tts python).
@@ -244,7 +276,7 @@ export async function edgeTtsSynthesize(
     const out = new Uint8Array(total);
     let offset = 0;
     for (const c of audioChunks) { out.set(c, offset); offset += c.length; }
-    return out;
+    return { audio: out, words };
   } finally {
     clearTimeout(timer);
     try { conn.close(); } catch (_) { /* já fechada */ }

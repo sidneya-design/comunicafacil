@@ -101,15 +101,22 @@ Deno.serve(async (req) => {
       // navegador via playbackRate). Sem ttsRate, mantém o -15% padrão de sempre.
       if (ttsText) {
         let audioBase64: string;
+        // words: boundaries de palavra do edge-tts (vazio no fallback Azure) —
+        // usados pelo player de Leitura de Texto pra destacar a palavra sendo
+        // lida; sem eles, o cliente cai numa aproximação por proporção de
+        // caracteres.
+        let words: { text: string; offsetMs: number; durationMs: number }[] = [];
         try {
-          audioBase64 = encodeBase64(await edgeTtsSynthesize(cleanTextForSpeech(ttsText), undefined, ttsRate));
+          const result = await edgeTtsSynthesize(cleanTextForSpeech(ttsText), undefined, ttsRate);
+          audioBase64 = encodeBase64(result.audio);
+          words = result.words;
         } catch (edgeError) {
           console.error("edge-tts falhou, tentando Azure:", (edgeError as Error).message);
           if (!apiKey) throw edgeError;
           audioBase64 = await synthesizeTextWithAzure(ttsText, apiKey);
         }
         return new Response(
-          JSON.stringify({ audio: audioBase64 }),
+          JSON.stringify({ audio: audioBase64, words }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
         );
       }

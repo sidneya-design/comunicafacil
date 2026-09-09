@@ -102,7 +102,7 @@ function evictTtsLocalStorageCache() {
         const keysToRemove = [];
         for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
-            if (key && (key.startsWith('comunica_tts_v1:') || key.startsWith('comunica_tts_v2:'))) {
+            if (key && (key.startsWith('comunica_tts_v1:') || key.startsWith('comunica_tts_v2:') || key.startsWith('comunica_tts_v3:'))) {
                 keysToRemove.push(key);
             }
         }
@@ -1869,8 +1869,12 @@ function _speakNative(text) {
 // Para o clique responder na hora, o áudio é pré-carregado quando o slide aparece
 // (prefetchTts) e guardado em dois níveis: memória (promessas, deduplica requisições
 // em andamento) e localStorage (sobrevive a reload e funciona offline).
-const azureTtsCache = new Map(); // texto -> Promise<string base64>
-const TTS_STORAGE_PREFIX = 'comunica_tts_v2:';
+const azureTtsCache = new Map(); // texto -> Promise<{audio: string base64, words: []}>
+// v3: guarda {audio, words} em vez de só a string base64 (ver getTtsAudio) —
+// words são os boundaries de palavra usados pra destacar a leitura no player
+// de Leitura de Texto. Prefixo novo pra não tentar reler cache antigo (v1/v2)
+// no formato errado; evictTtsLocalStorageCache limpa as três versões.
+const TTS_STORAGE_PREFIX = 'comunica_tts_v3:';
 
 // A function 'chat' agora exige sessão válida (fecha proxy aberto pro
 // serviço pago da Azure) — anexa o token do usuário logado em toda chamada
@@ -1902,34 +1906,34 @@ async function fetchTtsAudio(endpoint, text, ttsRate) {
     });
     const data = await response.json();
     if (!response.ok || !data.audio) throw new Error(data.error || `Erro HTTP ${response.status}`);
-    return data.audio;
+    return { audio: data.audio, words: Array.isArray(data.words) ? data.words : [] };
 }
 
 // rateKey identifica o cache ("" = voz normal de sempre, mesma chave já usada
 // em produção); ttsRate é o valor de verdade mandado pro backend (SSML
-// <prosody rate>), só quando rateKey não é o padrão.
+// <prosody rate>), só quando rateKey não é o padrão. Retorna {audio, words}.
 function getTtsAudio(text, rateKey, ttsRate) {
     const cacheKey = rateKey ? (text + '::rate::' + rateKey) : text;
     if (azureTtsCache.has(cacheKey)) return azureTtsCache.get(cacheKey);
     const promise = (async () => {
         try {
             const stored = localStorage.getItem(TTS_STORAGE_PREFIX + cacheKey);
-            if (stored) return stored;
-        } catch (e) { /* localStorage indisponível: segue para o backend */ }
-        let audioBase64;
+            if (stored) return JSON.parse(stored);
+        } catch (e) { /* localStorage indisponível ou entrada corrompida: segue para o backend */ }
+        let result;
         try {
-            audioBase64 = await fetchTtsAudio(AZURE_AI_ENDPOINT, text, ttsRate);
+            result = await fetchTtsAudio(AZURE_AI_ENDPOINT, text, ttsRate);
         } catch (primaryError) {
             if (AZURE_AI_ENDPOINT === SUPABASE_CHAT_ENDPOINT) throw primaryError;
-            audioBase64 = await fetchTtsAudio(SUPABASE_CHAT_ENDPOINT, text, ttsRate);
+            result = await fetchTtsAudio(SUPABASE_CHAT_ENDPOINT, text, ttsRate);
         }
         try {
-            localStorage.setItem(TTS_STORAGE_PREFIX + cacheKey, audioBase64);
+            localStorage.setItem(TTS_STORAGE_PREFIX + cacheKey, JSON.stringify(result));
         } catch (e) {
             evictTtsLocalStorageCache();
-            try { localStorage.setItem(TTS_STORAGE_PREFIX + cacheKey, audioBase64); } catch (e2) { /* quota cheia: só memória */ }
+            try { localStorage.setItem(TTS_STORAGE_PREFIX + cacheKey, JSON.stringify(result)); } catch (e2) { /* quota cheia: só memória */ }
         }
-        return audioBase64;
+        return result;
     })();
     promise.catch(() => azureTtsCache.delete(cacheKey)); // falha não fica em cache; próximo clique tenta de novo
     azureTtsCache.set(cacheKey, promise);
@@ -1964,9 +1968,10 @@ async function speakWithAzure(text, rateKey) {
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     try {
         const ttsRate = rateKey ? (READING_TEXT_RATE_MAP[rateKey] || null) : null;
-        const audioBase64 = await getTtsAudio(text, ttsRate ? rateKey : null, ttsRate);
+        const result = await getTtsAudio(text, ttsRate ? rateKey : null, ttsRate);
         if (myRequestId !== ttsRequestId) return;
-        currentAudio = new Audio('data:audio/mp3;base64,' + audioBase64);
+        currentAudioWords = result.words || [];
+        currentAudio = new Audio('data:audio/mp3;base64,' + result.audio);
         await currentAudio.play();
     } catch (e) {
         if (myRequestId !== ttsRequestId) return;
@@ -2965,6 +2970,22 @@ function clearReadingTextHighlight(container) {
     container.rtWords.forEach(w => w.el.classList.remove('reading-text-word-active'));
 }
 
+// Substitui a aproximação por caracteres (definida em renderReadingTextWords)
+// pelos tempos reais que o edge-tts devolveu (currentAudioWords), quando dá
+// pra confiar neles: só quando a contagem bate com as palavras renderizadas
+// — sem isso um "..." ou hífen que o sintetizador conta diferente do split
+// por espaço do cliente desalinharia tudo. Se não bater, fica na aproximação.
+function applyReadingTextWordTimings(container, words, durationSec) {
+    if (!container || !container.rtWords || !words || !durationSec) return;
+    if (words.length !== container.rtWords.length) return;
+    container.rtWords.forEach((w, i) => {
+        const start = (words[i].offsetMs / 1000) / durationSec;
+        const nextStart = (i + 1 < words.length) ? ((words[i + 1].offsetMs / 1000) / durationSec) : 1;
+        w.startFrac = Math.max(0, Math.min(1, start));
+        w.endFrac = Math.max(w.startFrac, Math.min(1, nextStart));
+    });
+}
+
 // Acha o container de palavras associado ao botão clicado: o parágrafo
 // principal pro botão grande, ou o span de texto da linha da frase pros
 // botões de cada frase.
@@ -2974,13 +2995,17 @@ function getReadingTextContainerForButton(button) {
     return button.closest('.reading-text-player-phrase-row')?.querySelector('.reading-text-player-phrase-text') || null;
 }
 
-function setReadingTextButtonPlaying(button, isPlaying) {
+// state: 'idle' (ainda não tocou / parado), 'playing' (tocando, clique pausa)
+// ou 'paused' (pausado no meio, clique continua de onde parou).
+function setReadingTextButtonState(button, state) {
     if (!button) return;
     const icon = button.querySelector('i');
-    if (icon) icon.className = isPlaying ? 'fas fa-stop' : 'fas fa-volume-up';
+    const iconClass = state === 'playing' ? 'fas fa-pause' : (state === 'paused' ? 'fas fa-play' : 'fas fa-volume-up');
+    if (icon) icon.className = iconClass;
     const label = button.querySelector('.reading-text-play-label');
-    if (label) label.textContent = isPlaying ? 'Parar' : 'Ouvir leitura';
-    else button.title = isPlaying ? 'Parar' : 'Ouvir esta frase';
+    const labelText = state === 'playing' ? 'Pausar' : (state === 'paused' ? 'Continuar' : 'Ouvir leitura');
+    if (label) label.textContent = labelText;
+    else button.title = state === 'playing' ? 'Pausar' : (state === 'paused' ? 'Continuar leitura' : 'Ouvir esta frase');
 }
 
 // Barra de progresso do player de Leitura de Texto: sempre reflete
@@ -3015,8 +3040,14 @@ function wireReadingTextProgress(audio, container) {
     timeEl.textContent = '0:00';
     durationEl.textContent = isFinite(audio.duration) ? formatReadingTextTime(audio.duration) : '0:00';
     readingTextHighlightContainer = container || null;
+    const words = currentAudioWords;
+    let timingsApplied = false;
 
     const update = () => {
+        if (!timingsApplied && audio.duration && isFinite(audio.duration)) {
+            applyReadingTextWordTimings(container, words, audio.duration);
+            timingsApplied = true;
+        }
         const fraction = audio.duration ? (audio.currentTime / audio.duration) : 0;
         if (audio.duration) fill.style.width = (fraction * 100) + '%';
         timeEl.textContent = formatReadingTextTime(audio.currentTime);
@@ -3029,17 +3060,26 @@ function wireReadingTextProgress(audio, container) {
 
 async function toggleReadingTextPlayback(text, button, activityDetail) {
     if (!text) return;
-    if (readingTextActiveButton === button) {
-        if (currentAudio) currentAudio.pause();
-        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-        setReadingTextButtonPlaying(button, false);
-        readingTextActiveButton = null;
-        hideReadingTextProgress();
+
+    // Mesmo botão que já está tocando/pausado: alterna pausa/continuar sem
+    // re-sintetizar nem perder a posição — currentAudio segue vivo, só
+    // currentAudio.pause()/play() em cima do mesmo áudio já carregado.
+    if (readingTextActiveButton === button && currentAudio) {
+        if (currentAudio.paused) {
+            currentAudio.play();
+            setReadingTextButtonState(button, 'playing');
+        } else {
+            currentAudio.pause();
+            setReadingTextButtonState(button, 'paused');
+        }
         return;
     }
-    if (readingTextActiveButton) setReadingTextButtonPlaying(readingTextActiveButton, false);
+
+    if (readingTextActiveButton) setReadingTextButtonState(readingTextActiveButton, 'idle');
+    if (currentAudio) currentAudio.pause();
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     readingTextActiveButton = button;
-    setReadingTextButtonPlaying(button, true);
+    setReadingTextButtonState(button, 'playing');
     hideReadingTextProgress();
 
     const label = usageCurrentActivity?.label || 'Exercício';
@@ -3054,7 +3094,7 @@ async function toggleReadingTextPlayback(text, button, activityDetail) {
         wireReadingTextProgress(currentAudio, getReadingTextContainerForButton(button));
         currentAudio.addEventListener('ended', () => {
             if (readingTextActiveButton === button) {
-                setReadingTextButtonPlaying(button, false);
+                setReadingTextButtonState(button, 'idle');
                 readingTextActiveButton = null;
                 hideReadingTextProgress();
             }
@@ -3080,7 +3120,7 @@ function openReadingTextPlayer(ex) {
     // tocar e clicar nele não fazia nada — confuso. Some com ele, a
     // velocidade continua valendo pro play de cada frase.
     mainPlayBtn.style.display = text ? '' : 'none';
-    setReadingTextButtonPlaying(mainPlayBtn, false);
+    setReadingTextButtonState(mainPlayBtn, 'idle');
 
     const phrasesEl = document.getElementById('reading-text-player-phrases');
     phrasesEl.innerHTML = '';
@@ -4491,6 +4531,11 @@ function setupAudioModuleControls() {
 // ----------------------------------------------------
 
 let currentAudio = null;
+// Boundaries de palavra (offsetMs/durationMs) do currentAudio, quando o
+// backend manda (edge-tts) — usado só pelo player de Leitura de Texto pra
+// destacar a palavra sendo lida com precisão real, em vez da aproximação por
+// proporção de caracteres.
+let currentAudioWords = [];
 let currentPlaylistItems = [];
 let currentPlaylistIndex = 0;
 let currentPlaylistDeckStyle = null;
@@ -5722,7 +5767,7 @@ function setupModals() {
         document.getElementById('reading-text-player-modal').style.display = 'none';
         if (currentAudio) { currentAudio.pause(); currentAudio = null; }
         if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-        setReadingTextButtonPlaying(document.getElementById('btn-play-reading-text'), false);
+        setReadingTextButtonState(document.getElementById('btn-play-reading-text'), 'idle');
         readingTextActiveButton = null;
         hideReadingTextProgress();
     });

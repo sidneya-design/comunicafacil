@@ -128,14 +128,23 @@ def synthesize_text_edge(text, rate=None):
     async def _run():
         communicate = edge_tts.Communicate(text, EDGE_TTS_VOICE, rate=rate) if rate else edge_tts.Communicate(text, EDGE_TTS_VOICE)
         chunks = []
+        words = []
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
                 chunks.append(chunk["data"])
-        return b"".join(chunks)
-    audio_bytes = asyncio.run(_run())
+            elif chunk["type"] == "WordBoundary":
+                # offset/duration vem em unidades de 100ns; o player de Leitura de
+                # Texto usa isso (em ms) pra destacar a palavra sendo lida.
+                words.append({
+                    "text": chunk["text"],
+                    "offsetMs": chunk["offset"] / 10000,
+                    "durationMs": chunk["duration"] / 10000,
+                })
+        return b"".join(chunks), words
+    audio_bytes, words = asyncio.run(_run())
     if not audio_bytes:
         raise Exception("edge-tts nao retornou audio")
-    return base64.b64encode(audio_bytes).decode('utf-8')
+    return base64.b64encode(audio_bytes).decode('utf-8'), words
 
 # Narração de livros (aba Livros): função própria, separada de synthesize_text_edge,
 # porque o leitor deixa a pessoa escolher a voz do narrador — synthesize_text_edge
@@ -235,7 +244,8 @@ def chat():
             # o Azure fica reservado ao fluxo do chat com IA.
             tts_text = (data.get('ttsText') or '').strip()
             if tts_text:
-                return jsonify({"audio": synthesize_text_edge(tts_text, data.get('ttsRate'))})
+                tts_audio_b64, tts_words = synthesize_text_edge(tts_text, data.get('ttsRate'))
+                return jsonify({"audio": tts_audio_b64, "words": tts_words})
 
             messages = data.get('messages', [])
             generate_audio = data.get('generateAudio', False)
