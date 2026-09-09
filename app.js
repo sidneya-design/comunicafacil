@@ -2915,6 +2915,64 @@ function openEditReadingTextExercise(ex) {
 // botão está "tocando" pra resetar o ícone dele quando outro assume ou
 // quando o áudio termina sozinho.
 let readingTextActiveButton = null;
+// Container (parágrafo principal ou span de uma frase) cujas palavras estão
+// sendo destacadas durante a leitura atual — guardado à parte pra
+// hideReadingTextProgress conseguir limpar o destaque sem precisar receber
+// o container de novo.
+let readingTextHighlightContainer = null;
+
+// Quebra o texto em <span> por palavra (mantendo espaços/pontuação como
+// estavam) e guarda em container.rtWords a fração [startFrac, endFrac) de
+// cada uma dentro da duração total do áudio — cada palavra "dona" do trecho
+// até a próxima começar, incluindo a pausa depois dela. É uma aproximação
+// por proporção de caracteres (o back-end não devolve os tempos reais de
+// cada palavra), suficiente pra acompanhar a leitura visualmente.
+function renderReadingTextWords(container, text) {
+    container.textContent = '';
+    container.dataset.text = text;
+    container.rtWords = [];
+    if (!text) return;
+    const total = text.length || 1;
+    const re = /\S+/g;
+    const tokens = [];
+    let m;
+    while ((m = re.exec(text)) !== null) {
+        tokens.push({ start: m.index, end: m.index + m[0].length, str: m[0] });
+    }
+    let cursor = 0;
+    tokens.forEach((tok, i) => {
+        if (tok.start > cursor) container.appendChild(document.createTextNode(text.slice(cursor, tok.start)));
+        const span = document.createElement('span');
+        span.className = 'reading-text-word';
+        span.textContent = tok.str;
+        container.appendChild(span);
+        const nextStart = (i + 1 < tokens.length) ? tokens[i + 1].start : text.length;
+        container.rtWords.push({ el: span, startFrac: tok.start / total, endFrac: nextStart / total });
+        cursor = tok.end;
+    });
+    if (cursor < text.length) container.appendChild(document.createTextNode(text.slice(cursor)));
+}
+
+function highlightReadingTextWord(container, fraction) {
+    if (!container || !container.rtWords) return;
+    container.rtWords.forEach(w => {
+        w.el.classList.toggle('reading-text-word-active', fraction >= w.startFrac && fraction < w.endFrac);
+    });
+}
+
+function clearReadingTextHighlight(container) {
+    if (!container || !container.rtWords) return;
+    container.rtWords.forEach(w => w.el.classList.remove('reading-text-word-active'));
+}
+
+// Acha o container de palavras associado ao botão clicado: o parágrafo
+// principal pro botão grande, ou o span de texto da linha da frase pros
+// botões de cada frase.
+function getReadingTextContainerForButton(button) {
+    if (!button) return null;
+    if (button.id === 'btn-play-reading-text') return document.getElementById('reading-text-player-body');
+    return button.closest('.reading-text-player-phrase-row')?.querySelector('.reading-text-player-phrase-text') || null;
+}
 
 function setReadingTextButtonPlaying(button, isPlaying) {
     if (!button) return;
@@ -2941,9 +2999,11 @@ function hideReadingTextProgress() {
     if (wrap) wrap.style.display = 'none';
     const fill = document.getElementById('reading-text-progress-fill');
     if (fill) fill.style.width = '0%';
+    clearReadingTextHighlight(readingTextHighlightContainer);
+    readingTextHighlightContainer = null;
 }
 
-function wireReadingTextProgress(audio) {
+function wireReadingTextProgress(audio, container) {
     const wrap = document.getElementById('reading-text-progress-wrap');
     const fill = document.getElementById('reading-text-progress-fill');
     const timeEl = document.getElementById('reading-text-progress-time');
@@ -2954,11 +3014,14 @@ function wireReadingTextProgress(audio) {
     fill.style.width = '0%';
     timeEl.textContent = '0:00';
     durationEl.textContent = isFinite(audio.duration) ? formatReadingTextTime(audio.duration) : '0:00';
+    readingTextHighlightContainer = container || null;
 
     const update = () => {
-        if (audio.duration) fill.style.width = ((audio.currentTime / audio.duration) * 100) + '%';
+        const fraction = audio.duration ? (audio.currentTime / audio.duration) : 0;
+        if (audio.duration) fill.style.width = (fraction * 100) + '%';
         timeEl.textContent = formatReadingTextTime(audio.currentTime);
         durationEl.textContent = formatReadingTextTime(audio.duration);
+        highlightReadingTextWord(container, fraction);
     };
     audio.addEventListener('timeupdate', update);
     audio.addEventListener('loadedmetadata', update);
@@ -2988,7 +3051,7 @@ async function toggleReadingTextPlayback(text, button, activityDetail) {
     const rateKey = document.getElementById('reading-text-speed')?.value || '1';
     await speakWithAzure(text, rateKey);
     if (readingTextActiveButton === button && currentAudio) {
-        wireReadingTextProgress(currentAudio);
+        wireReadingTextProgress(currentAudio, getReadingTextContainerForButton(button));
         currentAudio.addEventListener('ended', () => {
             if (readingTextActiveButton === button) {
                 setReadingTextButtonPlaying(button, false);
@@ -3007,10 +3070,10 @@ function openReadingTextPlayer(ex) {
     document.getElementById('reading-text-player-modal').style.display = 'flex';
     document.getElementById('reading-text-player-title').textContent = displayTitle;
     const bodyEl = document.getElementById('reading-text-player-body');
-    bodyEl.textContent = text;
-    bodyEl.dataset.text = text;
+    renderReadingTextWords(bodyEl, text);
     bodyEl.style.display = text ? '' : 'none';
     readingTextActiveButton = null;
+    hideReadingTextProgress();
     const mainPlayBtn = document.getElementById('btn-play-reading-text');
     // Exercício criado só com frases (sem parágrafo principal, ver validação
     // do editor): sem texto, o botão grande "Ouvir leitura" não tem o que
@@ -3025,7 +3088,8 @@ function openReadingTextPlayer(ex) {
         const row = document.createElement('div');
         row.className = 'reading-text-player-phrase-row';
         const span = document.createElement('span');
-        span.textContent = phrase;
+        span.className = 'reading-text-player-phrase-text';
+        renderReadingTextWords(span, phrase);
         const playBtn = document.createElement('button');
         playBtn.type = 'button';
         playBtn.title = 'Ouvir esta frase';

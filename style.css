@@ -352,8 +352,9 @@ body {
 .reading-text-phrase-remove { background: #ff4d4f; }
 
 .reading-text-player-phrase-row { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-top: 1px solid #eee; }
-.reading-text-player-phrase-row span { flex: 1; font-size: 17px; line-height: 1.4; }
+.reading-text-player-phrase-row .reading-text-player-phrase-text { flex: 1; font-size: 17px; line-height: 1.4; }
 .reading-text-player-phrase-row button { flex-shrink: 0; height: 36px; width: 36px; border: none; border-radius: 8px; background: #2563eb; color: white; cursor: pointer; }
+.reading-text-word-active { background: #bfdbfe; border-radius: 4px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 @media (max-width: 600px) {
     .exercise-type-grid { grid-template-columns: 1fr; }
     .exercise-type-option { min-height: 145px; }
