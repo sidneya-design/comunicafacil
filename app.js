@@ -1788,7 +1788,7 @@ function prefetchTts(text) {
 // tempo: se a resposta de uma chamada mais antiga chega depois de uma mais nova
 // já ter assumido, ela é descartada em vez de tocar por cima da atual.
 let ttsRequestId = 0;
-async function speakWithAzure(text) {
+async function speakWithAzure(text, rate = 1) {
     if (!text) return;
     const myRequestId = ++ttsRequestId;
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
@@ -1797,6 +1797,12 @@ async function speakWithAzure(text) {
         const audioBase64 = await getTtsAudio(text);
         if (myRequestId !== ttsRequestId) return;
         currentAudio = new Audio('data:audio/mp3;base64,' + audioBase64);
+        // Ajuste de velocidade (Leitura de Texto) via playbackRate do próprio
+        // <audio> — o áudio do backend continua sempre gravado na velocidade
+        // normal (mesmo cache pra qualquer rate), só a reprodução muda. Evita
+        // depender de rota de TTS com "rate" no backend, que só existe local
+        // (server.py /tts) e não tem equivalente na Edge Function de produção.
+        currentAudio.playbackRate = rate;
         await currentAudio.play();
     } catch (e) {
         if (myRequestId !== ttsRequestId) return;
@@ -2681,7 +2687,8 @@ function openReadingTextPlayer(ex) {
                 group: 'Exercícios',
                 detail: 'Ouviu frase: ' + phrase
             });
-            speakWithAzure(phrase);
+            const rate = parseFloat(document.getElementById('reading-text-speed')?.value) || 1;
+            speakWithAzure(phrase, rate);
         });
         row.appendChild(span);
         row.appendChild(playBtn);
@@ -4362,7 +4369,8 @@ function setupModals() {
             group: 'Exercícios',
             detail: 'Ouviu leitura de texto'
         });
-        speakWithAzure(text);
+        const rate = parseFloat(document.getElementById('reading-text-speed')?.value) || 1;
+        speakWithAzure(text, rate);
     });
 
     document.getElementById('btn-close-video').addEventListener('click', () => {
