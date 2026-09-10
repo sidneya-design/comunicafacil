@@ -12710,6 +12710,7 @@ document.getElementById('btn-close-doctor-activity')?.addEventListener('click', 
 let adminLogsCompanyFilter = '';
 let adminLogsDoctorFilter = '';
 let adminLogsDoctorsCache = []; // médicos (todos, ou só da empresa filtrada) pro <select>
+let adminLogsCurrentData = []; // última página carregada — o botão "Baixar CSV" exporta exatamente isso, sem reconsultar
 
 function populateAdminLogsCompanyFilter() {
     const select = document.getElementById('admin-logs-company-filter');
@@ -12762,6 +12763,7 @@ async function loadAdminLogsList() {
     }
 
     const { data: actions, error } = await query;
+    adminLogsCurrentData = actions || [];
     list.innerHTML = '';
     if (error) {
         list.innerHTML = `<p class="media-hint">Erro ao carregar logs: ${error.message}</p>`;
@@ -12770,6 +12772,47 @@ async function loadAdminLogsList() {
     } else {
         actions.forEach(a => list.appendChild(renderDoctorActionRow(a, true)));
     }
+}
+
+function csvEscapeValue(value) {
+    const text = value === null || value === undefined ? '' : String(value);
+    if (/[;"\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+    return text;
+}
+
+// Exporta exatamente o que está na tela (adminLogsCurrentData, preenchido
+// pela última chamada de loadAdminLogsList) — mesmos filtros de
+// empresa/médico/data já aplicados, sem precisar reconsultar o banco.
+function downloadAdminLogsCsv() {
+    if (!adminLogsCurrentData.length) {
+        alert('Nenhum log pra baixar com esse filtro.');
+        return;
+    }
+    // admin_action_log só grava o e-mail do médico (actor_email), não o nome
+    // — cruza com adminLogsDoctorsCache (já carregado pro <select>) pra
+    // mostrar o nome quando der; sem correspondência, cai pro e-mail mesmo.
+    const doctorNameById = new Map(adminLogsDoctorsCache.map(d => [d.id, d.name]));
+    const header = ['Data', 'Médico', 'E-mail', 'Ação', 'Tipo', 'Item', 'Detalhe'];
+    const rows = adminLogsCurrentData.map(a => [
+        formatAdminDateTime(a.created_at),
+        doctorNameById.get(a.actor_user_id) || a.actor_email,
+        a.actor_email,
+        ADMIN_ACTION_LABELS[a.action] || a.action,
+        ADMIN_ENTITY_LABELS[a.entity_type] || a.entity_type,
+        a.entity_label || '',
+        a.detail || ''
+    ]);
+    const csvContent = "﻿" + [header, ...rows].map(row => row.map(csvEscapeValue).join(';')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const today = new Date().toISOString().slice(0, 10);
+    link.download = `logs_medicos_${today}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }
 
 async function loadAdminLogsPanel() {
@@ -12801,6 +12844,7 @@ document.getElementById('btn-admin-logs-clear-dates')?.addEventListener('click',
     document.getElementById('admin-logs-date-to').value = '';
     loadAdminLogsList();
 });
+document.getElementById('btn-admin-logs-download')?.addEventListener('click', downloadAdminLogsCsv);
 
 document.getElementById('btn-nav-admin')?.addEventListener('click', async () => {
     setAdminTab('users');
