@@ -2163,6 +2163,28 @@
         </div>
     </div>
 
+    <!-- Modal: Atividade do médico (aba Usuários → "Ver atividade") — logs de
+         acesso (usage_sessions) e de ações administrativas (admin_action_log,
+         criar/editar/excluir/liberar), só visível pro admin. -->
+    <div class="modal-overlay" id="doctor-activity-modal" role="dialog" aria-modal="true" aria-labelledby="doctor-activity-modal-title">
+        <div class="modal-content" style="max-width: 720px; max-height: 85vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h2 id="doctor-activity-modal-title">Atividade do médico</h2>
+                <button class="close-modal-btn" id="btn-close-doctor-activity" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+            </div>
+            <p class="media-hint" id="doctor-activity-subtitle" style="margin-bottom: 1rem;"></p>
+            <div class="admin-tabbar" role="tablist" aria-label="Atividade do médico">
+                <button class="admin-tab active" id="btn-doctor-activity-tab-actions" data-doctor-activity-tab="actions" type="button" role="tab" aria-selected="true">Ações (editar/excluir/liberar)</button>
+                <button class="admin-tab" id="btn-doctor-activity-tab-access" data-doctor-activity-tab="access" type="button" role="tab" aria-selected="false">Acesso (sessões)</button>
+            </div>
+            <section class="admin-tab-panel active" id="doctor-activity-actions-panel">
+                <div id="doctor-activity-actions-list" class="usage-timeline" style="margin-top: 12px;"></div>
+            </section>
+            <section class="admin-tab-panel" id="doctor-activity-access-panel">
+                <div id="doctor-activity-access-list" class="usage-timeline" style="margin-top: 12px;"></div>
+            </section>
+        </div>
+    </div>
 
     <!-- Modal de confirmação de saída -->
     <div id="modal-exit-confirm" style="
@@ -2227,7 +2249,7 @@
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script defer src="app.js?v=84"></script>
+    <script defer src="app.js?v=85"></script>
 </body>
 
 

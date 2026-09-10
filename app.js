@@ -908,6 +908,27 @@ function trackUsageActivity(label, meta = {}) {
     trackUsageEvent('activity', label, meta);
 }
 
+// Log de auditoria pro admin (aba Empresas → médico): diferente de
+// trackUsageActivity (insights de engajamento do paciente), isso é sobre
+// prestação de contas do médico — o que ele criou/editou/excluiu/liberou.
+// Só médicos gravam aqui (RLS de admin_action_log só aceita insert de
+// is_doctor()); fire-and-forget, uma falha aqui nunca deve travar a ação
+// real do médico que a chamou.
+function logAdminAction(action, entityType, entityLabel, detail = null) {
+    if (!supabaseClient || !isDoctor || !currentUserId) return;
+    supabaseClient.from('admin_action_log').insert([{
+        actor_user_id: currentUserId,
+        actor_email: usageCurrentUser?.email || 'sem e-mail',
+        company_id: currentUserCompanyId,
+        action,
+        entity_type: entityType,
+        entity_label: entityLabel || null,
+        detail
+    }]).then(({ error }) => {
+        if (error) console.warn('Erro ao salvar log de ação admin:', error);
+    });
+}
+
 function startUsageActivity(label, meta = {}) {
     if (!usageCurrentUser || !label) return;
     const key = meta.key || label;
@@ -2253,6 +2274,7 @@ async function saveMediaToDB(title, fileBlob, mimeType, colorClass, mediaUrl, pa
                 const url = await uploadToSupabaseStorage('media_uploads', 'medias', fileBlob);
                 await supabaseClient.from('medias').insert([{ title, is_video: isVideo, color_class: colorClass, media_url: url, ...extraFields }]);
             }
+            logAdminAction('create', 'media', title);
             loadMediaCards();
             return;
         } catch (e) {
@@ -2279,6 +2301,7 @@ async function updateMediaInDB(media, title, fileBlob, mimeType, colorClass, med
 
     if (media.fromSupabase && supabaseClient) {
         await supabaseClient.from('medias').update(updateFields).eq('id', media.id);
+        logAdminAction('update', 'media', title);
         loadMediaCards();
         return;
     }
@@ -2522,6 +2545,7 @@ function renderMediaCards(mediasArray) {
                 ev.stopPropagation();
                 if (confirm('Apagar?')) {
                     await supabaseClient.from('medias').delete().eq('id', media.id);
+                    logAdminAction('delete', 'media', media.title);
                     loadMediaCards();
                 }
             };
@@ -2575,6 +2599,7 @@ async function getOrCreateExerciseFork(sourceId, title, doctorUserId) {
             .upsert({ patient_id: activePatientContext.id, exercise_id: forkId, visible: true, updated_at: new Date().toISOString() });
         await supabaseClient.from('patient_exercise_flags')
             .upsert({ patient_id: activePatientContext.id, exercise_id: sourceId, visible: false, updated_at: new Date().toISOString() });
+        logAdminAction('release', 'exercise', title, `Cópia própria substituiu a do admin — paciente: ${activePatientContext.name || activePatientContext.email}`);
     }
 
     return forkId;
@@ -2639,6 +2664,7 @@ async function saveExercisePlaylistToDB(title, itemsArray, doctorUserId = null, 
                 const { error: itemsErr } = await supabaseClient.from('exercise_items').insert(dbItems);
                 if (itemsErr) throw itemsErr;
             }
+            logAdminAction(currentEditingExerciseId ? 'update' : 'create', 'exercise', title);
             currentEditingExerciseForkSource = null;
             loadExerciseCards();
             return;
@@ -2697,6 +2723,7 @@ async function saveSyllablesExerciseToDB(title, size, color, font, itemsArray, d
             const { error: itemsErr } = await supabaseClient.from('exercise_items').insert(dbItems);
             if (itemsErr) throw itemsErr;
 
+            logAdminAction(currentEditingSyllablesExerciseId ? 'update' : 'create', 'exercise', title);
             loadExerciseCards();
             return;
         } catch (e) {
@@ -2772,6 +2799,7 @@ async function saveAudioExerciseToDB(title, size, color, font, itemsArray, docto
             const { error: itemsErr } = await supabaseClient.from('exercise_items').insert(dbItems);
             if (itemsErr) throw itemsErr;
 
+            logAdminAction(currentEditingAudioExerciseId ? 'update' : 'create', 'exercise', title);
             loadExerciseCards();
             return;
         } catch (e) {
@@ -2861,6 +2889,7 @@ async function saveReadingTextExerciseToDB(title, text, phrases = [], doctorUser
             const { error: itemsErr } = await supabaseClient.from('exercise_items').insert(dbItems);
             if (itemsErr) throw itemsErr;
 
+            logAdminAction(currentEditingReadingTextExerciseId ? 'update' : 'create', 'exercise', title);
             loadExerciseCards();
             return;
         } catch (e) {
@@ -3631,6 +3660,7 @@ function renderExerciseCards(exercisesArray) {
                 ev.stopPropagation();
                 if (confirm(`Apagar exercício "${displayTitle}"?`)) {
                     await supabaseClient.from('exercises').delete().eq('id', ex.id);
+                    logAdminAction('delete', 'exercise', displayTitle);
                     loadExerciseCards();
                 }
             };
@@ -3973,6 +4003,7 @@ async function saveAudioClip(title, file, colorClass, patientId = null) {
                 ...extraFields
             }]);
             if (error) throw error;
+            logAdminAction('create', 'audio_clip', title);
             await loadAudioClips();
             return;
         } catch (e) {
@@ -3992,6 +4023,7 @@ async function updateAudioClip(clip, title, file, colorClass) {
         if (file) update.audio_url = await uploadToSupabaseStorage('media_uploads', 'audio-clips', file);
         const { error } = await supabaseClient.from('audio_clips').update(update).eq('id', clip.rawId);
         if (error) throw error;
+        logAdminAction('update', 'audio_clip', title);
         await loadAudioClips();
         return;
     }
@@ -4014,6 +4046,7 @@ async function deleteAudioClip(clip) {
     if (!confirm('Apagar este áudio?')) return;
     if (clip.fromSupabase && supabaseClient) {
         await supabaseClient.from('audio_clips').delete().eq('id', clip.rawId);
+        logAdminAction('delete', 'audio_clip', clip.title);
     } else {
         await new Promise((resolve) => {
             db.transaction(['audios'], 'readwrite').objectStore('audios').delete(clip.rawId).onsuccess = resolve;
@@ -12506,6 +12539,15 @@ async function loadAdminUsers() {
             passBtn.addEventListener('click', () => openChangePasswordModal(u.id, u.email));
             actionsCell.appendChild(passBtn);
 
+            if (u.role === 'doctor') {
+                const activityBtn = document.createElement('button');
+                activityBtn.className = 'admin-edit-password-btn';
+                activityBtn.innerHTML = '<i class="fas fa-magnifying-glass" aria-hidden="true"></i>';
+                activityBtn.title = 'Ver atividade (ações e acessos)';
+                activityBtn.addEventListener('click', () => openDoctorActivityModal(u.id, u.name || u.email));
+                actionsCell.appendChild(activityBtn);
+            }
+
             if (!isSelf) {
                 // Remoção de conta = desativar (ban), nunca apagar de
                 // verdade (regra fixa do projeto) — excluir de verdade
@@ -12544,6 +12586,115 @@ async function loadAdminUsers() {
     }
     renderUsageDashboard();
 }
+
+// Modal "Atividade do médico" (aba Usuários → botão de lupa numa linha de
+// médico): junta admin_action_log (o que ele criou/editou/excluiu/liberou)
+// e usage_sessions (quando entrou, quanto tempo ficou) — só o admin abre
+// isso (RLS de admin_action_log só libera select pra is_admin()).
+const ADMIN_ACTION_LABELS = { create: 'Criou', update: 'Editou', delete: 'Excluiu', release: 'Liberou', unrelease: 'Bloqueou' };
+const ADMIN_ENTITY_LABELS = {
+    exercise: 'exercício', patient: 'paciente', media: 'mídia', audio_clip: 'áudio',
+    book: 'livro', module: 'módulo', topic: 'tópico', virtue: 'força', carometro_sector: 'setor do Carômetro'
+};
+
+function setDoctorActivityTab(tabName) {
+    ['actions', 'access'].forEach(tab => {
+        document.getElementById(`btn-doctor-activity-tab-${tab}`)?.classList.toggle('active', tab === tabName);
+        document.getElementById(`doctor-activity-${tab}-panel`)?.classList.toggle('active', tab === tabName);
+    });
+}
+
+function formatAdminDateTime(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatSessionDuration(seconds) {
+    if (!seconds) return '0min';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return h > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${m}min`;
+}
+
+function renderDoctorActionRow(a) {
+    const row = document.createElement('div');
+    row.className = 'usage-item';
+    const main = document.createElement('div');
+    const strong = document.createElement('strong');
+    const entityLabel = ADMIN_ENTITY_LABELS[a.entity_type] || a.entity_type;
+    strong.textContent = `${ADMIN_ACTION_LABELS[a.action] || a.action} ${entityLabel}` + (a.entity_label ? `: ${a.entity_label}` : '');
+    main.appendChild(strong);
+    if (a.detail) {
+        const span = document.createElement('span');
+        span.textContent = a.detail;
+        main.appendChild(span);
+    }
+    const meta = document.createElement('span');
+    meta.className = 'usage-meta';
+    meta.textContent = formatAdminDateTime(a.created_at);
+    row.append(main, meta);
+    return row;
+}
+
+function renderDoctorSessionRow(s) {
+    const row = document.createElement('div');
+    row.className = 'usage-item';
+    const main = document.createElement('div');
+    const strong = document.createElement('strong');
+    strong.textContent = `Entrou em ${formatAdminDateTime(s.start_at)}`;
+    main.appendChild(strong);
+    const span = document.createElement('span');
+    span.textContent = s.status === 'active' ? 'Sessão em andamento' : (s.end_at ? `Saiu em ${formatAdminDateTime(s.end_at)}` : 'Encerrada');
+    main.appendChild(span);
+    const meta = document.createElement('span');
+    meta.className = 'usage-meta';
+    meta.textContent = formatSessionDuration(s.active_seconds);
+    row.append(main, meta);
+    return row;
+}
+
+async function openDoctorActivityModal(doctorId, doctorLabel) {
+    if (!supabaseClient) return;
+    document.getElementById('doctor-activity-modal').style.display = 'flex';
+    document.getElementById('doctor-activity-subtitle').textContent = doctorLabel;
+    setDoctorActivityTab('actions');
+
+    const actionsList = document.getElementById('doctor-activity-actions-list');
+    const accessList = document.getElementById('doctor-activity-access-list');
+    actionsList.textContent = 'Carregando...';
+    accessList.textContent = 'Carregando...';
+
+    const [{ data: actions, error: actionsErr }, { data: sessions, error: sessionsErr }] = await Promise.all([
+        supabaseClient.from('admin_action_log').select('*').eq('actor_user_id', doctorId)
+            .order('created_at', { ascending: false }).limit(200),
+        supabaseClient.from('usage_sessions').select('*').eq('user_id', doctorId)
+            .order('start_at', { ascending: false }).limit(100)
+    ]);
+
+    actionsList.innerHTML = '';
+    if (actionsErr) {
+        actionsList.innerHTML = `<p class="media-hint">Erro ao carregar ações: ${actionsErr.message}</p>`;
+    } else if (!actions || !actions.length) {
+        actionsList.innerHTML = '<p class="media-hint">Nenhuma ação registrada ainda.</p>';
+    } else {
+        actions.forEach(a => actionsList.appendChild(renderDoctorActionRow(a)));
+    }
+
+    accessList.innerHTML = '';
+    if (sessionsErr) {
+        accessList.innerHTML = `<p class="media-hint">Erro ao carregar sessões: ${sessionsErr.message}</p>`;
+    } else if (!sessions || !sessions.length) {
+        accessList.innerHTML = '<p class="media-hint">Nenhuma sessão registrada ainda.</p>';
+    } else {
+        sessions.forEach(s => accessList.appendChild(renderDoctorSessionRow(s)));
+    }
+}
+
+document.getElementById('btn-doctor-activity-tab-actions')?.addEventListener('click', () => setDoctorActivityTab('actions'));
+document.getElementById('btn-doctor-activity-tab-access')?.addEventListener('click', () => setDoctorActivityTab('access'));
+document.getElementById('btn-close-doctor-activity')?.addEventListener('click', () => {
+    document.getElementById('doctor-activity-modal').style.display = 'none';
+});
 
 document.getElementById('btn-nav-admin')?.addEventListener('click', async () => {
     setAdminTab('users');
@@ -12785,6 +12936,7 @@ async function loadDoctorPatients() {
                 if (!newPassword) return;
                 try {
                     await callDoctorPatientsFn('setPassword', { patientId: p.id, userId: p.userId, password: newPassword });
+                    logAdminAction('update', 'patient', p.name || p.email, 'Redefiniu a senha');
                     showDoctorPatientsFeedback('Senha atualizada.');
                 } catch (err) {
                     showDoctorPatientsFeedback(err.message, true);
@@ -12804,6 +12956,7 @@ async function loadDoctorPatients() {
                 if (!confirm(confirmMsg)) return;
                 try {
                     await callDoctorPatientsFn('setActive', { patientId: p.id, userId: p.userId, active: !p.active });
+                    logAdminAction('update', 'patient', p.name || p.email, p.active ? 'Desativou o paciente' : 'Reativou o paciente');
                     showDoctorPatientsFeedback(p.active ? 'Paciente desativado.' : 'Paciente reativado.');
                     loadDoctorPatients();
                 } catch (err) {
@@ -12954,6 +13107,7 @@ async function openPatientModulesModal(patient) {
             try {
                 await supabaseClient.from('patient_module_flags')
                     .upsert({ patient_id: patient.id, module_id: mod.id, visible: newVisible, updated_at: new Date().toISOString() });
+                logAdminAction(newVisible ? 'release' : 'unrelease', 'module', mod.name, `Paciente: ${patient.name || patient.email}`);
                 openPatientModulesModal(patient); // recarrega a lista com o novo estado
             } catch (err) {
                 showDoctorPatientsFeedback('Erro ao salvar módulo: ' + err.message, true);
@@ -13056,6 +13210,7 @@ async function openPatientExercisesModal(patient) {
                 const { error: upsertErr } = await supabaseClient.from('patient_exercise_flags')
                     .upsert({ patient_id: patient.id, exercise_id: exerciseId, visible: newVisible, updated_at: new Date().toISOString() });
                 if (upsertErr) throw upsertErr;
+                logAdminAction(newVisible ? 'release' : 'unrelease', 'exercise', displayTitle, `Paciente: ${patient.name || patient.email}`);
                 // Recarrega com o novo estado, mas preservando a rolagem — a
                 // lista pode ter dezenas de itens, e sem isso cada clique
                 // jogava a tela de volta pro topo, obrigando a rolar até
@@ -13126,6 +13281,7 @@ async function openPatientTopicsModal(patient) {
             try {
                 await supabaseClient.from('patient_topic_flags')
                     .upsert({ patient_id: patient.id, topic_id: topic.id, visible: newVisible, updated_at: new Date().toISOString() });
+                logAdminAction(newVisible ? 'release' : 'unrelease', 'topic', topicLabel, `Paciente: ${patient.name || patient.email}`);
                 openPatientTopicsModal(patient); // recarrega com o novo estado
             } catch (err) {
                 showDoctorPatientsFeedback('Erro ao liberar tópico: ' + err.message, true);
@@ -13191,6 +13347,7 @@ async function openPatientVirtuesModal(patient) {
             try {
                 await supabaseClient.from('patient_virtue_flags')
                     .upsert({ patient_id: patient.id, virtue_id: virtue.id, visible: newVisible, updated_at: new Date().toISOString() });
+                logAdminAction(newVisible ? 'release' : 'unrelease', 'virtue', virtueLabel, `Paciente: ${patient.name || patient.email}`);
                 openPatientVirtuesModal(patient);
             } catch (err) {
                 showDoctorPatientsFeedback('Erro ao liberar categoria: ' + err.message, true);
@@ -13259,6 +13416,7 @@ async function openPatientMediasModal(patient) {
             try {
                 await supabaseClient.from('patient_media_flags')
                     .upsert({ patient_id: patient.id, media_id: media.id, visible: newVisible, updated_at: new Date().toISOString() });
+                logAdminAction(newVisible ? 'release' : 'unrelease', 'media', media.title, `Paciente: ${patient.name || patient.email}`);
                 openPatientMediasModal(patient);
             } catch (err) {
                 showDoctorPatientsFeedback('Erro ao liberar mídia: ' + err.message, true);
@@ -13328,6 +13486,7 @@ async function openPatientAudioModal(patient) {
             try {
                 await supabaseClient.from('patient_audio_flags')
                     .upsert({ patient_id: patient.id, audio_id: clip.id, visible: newVisible, updated_at: new Date().toISOString() });
+                logAdminAction(newVisible ? 'release' : 'unrelease', 'audio_clip', displayTitle, `Paciente: ${patient.name || patient.email}`);
                 openPatientAudioModal(patient);
             } catch (err) {
                 showDoctorPatientsFeedback('Erro ao liberar áudio: ' + err.message, true);
@@ -13400,6 +13559,7 @@ async function openPatientBooksModal(patient) {
                 try {
                     await supabaseClient.from('patient_book_flags')
                         .upsert({ patient_id: patient.id, book_id: book.id, visible: false, updated_at: new Date().toISOString() });
+                    logAdminAction('unrelease', 'book', title, `Paciente: ${patient.name || patient.email}`);
                     openPatientBooksModal(patient);
                 } catch (err) {
                     showDoctorPatientsFeedback('Erro ao remover livro: ' + err.message, true);
@@ -13437,9 +13597,11 @@ document.getElementById('patient-books-add-btn')?.addEventListener('click', asyn
     const addSelect = document.getElementById('patient-books-add-select');
     const bookId = addSelect?.value;
     if (!bookId || !patientBooksModalPatient) return;
+    const bookTitle = addSelect.options[addSelect.selectedIndex]?.textContent || bookId;
     try {
         await supabaseClient.from('patient_book_flags')
             .upsert({ patient_id: patientBooksModalPatient.id, book_id: bookId, visible: true, updated_at: new Date().toISOString() });
+        logAdminAction('release', 'book', bookTitle, `Paciente: ${patientBooksModalPatient.name || patientBooksModalPatient.email}`);
         openPatientBooksModal(patientBooksModalPatient);
     } catch (err) {
         showDoctorPatientsFeedback('Erro ao liberar livro: ' + err.message, true);
@@ -13496,6 +13658,7 @@ async function openPatientCarometroModal(patient) {
             try {
                 await supabaseClient.from('patient_carometro_flags')
                     .upsert({ patient_id: patient.id, sector_id: sector.id, visible: newVisible, updated_at: new Date().toISOString() });
+                logAdminAction(newVisible ? 'release' : 'unrelease', 'carometro_sector', label.textContent, `Paciente: ${patient.name || patient.email}`);
                 openPatientCarometroModal(patient);
             } catch (err) {
                 showDoctorPatientsFeedback('Erro ao liberar setor: ' + err.message, true);
@@ -13664,6 +13827,7 @@ newPatientForm?.addEventListener('submit', async (e) => {
 
     try {
         await callDoctorPatientsFn('create', { email, password, name });
+        logAdminAction('create', 'patient', name || email);
         closeNewPatientModal();
         showDoctorPatientsFeedback(`Paciente ${email} criado.`);
         loadDoctorPatients();
