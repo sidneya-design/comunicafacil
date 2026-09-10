@@ -1725,38 +1725,44 @@
     <!-- Player de Leitura de Texto: texto grande + botão de tocar o áudio (TTS). -->
     <div class="modal-overlay" id="reading-text-player-modal" role="dialog" aria-modal="true" aria-labelledby="reading-text-player-title">
         <div class="modal-content" style="max-width: 720px;">
-            <div class="modal-header">
-                <h2 id="reading-text-player-title">Leitura de Texto</h2>
-                <button class="close-modal-btn" id="btn-close-reading-text-player" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
-            </div>
-            <p id="reading-text-player-body" style="font-size: 22px; line-height: 1.6; white-space: pre-wrap; padding: 10px 4px 24px;"></p>
-            <div class="modal-footer" style="justify-content: center; gap: 12px; flex-wrap: wrap;">
-                <button type="button" class="btn-primary" id="btn-play-reading-text"
-                    style="background: linear-gradient(135deg, #93c5fd 0%, #2563eb 100%); display: flex; align-items: center; gap: 10px;">
-                    <i class="fas fa-volume-up" aria-hidden="true"></i> <span class="reading-text-play-label">Ouvir leitura</span>
-                </button>
-                <label for="reading-text-speed" style="display: flex; align-items: center; gap: 8px; font-size: 14px; color: #475569;">
-                    Velocidade
-                    <select id="reading-text-speed" style="height: 38px; border: 1px solid #ddd; border-radius: 8px; padding: 0 10px; background: white; cursor: pointer;">
-                        <option value="0.75">0.75x</option>
-                        <option value="1" selected>1x</option>
-                        <option value="1.25">1.25x</option>
-                        <option value="1.5">1.5x</option>
-                    </select>
-                </label>
-            </div>
-            <div id="reading-text-progress-wrap" style="padding: 4px 4px 10px;">
-                <canvas id="reading-text-waveform-canvas" role="slider" aria-label="Posição na leitura" tabindex="0"
-                    style="display:block; width:100%; height:56px; cursor:pointer; touch-action:none; border-radius:8px; background:#f1f5f9;"></canvas>
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
-                    <span id="reading-text-progress-time" style="font-size:12px; color:#64748b; font-variant-numeric:tabular-nums;">0:00</span>
-                    <button type="button" id="btn-reading-text-rewind" title="Voltar 5 segundos"
-                        style="background:none; border:1px solid #cbd5e1; border-radius:8px; padding:4px 10px; font-size:12px; color:#475569; cursor:pointer; display:flex; align-items:center; gap:6px;">
-                        <i class="fas fa-rotate-left" aria-hidden="true"></i> 5s
+            <!-- Header + player ficam grudados no topo (sticky) enquanto o texto
+                 rola por baixo — um parágrafo longo empurrava o botão de tocar
+                 e a forma de onda pra fora da tela, obrigando a rolar até lá
+                 embaixo só pra dar play. -->
+            <div style="position: sticky; top: 0; background: white; z-index: 1; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid #eee;">
+                <div class="modal-header">
+                    <h2 id="reading-text-player-title">Leitura de Texto</h2>
+                    <button class="close-modal-btn" id="btn-close-reading-text-player" aria-label="Fechar"><i class="fas fa-times" aria-hidden="true"></i></button>
+                </div>
+                <div class="modal-footer" style="justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 0;">
+                    <button type="button" class="btn-primary" id="btn-play-reading-text"
+                        style="background: linear-gradient(135deg, #93c5fd 0%, #2563eb 100%); display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-volume-up" aria-hidden="true"></i> <span class="reading-text-play-label">Ouvir leitura</span>
                     </button>
-                    <span id="reading-text-progress-duration" style="font-size:12px; color:#64748b; font-variant-numeric:tabular-nums;">0:00</span>
+                    <label for="reading-text-speed" style="display: flex; align-items: center; gap: 8px; font-size: 14px; color: #475569;">
+                        Velocidade
+                        <select id="reading-text-speed" style="height: 38px; border: 1px solid #ddd; border-radius: 8px; padding: 0 10px; background: white; cursor: pointer;">
+                            <option value="0.75">0.75x</option>
+                            <option value="1" selected>1x</option>
+                            <option value="1.25">1.25x</option>
+                            <option value="1.5">1.5x</option>
+                        </select>
+                    </label>
+                </div>
+                <div id="reading-text-progress-wrap" style="padding: 4px 4px 0;">
+                    <canvas id="reading-text-waveform-canvas" role="slider" aria-label="Posição na leitura" tabindex="0"
+                        style="display:block; width:100%; height:56px; cursor:pointer; touch-action:none; border-radius:8px; background:#f1f5f9;"></canvas>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+                        <span id="reading-text-progress-time" style="font-size:12px; color:#64748b; font-variant-numeric:tabular-nums;">0:00</span>
+                        <button type="button" id="btn-reading-text-rewind" title="Voltar 5 segundos"
+                            style="background:none; border:1px solid #cbd5e1; border-radius:8px; padding:4px 10px; font-size:12px; color:#475569; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                            <i class="fas fa-rotate-left" aria-hidden="true"></i> 5s
+                        </button>
+                        <span id="reading-text-progress-duration" style="font-size:12px; color:#64748b; font-variant-numeric:tabular-nums;">0:00</span>
+                    </div>
                 </div>
             </div>
+            <p id="reading-text-player-body" style="font-size: 22px; line-height: 1.6; white-space: pre-wrap; padding: 10px 4px 24px;"></p>
             <div id="reading-text-player-phrases" style="margin-top: 10px;"></div>
         </div>
     </div>
@@ -2219,7 +2225,7 @@
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script defer src="app.js?v=83"></script>
+    <script defer src="app.js?v=84"></script>
 </body>
 
 

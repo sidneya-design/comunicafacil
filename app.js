@@ -1870,11 +1870,11 @@ function _speakNative(text) {
 // (prefetchTts) e guardado em dois níveis: memória (promessas, deduplica requisições
 // em andamento) e localStorage (sobrevive a reload e funciona offline).
 const azureTtsCache = new Map(); // texto -> Promise<{audio: string base64, words: []}>
-// v3: guarda {audio, words} em vez de só a string base64 (ver getTtsAudio) —
-// words são os boundaries de palavra usados pra destacar a leitura no player
-// de Leitura de Texto. Prefixo novo pra não tentar reler cache antigo (v1/v2)
-// no formato errado; evictTtsLocalStorageCache limpa as três versões.
-const TTS_STORAGE_PREFIX = 'comunica_tts_v3:';
+// v4: volta a guardar só a string base64 (v3 chegou a guardar {audio, words}
+// pro destaque de palavra, removido por enquanto — ver getTtsAudio). Prefixo
+// novo pra não reler cache v3 no formato de objeto por engano; evictTtsLocalStorageCache
+// limpa todas as versões antigas.
+const TTS_STORAGE_PREFIX = 'comunica_tts_v4:';
 
 // A function 'chat' agora exige sessão válida (fecha proxy aberto pro
 // serviço pago da Azure) — anexa o token do usuário logado em toda chamada
@@ -1906,34 +1906,34 @@ async function fetchTtsAudio(endpoint, text, ttsRate) {
     });
     const data = await response.json();
     if (!response.ok || !data.audio) throw new Error(data.error || `Erro HTTP ${response.status}`);
-    return { audio: data.audio, words: Array.isArray(data.words) ? data.words : [] };
+    return data.audio;
 }
 
 // rateKey identifica o cache ("" = voz normal de sempre, mesma chave já usada
 // em produção); ttsRate é o valor de verdade mandado pro backend (SSML
-// <prosody rate>), só quando rateKey não é o padrão. Retorna {audio, words}.
+// <prosody rate>), só quando rateKey não é o padrão.
 function getTtsAudio(text, rateKey, ttsRate) {
     const cacheKey = rateKey ? (text + '::rate::' + rateKey) : text;
     if (azureTtsCache.has(cacheKey)) return azureTtsCache.get(cacheKey);
     const promise = (async () => {
         try {
             const stored = localStorage.getItem(TTS_STORAGE_PREFIX + cacheKey);
-            if (stored) return JSON.parse(stored);
-        } catch (e) { /* localStorage indisponível ou entrada corrompida: segue para o backend */ }
-        let result;
+            if (stored) return stored;
+        } catch (e) { /* localStorage indisponível: segue para o backend */ }
+        let audioBase64;
         try {
-            result = await fetchTtsAudio(AZURE_AI_ENDPOINT, text, ttsRate);
+            audioBase64 = await fetchTtsAudio(AZURE_AI_ENDPOINT, text, ttsRate);
         } catch (primaryError) {
             if (AZURE_AI_ENDPOINT === SUPABASE_CHAT_ENDPOINT) throw primaryError;
-            result = await fetchTtsAudio(SUPABASE_CHAT_ENDPOINT, text, ttsRate);
+            audioBase64 = await fetchTtsAudio(SUPABASE_CHAT_ENDPOINT, text, ttsRate);
         }
         try {
-            localStorage.setItem(TTS_STORAGE_PREFIX + cacheKey, JSON.stringify(result));
+            localStorage.setItem(TTS_STORAGE_PREFIX + cacheKey, audioBase64);
         } catch (e) {
             evictTtsLocalStorageCache();
-            try { localStorage.setItem(TTS_STORAGE_PREFIX + cacheKey, JSON.stringify(result)); } catch (e2) { /* quota cheia: só memória */ }
+            try { localStorage.setItem(TTS_STORAGE_PREFIX + cacheKey, audioBase64); } catch (e2) { /* quota cheia: só memória */ }
         }
-        return result;
+        return audioBase64;
     })();
     promise.catch(() => azureTtsCache.delete(cacheKey)); // falha não fica em cache; próximo clique tenta de novo
     azureTtsCache.set(cacheKey, promise);
@@ -1968,9 +1968,9 @@ async function speakWithAzure(text, rateKey) {
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     try {
         const ttsRate = rateKey ? (READING_TEXT_RATE_MAP[rateKey] || null) : null;
-        const result = await getTtsAudio(text, ttsRate ? rateKey : null, ttsRate);
+        const audioBase64 = await getTtsAudio(text, ttsRate ? rateKey : null, ttsRate);
         if (myRequestId !== ttsRequestId) return;
-        currentAudio = new Audio('data:audio/mp3;base64,' + result.audio);
+        currentAudio = new Audio('data:audio/mp3;base64,' + audioBase64);
         await currentAudio.play();
     } catch (e) {
         if (myRequestId !== ttsRequestId) return;
@@ -2933,6 +2933,7 @@ function setReadingTextButtonState(button, state) {
     else button.title = state === 'playing' ? 'Pausar' : (state === 'paused' ? 'Continuar leitura' : 'Ouvir esta frase');
 }
 
+
 // Barra de progresso do player de Leitura de Texto: sempre reflete
 // currentAudio (só toca um por vez) — clique/arraste na trilha pula pro
 // ponto, e o botão de 5s volta um pouco, pra reler um trecho sem começar
@@ -3040,6 +3041,23 @@ async function toggleReadingTextPlayback(text, button, activityDetail) {
     }
 }
 
+// Textos do exercício aberto no momento (parágrafo principal + frases) —
+// guardado à parte pra poder pré-carregar de novo quando a velocidade muda
+// (ver #reading-text-speed 'change' em setupModals), já que o cache do TTS é
+// por texto+velocidade e trocar de velocidade sem pré-carregar faria o
+// próximo play esperar a síntese do zero de novo.
+let readingTextOpenTexts = [];
+
+// getTtsAudio já tem cache próprio (memória + localStorage) — chamar de novo
+// aqui não duplica trabalho, só garante que o áudio já está pronto quando o
+// play for clicado (edge-tts é uma síntese de verdade, não instantânea).
+function prefetchReadingTextAudio(texts, rateKey) {
+    const ttsRate = rateKey ? (READING_TEXT_RATE_MAP[rateKey] || null) : null;
+    texts.forEach(t => {
+        if (t) getTtsAudio(t, ttsRate ? rateKey : null, ttsRate).catch(() => { /* erro tratado no clique */ });
+    });
+}
+
 function openReadingTextPlayer(ex) {
     const displayTitle = (ex.title || '').split('|')[0] || ex.title || 'Exercício';
     const text = (ex.items && ex.items[0] && ex.items[0].word) || '';
@@ -3049,6 +3067,7 @@ function openReadingTextPlayer(ex) {
     document.getElementById('reading-text-player-title').textContent = displayTitle;
     const bodyEl = document.getElementById('reading-text-player-body');
     bodyEl.textContent = text;
+    bodyEl.dataset.text = text;
     bodyEl.style.display = text ? '' : 'none';
     readingTextActiveButton = null;
     resetReadingTextProgress();
@@ -3086,6 +3105,10 @@ function openReadingTextPlayer(ex) {
         view: 'view-exercises',
         detail: 'Exercício aberto'
     });
+
+    readingTextOpenTexts = [text, ...phrases];
+    const rateKey = document.getElementById('reading-text-speed')?.value || '1';
+    prefetchReadingTextAudio(readingTextOpenTexts, rateKey);
 }
 
 // Adiciona um exercício do "Banco de Prontos" (global do admin, ou um dos 2
@@ -5759,6 +5782,10 @@ function setupModals() {
     document.getElementById('btn-play-reading-text').addEventListener('click', (e) => {
         const text = document.getElementById('reading-text-player-body').dataset.text || '';
         toggleReadingTextPlayback(text, e.currentTarget, 'Ouviu leitura de texto');
+    });
+
+    document.getElementById('reading-text-speed')?.addEventListener('change', (e) => {
+        prefetchReadingTextAudio(readingTextOpenTexts, e.target.value);
     });
 
     // Clique/arraste na onda pula pro ponto tocado; setas quando ela está
