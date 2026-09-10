@@ -3065,6 +3065,8 @@ function openReadingTextPlayer(ex) {
 
     document.getElementById('reading-text-player-modal').style.display = 'flex';
     document.getElementById('reading-text-player-title').textContent = displayTitle;
+    const scrollEl = document.getElementById('reading-text-player-scroll');
+    if (scrollEl) scrollEl.scrollTop = 0;
     const bodyEl = document.getElementById('reading-text-player-body');
     bodyEl.textContent = text;
     bodyEl.dataset.text = text;
