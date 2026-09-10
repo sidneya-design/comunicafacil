@@ -1970,7 +1970,6 @@ async function speakWithAzure(text, rateKey) {
         const ttsRate = rateKey ? (READING_TEXT_RATE_MAP[rateKey] || null) : null;
         const result = await getTtsAudio(text, ttsRate ? rateKey : null, ttsRate);
         if (myRequestId !== ttsRequestId) return;
-        currentAudioWords = result.words || [];
         currentAudio = new Audio('data:audio/mp3;base64,' + result.audio);
         await currentAudio.play();
     } catch (e) {
@@ -2920,80 +2919,6 @@ function openEditReadingTextExercise(ex) {
 // botão está "tocando" pra resetar o ícone dele quando outro assume ou
 // quando o áudio termina sozinho.
 let readingTextActiveButton = null;
-// Container (parágrafo principal ou span de uma frase) cujas palavras estão
-// sendo destacadas durante a leitura atual — guardado à parte pra
-// hideReadingTextProgress conseguir limpar o destaque sem precisar receber
-// o container de novo.
-let readingTextHighlightContainer = null;
-
-// Quebra o texto em <span> por palavra (mantendo espaços/pontuação como
-// estavam) e guarda em container.rtWords a fração [startFrac, endFrac) de
-// cada uma dentro da duração total do áudio — cada palavra "dona" do trecho
-// até a próxima começar, incluindo a pausa depois dela. É uma aproximação
-// por proporção de caracteres (o back-end não devolve os tempos reais de
-// cada palavra), suficiente pra acompanhar a leitura visualmente.
-function renderReadingTextWords(container, text) {
-    container.textContent = '';
-    container.dataset.text = text;
-    container.rtWords = [];
-    if (!text) return;
-    const total = text.length || 1;
-    const re = /\S+/g;
-    const tokens = [];
-    let m;
-    while ((m = re.exec(text)) !== null) {
-        tokens.push({ start: m.index, end: m.index + m[0].length, str: m[0] });
-    }
-    let cursor = 0;
-    tokens.forEach((tok, i) => {
-        if (tok.start > cursor) container.appendChild(document.createTextNode(text.slice(cursor, tok.start)));
-        const span = document.createElement('span');
-        span.className = 'reading-text-word';
-        span.textContent = tok.str;
-        container.appendChild(span);
-        const nextStart = (i + 1 < tokens.length) ? tokens[i + 1].start : text.length;
-        container.rtWords.push({ el: span, startFrac: tok.start / total, endFrac: nextStart / total });
-        cursor = tok.end;
-    });
-    if (cursor < text.length) container.appendChild(document.createTextNode(text.slice(cursor)));
-}
-
-function highlightReadingTextWord(container, fraction) {
-    if (!container || !container.rtWords) return;
-    container.rtWords.forEach(w => {
-        w.el.classList.toggle('reading-text-word-active', fraction >= w.startFrac && fraction < w.endFrac);
-    });
-}
-
-function clearReadingTextHighlight(container) {
-    if (!container || !container.rtWords) return;
-    container.rtWords.forEach(w => w.el.classList.remove('reading-text-word-active'));
-}
-
-// Substitui a aproximação por caracteres (definida em renderReadingTextWords)
-// pelos tempos reais que o edge-tts devolveu (currentAudioWords), quando dá
-// pra confiar neles: só quando a contagem bate com as palavras renderizadas
-// — sem isso um "..." ou hífen que o sintetizador conta diferente do split
-// por espaço do cliente desalinharia tudo. Se não bater, fica na aproximação.
-function applyReadingTextWordTimings(container, words, durationSec) {
-    if (!container || !container.rtWords || !words || !durationSec) return;
-    if (words.length !== container.rtWords.length) return;
-    container.rtWords.forEach((w, i) => {
-        const start = (words[i].offsetMs / 1000) / durationSec;
-        const nextStart = (i + 1 < words.length) ? ((words[i + 1].offsetMs / 1000) / durationSec) : 1;
-        w.startFrac = Math.max(0, Math.min(1, start));
-        w.endFrac = Math.max(w.startFrac, Math.min(1, nextStart));
-    });
-}
-
-// Acha o container de palavras associado ao botão clicado: o parágrafo
-// principal pro botão grande, ou o span de texto da linha da frase pros
-// botões de cada frase.
-function getReadingTextContainerForButton(button) {
-    if (!button) return null;
-    if (button.id === 'btn-play-reading-text') return document.getElementById('reading-text-player-body');
-    return button.closest('.reading-text-player-phrase-row')?.querySelector('.reading-text-player-phrase-text') || null;
-}
 
 // state: 'idle' (ainda não tocou / parado), 'playing' (tocando, clique pausa)
 // ou 'paused' (pausado no meio, clique continua de onde parou).
@@ -3019,40 +2944,53 @@ function formatReadingTextTime(seconds) {
     return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function hideReadingTextProgress() {
-    const wrap = document.getElementById('reading-text-progress-wrap');
-    if (wrap) wrap.style.display = 'none';
-    const fill = document.getElementById('reading-text-progress-fill');
-    if (fill) fill.style.width = '0%';
-    clearReadingTextHighlight(readingTextHighlightContainer);
-    readingTextHighlightContainer = null;
-}
-
-function wireReadingTextProgress(audio, container) {
-    const wrap = document.getElementById('reading-text-progress-wrap');
-    const fill = document.getElementById('reading-text-progress-fill');
+// A barra fica sempre visível (mesmo sem nada tocando ainda) — só o conteúdo
+// (onda, tempos) é limpo aqui. A decodificação da onda em si só acontece
+// quando um play é clicado (ver wireReadingTextProgress), não ao abrir o
+// player.
+function resetReadingTextProgress() {
+    drawWaveform([], 0, 'reading-text-waveform-canvas');
     const timeEl = document.getElementById('reading-text-progress-time');
     const durationEl = document.getElementById('reading-text-progress-duration');
-    if (!wrap || !fill || !timeEl || !durationEl) return;
+    if (timeEl) timeEl.textContent = '0:00';
+    if (durationEl) durationEl.textContent = '0:00';
+}
 
-    wrap.style.display = 'block';
-    fill.style.width = '0%';
+// currentAudio.src é sempre uma data URL (TTS embutido em base64, ver
+// speakWithAzure) — mesmo conteúdo de texto gera a mesma data URL, então cachear
+// por ela evita redecodificar toda vez que a mesma frase é tocada de novo.
+const readingTextPeaksCache = new Map();
+async function decodeReadingTextPeaks(audioSrc) {
+    if (readingTextPeaksCache.has(audioSrc)) return readingTextPeaksCache.get(audioSrc);
+    try {
+        const peaks = await computeWaveformPeaks(audioSrc);
+        readingTextPeaksCache.set(audioSrc, peaks);
+        return peaks;
+    } catch (e) {
+        console.warn('Não foi possível decodificar a forma de onda da leitura:', e);
+        return [];
+    }
+}
+
+function wireReadingTextProgress(audio) {
+    const timeEl = document.getElementById('reading-text-progress-time');
+    const durationEl = document.getElementById('reading-text-progress-duration');
+    if (!timeEl || !durationEl) return;
+
+    drawWaveform([], 0, 'reading-text-waveform-canvas');
     timeEl.textContent = '0:00';
     durationEl.textContent = isFinite(audio.duration) ? formatReadingTextTime(audio.duration) : '0:00';
-    readingTextHighlightContainer = container || null;
-    const words = currentAudioWords;
-    let timingsApplied = false;
+    let peaks = [];
+    decodeReadingTextPeaks(audio.src).then(p => {
+        peaks = p;
+        drawWaveform(peaks, audio.duration ? audio.currentTime / audio.duration : 0, 'reading-text-waveform-canvas');
+    });
 
     const update = () => {
-        if (!timingsApplied && audio.duration && isFinite(audio.duration)) {
-            applyReadingTextWordTimings(container, words, audio.duration);
-            timingsApplied = true;
-        }
         const fraction = audio.duration ? (audio.currentTime / audio.duration) : 0;
-        if (audio.duration) fill.style.width = (fraction * 100) + '%';
+        drawWaveform(peaks, fraction, 'reading-text-waveform-canvas');
         timeEl.textContent = formatReadingTextTime(audio.currentTime);
         durationEl.textContent = formatReadingTextTime(audio.duration);
-        highlightReadingTextWord(container, fraction);
     };
     audio.addEventListener('timeupdate', update);
     audio.addEventListener('loadedmetadata', update);
@@ -3080,7 +3018,7 @@ async function toggleReadingTextPlayback(text, button, activityDetail) {
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     readingTextActiveButton = button;
     setReadingTextButtonState(button, 'playing');
-    hideReadingTextProgress();
+    resetReadingTextProgress();
 
     const label = usageCurrentActivity?.label || 'Exercício';
     trackUsageActivity(label, {
@@ -3091,12 +3029,12 @@ async function toggleReadingTextPlayback(text, button, activityDetail) {
     const rateKey = document.getElementById('reading-text-speed')?.value || '1';
     await speakWithAzure(text, rateKey);
     if (readingTextActiveButton === button && currentAudio) {
-        wireReadingTextProgress(currentAudio, getReadingTextContainerForButton(button));
+        wireReadingTextProgress(currentAudio);
         currentAudio.addEventListener('ended', () => {
             if (readingTextActiveButton === button) {
                 setReadingTextButtonState(button, 'idle');
                 readingTextActiveButton = null;
-                hideReadingTextProgress();
+                resetReadingTextProgress();
             }
         }, { once: true });
     }
@@ -3110,10 +3048,10 @@ function openReadingTextPlayer(ex) {
     document.getElementById('reading-text-player-modal').style.display = 'flex';
     document.getElementById('reading-text-player-title').textContent = displayTitle;
     const bodyEl = document.getElementById('reading-text-player-body');
-    renderReadingTextWords(bodyEl, text);
+    bodyEl.textContent = text;
     bodyEl.style.display = text ? '' : 'none';
     readingTextActiveButton = null;
-    hideReadingTextProgress();
+    resetReadingTextProgress();
     const mainPlayBtn = document.getElementById('btn-play-reading-text');
     // Exercício criado só com frases (sem parágrafo principal, ver validação
     // do editor): sem texto, o botão grande "Ouvir leitura" não tem o que
@@ -3129,7 +3067,7 @@ function openReadingTextPlayer(ex) {
         row.className = 'reading-text-player-phrase-row';
         const span = document.createElement('span');
         span.className = 'reading-text-player-phrase-text';
-        renderReadingTextWords(span, phrase);
+        span.textContent = phrase;
         const playBtn = document.createElement('button');
         playBtn.type = 'button';
         playBtn.title = 'Ouvir esta frase';
@@ -3934,7 +3872,20 @@ let isAudioRecording = false;
 let audioRecordStartedAt = 0;
 let audioRecordTimerInterval = null;
 
+let patientAudioReleaseMap = new Map(); // audio_id (string) -> visible, só preenchido quando activePatientContext
+
 async function loadAudioClips() {
+    // Mesmo mapa que loadMediaCards/loadExerciseCards montam pra suas flags:
+    // sem isso, o selo "Liberado"/"Não liberado" no card não teria como saber
+    // o estado de patient_audio_flags pros clipes do banco (sem patientId direto).
+    if (supabaseClient && isDoctor && activePatientContext) {
+        const { data: flags } = await supabaseClient
+            .from('patient_audio_flags').select('audio_id, visible').eq('patient_id', activePatientContext.id);
+        patientAudioReleaseMap = new Map((flags || []).map(f => [String(f.audio_id), f.visible]));
+    } else {
+        patientAudioReleaseMap = new Map();
+    }
+
     let supabaseClips = [];
     if (supabaseClient) {
         try {
@@ -3944,8 +3895,17 @@ async function loadAudioClips() {
                     id: `sb:${c.id}`, rawId: c.id, fromSupabase: true,
                     title: c.title, url: c.audio_url, visible: c.visible !== false,
                     doctorUserId: c.doctor_user_id || null, companyId: c.company_id || null,
-                    colorClass: c.color_class || null
+                    patientId: c.patient_id || null, colorClass: c.color_class || null
                 }));
+                // Médico "dentro" de um paciente (mesmo cuidado de
+                // renderMediaCards/renderExerciseCards): vê só os clipes
+                // daquele paciente, mais os do banco (patientId nulo) como
+                // referência. Fora desse modo, a lista fica como a RLS
+                // devolveu (o próprio paciente já só recebe o que pode ver).
+                const inDoctorPatientContext = isDoctor && activePatientContext;
+                if (inDoctorPatientContext) {
+                    supabaseClips = supabaseClips.filter(c => !c.patientId || c.patientId === activePatientContext.id);
+                }
             }
         } catch (e) {}
     }
@@ -3971,13 +3931,21 @@ async function loadAudioClips() {
     });
 }
 
-async function saveAudioClip(title, file, colorClass) {
+async function saveAudioClip(title, file, colorClass, patientId = null) {
     if (supabaseClient) {
         try {
             const url = await uploadToSupabaseStorage('media_uploads', 'audio-clips', file);
+            // Igual a saveMediaToDB: gravado direto "dentro" de um paciente
+            // (patientId), o clipe já nasce visível só pra ele, sem passar
+            // pelo banco compartilhado/liberação por flag. Fora desse
+            // contexto, vai pro banco do médico (liberado depois por
+            // paciente em "Meus Pacientes" → Áudios).
+            const extraFields = patientId
+                ? { patient_id: patientId }
+                : { doctor_user_id: currentUserId, company_id: currentUserCompanyId };
             const { error } = await supabaseClient.from('audio_clips').insert([{
                 title, audio_url: url, visible: true, color_class: colorClass || null,
-                doctor_user_id: currentUserId, company_id: currentUserCompanyId
+                ...extraFields
             }]);
             if (error) throw error;
             await loadAudioClips();
@@ -4061,6 +4029,19 @@ function renderAudioClipsGrid() {
         card.addEventListener('click', () => {
             if (compareModeOn) assignCompareSlot(index); else selectAudioClip(index, true);
         });
+
+        if (isDoctor && activePatientContext && clip.fromSupabase) {
+            // Clipe escopado direto a esse paciente (clip.patientId) já nasce
+            // liberado — os demais (banco geral/global) só ficam liberados
+            // depois de marcados em patient_audio_flags (toggle em "Meus
+            // Pacientes" → Áudios liberados). Mesmo selo de renderMediaCards.
+            const isReleased = clip.patientId === activePatientContext.id
+                || patientAudioReleaseMap.get(String(clip.rawId)) === true;
+            const releaseBadge = document.createElement('div');
+            releaseBadge.className = 'release-status-badge ' + (isReleased ? 'is-released' : 'is-not-released');
+            releaseBadge.textContent = isReleased ? 'Liberado' : 'Não liberado';
+            card.appendChild(releaseBadge);
+        }
 
         if (clip.isRecording) {
             const badge = document.createElement('span');
@@ -4191,35 +4172,43 @@ function seekAudioToFraction(fraction) {
 // Decodifica o áudio real (Web Audio API) e reduz a onda a ~220 picos de
 // amplitude máxima por bloco — é a forma de onda de verdade do arquivo, não
 // uma decoração aleatória, porque o pedido era poder "analisar" o áudio.
+// Compartilhado pelo módulo de Áudios (decodeAudioPeaks) e pelo player de
+// Leitura de Texto (decodeReadingTextPeaks) — mesmo algoritmo, cache à parte
+// em cada um porque as chaves são de naturezas diferentes (id do clipe vs.
+// data URL do TTS).
+async function computeWaveformPeaks(url) {
+    const response = await fetch(url);
+    const arrayBuffer = await response.arrayBuffer();
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+    const channelData = audioBuffer.getChannelData(0);
+    const peakCount = 220;
+    const blockSize = Math.max(1, Math.floor(channelData.length / peakCount));
+    const peaks = [];
+    for (let i = 0; i < peakCount; i++) {
+        const start = i * blockSize;
+        let max = 0;
+        for (let j = 0; j < blockSize && (start + j) < channelData.length; j++) {
+            const abs = Math.abs(channelData[start + j]);
+            if (abs > max) max = abs;
+        }
+        peaks.push(max);
+    }
+    ctx.close();
+    // Normaliza pelo pico mais alto da própria gravação — sem isso, um
+    // áudio gravado/sintetizado num volume mais baixo (a maioria não chega a
+    // 1.0 de amplitude) desenha barras pequenas no meio do canvas, com
+    // espaço em branco sobrando em cima/embaixo em vez de usar a altura toda.
+    const maxPeak = Math.max(...peaks, 0.0001);
+    return peaks.map(p => p / maxPeak);
+}
+
 async function decodeAudioPeaks(clip) {
     if (audioPeaksCache.has(clip.id)) return audioPeaksCache.get(clip.id);
     try {
-        const response = await fetch(clip.url);
-        const arrayBuffer = await response.arrayBuffer();
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-        const channelData = audioBuffer.getChannelData(0);
-        const peakCount = 220;
-        const blockSize = Math.max(1, Math.floor(channelData.length / peakCount));
-        const peaks = [];
-        for (let i = 0; i < peakCount; i++) {
-            const start = i * blockSize;
-            let max = 0;
-            for (let j = 0; j < blockSize && (start + j) < channelData.length; j++) {
-                const abs = Math.abs(channelData[start + j]);
-                if (abs > max) max = abs;
-            }
-            peaks.push(max);
-        }
-        ctx.close();
-        // Normaliza pelo pico mais alto da própria gravação — sem isso, um
-        // áudio gravado num volume mais baixo (a maioria não chega a 1.0 de
-        // amplitude) desenha barras pequenas no meio do canvas, com espaço
-        // em branco sobrando em cima/embaixo em vez de usar a altura toda.
-        const maxPeak = Math.max(...peaks, 0.0001);
-        const normalizedPeaks = peaks.map(p => p / maxPeak);
-        audioPeaksCache.set(clip.id, normalizedPeaks);
-        return normalizedPeaks;
+        const peaks = await computeWaveformPeaks(clip.url);
+        audioPeaksCache.set(clip.id, peaks);
+        return peaks;
     } catch (e) {
         console.warn('Não foi possível decodificar a forma de onda:', e);
         return [];
@@ -4510,12 +4499,11 @@ function setupAudioModuleControls() {
     audioPlayerEl.addEventListener('play', () => setAudioPlayButtonIcon(true));
     audioPlayerEl.addEventListener('pause', () => setAudioPlayButtonIcon(false));
     audioPlayerEl.addEventListener('ended', () => {
-        // Ao terminar, só repete o clipe atual se "repetir" estiver ligado —
-        // nunca avança pro próximo card sozinho; isso só acontece por clique
-        // explícito (card da grade ou botões prev/next).
-        if (audioRepeatOn) {
+        if (audioRepeatOn && audioClipOrder.length === 1) {
             audioPlayerEl.currentTime = 0;
             audioPlayerEl.play();
+        } else {
+            goToAdjacentAudioClip(1, true);
         }
     });
 
@@ -4531,11 +4519,6 @@ function setupAudioModuleControls() {
 // ----------------------------------------------------
 
 let currentAudio = null;
-// Boundaries de palavra (offsetMs/durationMs) do currentAudio, quando o
-// backend manda (edge-tts) — usado só pelo player de Leitura de Texto pra
-// destacar a palavra sendo lida com precisão real, em vez da aproximação por
-// proporção de caracteres.
-let currentAudioWords = [];
 let currentPlaylistItems = [];
 let currentPlaylistIndex = 0;
 let currentPlaylistDeckStyle = null;
@@ -5279,7 +5262,8 @@ function setupModals() {
             if (currentEditingAudioClip) {
                 await updateAudioClip(currentEditingAudioClip, title, file, colorClass);
             } else {
-                await saveAudioClip(title, file, colorClass);
+                const targetPatientId = (isDoctor && activePatientContext) ? activePatientContext.id : null;
+                await saveAudioClip(title, file, colorClass, targetPatientId);
             }
             closeAudioUpload();
         } finally {
@@ -5769,7 +5753,7 @@ function setupModals() {
         if ('speechSynthesis' in window) window.speechSynthesis.cancel();
         setReadingTextButtonState(document.getElementById('btn-play-reading-text'), 'idle');
         readingTextActiveButton = null;
-        hideReadingTextProgress();
+        resetReadingTextProgress();
     });
 
     document.getElementById('btn-play-reading-text').addEventListener('click', (e) => {
@@ -5777,24 +5761,34 @@ function setupModals() {
         toggleReadingTextPlayback(text, e.currentTarget, 'Ouviu leitura de texto');
     });
 
-    // Clique/arraste na trilha pula pro ponto tocado; setas quando a trilha
-    // está focada fazem o mesmo em passos pequenos; o botão volta 5s — tudo
-    // opera sobre currentAudio, que é sempre o único áudio tocando.
+    // Clique/arraste na onda pula pro ponto tocado; setas quando ela está
+    // focada fazem o mesmo em passos pequenos; o botão volta 5s — tudo opera
+    // sobre currentAudio, que é sempre o único áudio tocando.
     (() => {
-        const track = document.getElementById('reading-text-progress-track');
+        const canvas = document.getElementById('reading-text-waveform-canvas');
         const rewindBtn = document.getElementById('btn-reading-text-rewind');
-        if (!track || !rewindBtn) return;
+        if (!canvas || !rewindBtn) return;
 
         const seekToClientX = (clientX) => {
             if (!currentAudio || !currentAudio.duration) return;
-            const rect = track.getBoundingClientRect();
+            const rect = canvas.getBoundingClientRect();
             const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
             currentAudio.currentTime = ratio * currentAudio.duration;
         };
 
-        track.addEventListener('click', (e) => seekToClientX(e.clientX));
+        let dragging = false;
+        const startDrag = (e) => { dragging = true; seekToClientX(e.touches ? e.touches[0].clientX : e.clientX); };
+        const dragMove = (e) => { if (dragging) seekToClientX(e.touches ? e.touches[0].clientX : e.clientX); };
+        const endDrag = () => { dragging = false; };
 
-        track.addEventListener('keydown', (e) => {
+        canvas.addEventListener('mousedown', startDrag);
+        canvas.addEventListener('touchstart', startDrag);
+        window.addEventListener('mousemove', dragMove);
+        window.addEventListener('touchmove', dragMove);
+        window.addEventListener('mouseup', endDrag);
+        window.addEventListener('touchend', endDrag);
+
+        canvas.addEventListener('keydown', (e) => {
             if (!currentAudio) return;
             if (e.key === 'ArrowRight') {
                 currentAudio.currentTime = Math.min(currentAudio.duration || 0, currentAudio.currentTime + 5);
@@ -6673,6 +6667,11 @@ function numbersPressDigit(digit) {
     numbersCurrentValue += digit;
     renderNumbersDisplay();
     pulseNumbersDisplay();
+    // Começa a gerar o áudio já a cada dígito (em vez de só ao confirmar) —
+    // diferente do resto do app, o número não existe antes do usuário digitar,
+    // então não dá pra pré-carregar com antecedência; isso pelo menos usa o
+    // tempo de digitação pra já ter o áudio pronto (ou quase) quando confirmar.
+    prefetchTts(numbersCurrentValue);
 }
 
 function numbersBackspace() {
@@ -12853,7 +12852,22 @@ async function loadDoctorPatients() {
             btnViewMedias.className = 'admin-edit-password-btn';
             btnViewMedias.addEventListener('click', () => enterPatientContext(p, 'view-media'));
 
-            tdActions.append(btnPassword, btnModules, btnExercises, btnViewExercises, btnTopics, btnVirtues, btnCarometro, btnCarometroGlobal, btnBooks, btnReleaseBooks, btnMedias, btnViewMedias, btnToggleActive);
+            // Mesmo padrão de Mídias: banco do médico + liberação por paciente
+            // (patient_audio_flags), e "entrar no paciente" pra gravar/subir
+            // um áudio exclusivo dele.
+            const btnAudios = document.createElement('button');
+            btnAudios.innerHTML = '<i class="fas fa-headphones" aria-hidden="true"></i>';
+            btnAudios.title = 'Áudios liberados para este paciente';
+            btnAudios.className = 'admin-edit-password-btn';
+            btnAudios.addEventListener('click', () => openPatientAudioModal(p));
+
+            const btnViewAudios = document.createElement('button');
+            btnViewAudios.innerHTML = '<i class="fas fa-eye" aria-hidden="true"></i>';
+            btnViewAudios.title = 'Ver áudios deste paciente';
+            btnViewAudios.className = 'admin-edit-password-btn';
+            btnViewAudios.addEventListener('click', () => enterPatientContext(p, 'view-audio'));
+
+            tdActions.append(btnPassword, btnModules, btnExercises, btnViewExercises, btnTopics, btnVirtues, btnCarometro, btnCarometroGlobal, btnBooks, btnReleaseBooks, btnMedias, btnViewMedias, btnAudios, btnViewAudios, btnToggleActive);
             tr.append(tdName, tdEmail, tdStatus, tdCreated, tdLastSignIn, tdActions);
             tbody.appendChild(tr);
         });
@@ -13232,6 +13246,75 @@ document.getElementById('btn-close-patient-medias')?.addEventListener('click', (
     if (patientMediasModal) patientMediasModal.style.display = 'none';
 });
 
+// Áudios liberados por paciente — cópia quase literal de openPatientMediasModal,
+// trocando medias/patient_media_flags por audio_clips/patient_audio_flags.
+const patientAudioModal = document.getElementById('patient-audio-modal');
+
+async function openPatientAudioModal(patient) {
+    document.getElementById('patient-audio-subtitle').textContent = patient.name || patient.email;
+    const list = document.getElementById('patient-audio-list');
+    list.innerHTML = 'Carregando...';
+    if (patientAudioModal) patientAudioModal.style.display = 'flex';
+
+    // Banco do médico (doctor_user_id próprio ou da empresa) — clipes já
+    // escopados direto a um paciente (patient_id preenchido) não entram
+    // aqui, não fazem sentido "liberar" pra outro paciente.
+    const { data: myClips } = await supabaseClient
+        .from('audio_clips').select('id, title, doctor_user_id')
+        .or(doctorBankOrFilter())
+        .is('patient_id', null)
+        .order('title');
+    const { data: overrides } = await supabaseClient
+        .from('patient_audio_flags').select('audio_id, visible').eq('patient_id', patient.id);
+    const overrideMap = new Map((overrides || []).map(r => [r.audio_id, r.visible]));
+
+    list.innerHTML = '';
+    if (!myClips || !myClips.length) {
+        list.innerHTML = '<p class="media-hint">Nenhum áudio disponível pra liberar ainda. Adicione em "Áudios" na barra lateral.</p>';
+        return;
+    }
+
+    myClips.forEach(clip => {
+        const isGlobal = !clip.doctor_user_id;
+        const displayTitle = clip.title + (isGlobal ? ' (do admin)' : '');
+        const isVisible = overrideMap.has(clip.id) ? overrideMap.get(clip.id) : false;
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:#f5f5f5; border-radius:8px;';
+
+        const label = document.createElement('span');
+        label.textContent = displayTitle;
+
+        const toggleWrap = document.createElement('div');
+        toggleWrap.style.cssText = 'position:relative; width:32px; height:18px;';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'visibility-toggle-btn ' + (isVisible ? 'is-visible' : 'is-hidden');
+        toggleBtn.style.cssText = 'position:absolute; top:0; left:0;';
+        toggleBtn.setAttribute('role', 'switch');
+        toggleBtn.setAttribute('aria-checked', String(isVisible));
+        toggleBtn.setAttribute('aria-label', `Liberar ${displayTitle} para ${patient.name || patient.email}`);
+        toggleBtn.addEventListener('click', async () => {
+            const newVisible = !isVisible;
+            try {
+                await supabaseClient.from('patient_audio_flags')
+                    .upsert({ patient_id: patient.id, audio_id: clip.id, visible: newVisible, updated_at: new Date().toISOString() });
+                openPatientAudioModal(patient);
+            } catch (err) {
+                showDoctorPatientsFeedback('Erro ao liberar áudio: ' + err.message, true);
+            }
+        });
+
+        toggleWrap.appendChild(toggleBtn);
+        row.append(label, toggleWrap);
+        list.appendChild(row);
+    });
+}
+
+document.getElementById('btn-close-patient-audio')?.addEventListener('click', () => {
+    if (patientAudioModal) patientAudioModal.style.display = 'none';
+});
+
 // Livros liberados por paciente — diferente dos outros 3 (mídias/tópicos/
 // virtudes, que mostram o banco inteiro com toggle ligado/desligado): aqui
 // a lista principal só mostra o que JÁ está liberado (com botão de
@@ -13457,6 +13540,7 @@ function enterPatientContext(patient, targetView) {
     if (targetView === 'view-carometro' && typeof reloadCarometroState === 'function') reloadCarometroState();
     if (targetView === 'view-media') loadMediaCards();
     if (targetView === 'view-exercises') loadExerciseCards();
+    if (targetView === 'view-audio') loadAudioClips();
     document.querySelector(`.nav-btn[data-view="${targetView}"]`)?.click();
     if (targetView === 'view-books') refreshBooksFrameSrc();
 }
@@ -13468,6 +13552,7 @@ function exitPatientContext() {
     showEditBars();
     loadMediaCards();
     loadExerciseCards();
+    loadAudioClips();
     if (typeof reloadCarometroState === 'function') reloadCarometroState();
     if (document.querySelector('.nav-btn[data-view="view-books"]')?.classList.contains('active')) refreshBooksFrameSrc();
 }
@@ -13510,12 +13595,20 @@ function updatePatientContextBanners() {
         boText.textContent = `Vendo livros de: ${activePatientContext?.name || ''}`;
         boBanner.style.display = show ? 'flex' : 'none';
     }
+
+    const auBanner = document.getElementById('patient-context-banner-audio');
+    const auText = document.getElementById('patient-context-banner-audio-text');
+    if (auBanner && auText) {
+        auText.textContent = `Vendo áudios de: ${activePatientContext?.name || ''}`;
+        auBanner.style.display = show ? 'flex' : 'none';
+    }
 }
 
 document.getElementById('btn-clear-patient-context-carometro')?.addEventListener('click', exitPatientContext);
 document.getElementById('btn-clear-patient-context-media')?.addEventListener('click', exitPatientContext);
 document.getElementById('btn-clear-patient-context-exercises')?.addEventListener('click', exitPatientContext);
 document.getElementById('btn-clear-patient-context-books')?.addEventListener('click', exitPatientContext);
+document.getElementById('btn-clear-patient-context-audio')?.addEventListener('click', exitPatientContext);
 
 document.getElementById('btn-open-new-patient')?.addEventListener('click', () => {
     newPatientForm?.reset();
@@ -14992,7 +15085,6 @@ const AZURE_AI_ENDPOINT = isLocalhost
 const IA_ENDPOINT_FALLBACKS = isLocalhost
     ? [AZURE_AI_ENDPOINT, SUPABASE_CHAT_ENDPOINT]
     : [SUPABASE_CHAT_ENDPOINT];
-
 
 const iaChatInput = document.getElementById('ia-chat-input');
 const btnIaSend = document.getElementById('btn-ia-send');
