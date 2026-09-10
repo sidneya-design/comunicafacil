@@ -1640,7 +1640,7 @@ function setDoctorTab(tabName) {
 }
 
 function setAdminTab(tabName) {
-    const tabs = ['users', 'companies', 'usage', 'modules'];
+    const tabs = ['users', 'companies', 'usage', 'modules', 'logs'];
     
     tabs.forEach(tab => {
         const btn = document.getElementById(`btn-admin-tab-${tab}`);
@@ -1663,6 +1663,8 @@ function setAdminTab(tabName) {
         renderUsageDashboard();
     } else if (tabName === 'modules') {
         applyModuleVisibility(); // Refreshes UI and re-renders the panel
+    } else if (tabName === 'logs') {
+        loadAdminLogsPanel();
     }
 }
 
@@ -12616,7 +12618,10 @@ function formatSessionDuration(seconds) {
     return h > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${m}min`;
 }
 
-function renderDoctorActionRow(a) {
+// showActor: liga o e-mail do médico na linha — necessário na aba Logs (que
+// pode listar vários médicos de uma vez), redundante no modal de atividade
+// de UM médico só (openDoctorActivityModal), onde fica desligado.
+function renderDoctorActionRow(a, showActor = false) {
     const row = document.createElement('div');
     row.className = 'usage-item';
     const main = document.createElement('div');
@@ -12624,9 +12629,12 @@ function renderDoctorActionRow(a) {
     const entityLabel = ADMIN_ENTITY_LABELS[a.entity_type] || a.entity_type;
     strong.textContent = `${ADMIN_ACTION_LABELS[a.action] || a.action} ${entityLabel}` + (a.entity_label ? `: ${a.entity_label}` : '');
     main.appendChild(strong);
-    if (a.detail) {
+    const detailParts = [];
+    if (showActor) detailParts.push(a.actor_email);
+    if (a.detail) detailParts.push(a.detail);
+    if (detailParts.length) {
         const span = document.createElement('span');
-        span.textContent = a.detail;
+        span.textContent = detailParts.join(' — ');
         main.appendChild(span);
     }
     const meta = document.createElement('span');
@@ -12696,6 +12704,104 @@ document.getElementById('btn-close-doctor-activity')?.addEventListener('click', 
     document.getElementById('doctor-activity-modal').style.display = 'none';
 });
 
+// Aba "Logs" (Admin): mesma tabela admin_action_log do modal de atividade,
+// mas filtrável por empresa e/ou médico em vez de escopada a um médico só —
+// pensada pra dar uma visão geral, não só investigar um médico específico.
+let adminLogsCompanyFilter = '';
+let adminLogsDoctorFilter = '';
+let adminLogsDoctorsCache = []; // médicos (todos, ou só da empresa filtrada) pro <select>
+
+function populateAdminLogsCompanyFilter() {
+    const select = document.getElementById('admin-logs-company-filter');
+    if (!select) return;
+    const current = adminLogsCompanyFilter;
+    select.innerHTML = '<option value="">Todas as empresas</option>'
+        + companiesCache.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    if (current && companiesCache.some(c => c.id === current)) select.value = current;
+    else adminLogsCompanyFilter = '';
+}
+
+async function populateAdminLogsDoctorFilter() {
+    const select = document.getElementById('admin-logs-doctor-filter');
+    if (!select) return;
+    try {
+        const { users } = await callAdminUsersFn('list');
+        adminLogsDoctorsCache = (users || [])
+            .filter(u => u.role === 'doctor' && (!adminLogsCompanyFilter || u.companyId === adminLogsCompanyFilter))
+            .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
+    } catch (e) {
+        adminLogsDoctorsCache = [];
+    }
+    const current = adminLogsDoctorFilter;
+    select.innerHTML = '<option value="">Todos os médicos</option>'
+        + adminLogsDoctorsCache.map(d => `<option value="${d.id}">${d.name || d.email}</option>`).join('');
+    if (current && adminLogsDoctorsCache.some(d => d.id === current)) select.value = current;
+    else adminLogsDoctorFilter = '';
+}
+
+async function loadAdminLogsList() {
+    const list = document.getElementById('admin-logs-list');
+    if (!list || !supabaseClient) return;
+    list.textContent = 'Carregando...';
+
+    // created_at é timestamptz — "De" entra a partir de 00:00 do dia local,
+    // "Até" cobre o dia inteiro (< o dia seguinte), senão um filtro "até
+    // hoje" excluiria as ações de hoje mesmo (comparando contra 00:00 de hoje).
+    const dateFrom = document.getElementById('admin-logs-date-from')?.value;
+    const dateTo = document.getElementById('admin-logs-date-to')?.value;
+
+    let query = supabaseClient.from('admin_action_log').select('*')
+        .order('created_at', { ascending: false }).limit(300);
+    if (adminLogsDoctorFilter) query = query.eq('actor_user_id', adminLogsDoctorFilter);
+    else if (adminLogsCompanyFilter) query = query.eq('company_id', adminLogsCompanyFilter);
+    if (dateFrom) query = query.gte('created_at', new Date(dateFrom + 'T00:00:00').toISOString());
+    if (dateTo) {
+        const nextDay = new Date(dateTo + 'T00:00:00');
+        nextDay.setDate(nextDay.getDate() + 1);
+        query = query.lt('created_at', nextDay.toISOString());
+    }
+
+    const { data: actions, error } = await query;
+    list.innerHTML = '';
+    if (error) {
+        list.innerHTML = `<p class="media-hint">Erro ao carregar logs: ${error.message}</p>`;
+    } else if (!actions || !actions.length) {
+        list.innerHTML = '<p class="media-hint">Nenhuma ação registrada ainda pra esse filtro.</p>';
+    } else {
+        actions.forEach(a => list.appendChild(renderDoctorActionRow(a, true)));
+    }
+}
+
+async function loadAdminLogsPanel() {
+    if (!companiesCache.length) {
+        try {
+            const { companies } = await callAdminUsersFn('listCompanies');
+            companiesCache = companies || [];
+        } catch (e) {}
+    }
+    populateAdminLogsCompanyFilter();
+    await populateAdminLogsDoctorFilter();
+    await loadAdminLogsList();
+}
+
+document.getElementById('admin-logs-company-filter')?.addEventListener('change', async (e) => {
+    adminLogsCompanyFilter = e.target.value;
+    adminLogsDoctorFilter = ''; // troca de empresa invalida o médico selecionado (pode ser de outra)
+    await populateAdminLogsDoctorFilter();
+    await loadAdminLogsList();
+});
+document.getElementById('admin-logs-doctor-filter')?.addEventListener('change', (e) => {
+    adminLogsDoctorFilter = e.target.value;
+    loadAdminLogsList();
+});
+document.getElementById('admin-logs-date-from')?.addEventListener('change', () => loadAdminLogsList());
+document.getElementById('admin-logs-date-to')?.addEventListener('change', () => loadAdminLogsList());
+document.getElementById('btn-admin-logs-clear-dates')?.addEventListener('click', () => {
+    document.getElementById('admin-logs-date-from').value = '';
+    document.getElementById('admin-logs-date-to').value = '';
+    loadAdminLogsList();
+});
+
 document.getElementById('btn-nav-admin')?.addEventListener('click', async () => {
     setAdminTab('users');
     await loadAdminUsers();
@@ -12708,6 +12814,7 @@ document.getElementById('btn-admin-tab-users')?.addEventListener('click', () => 
 document.getElementById('btn-admin-tab-companies')?.addEventListener('click', () => setAdminTab('companies'));
 document.getElementById('btn-admin-tab-usage')?.addEventListener('click', () => setAdminTab('usage'));
 document.getElementById('btn-admin-tab-modules')?.addEventListener('click', () => setAdminTab('modules'));
+document.getElementById('btn-admin-tab-logs')?.addEventListener('click', () => setAdminTab('logs'));
 
 document.getElementById('btn-doctor-tab-patients')?.addEventListener('click', () => setDoctorTab('patients'));
 document.getElementById('btn-doctor-tab-usage')?.addEventListener('click', () => setDoctorTab('usage'));

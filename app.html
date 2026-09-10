@@ -817,6 +817,7 @@
                         <button class="admin-tab" id="btn-admin-tab-companies" data-admin-tab="companies" type="button" role="tab" aria-selected="false">Empresas</button>
                         <button class="admin-tab" id="btn-admin-tab-usage" data-admin-tab="usage" type="button" role="tab" aria-selected="false">Uso e insights</button>
                         <button class="admin-tab" id="btn-admin-tab-modules" data-admin-tab="modules" type="button" role="tab" aria-selected="false">Módulos</button>
+                        <button class="admin-tab" id="btn-admin-tab-logs" data-admin-tab="logs" type="button" role="tab" aria-selected="false">Logs</button>
                     </div>
 
                     <section class="admin-tab-panel active" id="admin-users-panel" role="tabpanel" aria-labelledby="btn-admin-tab-users">
@@ -1009,6 +1010,35 @@
                                 <!-- Módulos injetados via JS -->
                             </div>
                         </div>
+                    </section>
+
+                    <!-- Aba: Logs (ações + acesso dos médicos, filtrável por empresa/médico) -->
+                    <section class="admin-tab-panel" id="admin-logs-panel" role="tabpanel" aria-labelledby="btn-admin-tab-logs">
+                        <div class="media-header">
+                            <div>
+                                <h2>Logs de atividade dos médicos</h2>
+                                <p class="media-hint" style="margin-top: 5px;">O que cada médico criou, editou, excluiu ou liberou/bloqueou pra um paciente.</p>
+                            </div>
+                            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-left:auto; align-items:center;">
+                                <select id="admin-logs-company-filter" style="padding:8px 12px; border:1px solid #ddd; border-radius:8px; background:white; cursor:pointer;" aria-label="Filtrar por empresa">
+                                    <option value="">Todas as empresas</option>
+                                </select>
+                                <select id="admin-logs-doctor-filter" style="padding:8px 12px; border:1px solid #ddd; border-radius:8px; background:white; cursor:pointer;" aria-label="Filtrar por médico">
+                                    <option value="">Todos os médicos</option>
+                                </select>
+                                <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#475569;">
+                                    De
+                                    <input type="date" id="admin-logs-date-from" style="padding:7px 10px; border:1px solid #ddd; border-radius:8px; background:white; cursor:pointer;">
+                                </label>
+                                <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#475569;">
+                                    Até
+                                    <input type="date" id="admin-logs-date-to" style="padding:7px 10px; border:1px solid #ddd; border-radius:8px; background:white; cursor:pointer;">
+                                </label>
+                                <button type="button" class="btn-secondary" id="btn-admin-logs-clear-dates" style="padding:7px 12px;">Limpar datas</button>
+                            </div>
+                        </div>
+                        <div id="admin-logs-feedback" class="admin-feedback" role="status" aria-live="polite" style="display:none;"></div>
+                        <div id="admin-logs-list" class="usage-timeline"></div>
                     </section>
                 </main>
 
@@ -2249,7 +2279,7 @@
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script defer src="app.js?v=85"></script>
+    <script defer src="app.js?v=87"></script>
 </body>
 
 
