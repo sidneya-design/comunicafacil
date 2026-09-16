@@ -332,6 +332,12 @@ async function fetchArasaacImage(word) {
 // ====================================================
 const USAGE_STORAGE_KEY = 'comunicafacil_usage_local_v1';
 const USAGE_HEARTBEAT_MS = 10000;
+// status:'active' só vira 'closed' no pagehide/logout (ver closeUsageSession) — se o
+// app for fechado à força, o dispositivo travar/dormir ou a aba for morta em segundo
+// plano, esse evento nunca dispara e a sessão fica "active" pra sempre no banco. Por
+// isso "sessões ativas agora" não pode confiar só no status: também exige um
+// last_seen_at recente (heartbeat só atualiza com a aba visível, a cada 10s).
+const USAGE_ACTIVE_NOW_THRESHOLD_MS = 3 * 60 * 1000;
 const USAGE_VIEW_LABELS = {
     'view-core': 'Essenciais',
     'view-topics': 'Tópicos',
@@ -987,6 +993,11 @@ function formatUsageDateTime(iso) {
     return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+function isSessionActiveNow(session) {
+    if (!session || session.status !== 'active' || !session.lastSeenAt) return false;
+    return (Date.now() - new Date(session.lastSeenAt).getTime()) <= USAGE_ACTIVE_NOW_THRESHOLD_MS;
+}
+
 async function getUsageAggregate(allowedUserIds = null) {
     // allowedUserIds restringe a agregação a uma lista específica de
     // usuários — usado pelo médico, que só pode ver o uso dos próprios
@@ -1443,7 +1454,7 @@ async function renderUsageDashboard(idPrefix = 'usage', allowedUserIds = null) {
 
     const filteredSessions = selectedUserId() ? aggregate.sessions.filter(s => s.userId === selectedUserId()) : aggregate.sessions;
 
-    const activeSessions = filteredSessions.filter(session => session.status === 'active')
+    const activeSessions = filteredSessions.filter(isSessionActiveNow)
         .sort((a, b) => (b.activeSeconds || 0) - (a.activeSeconds || 0))
         .slice(0, 5)
         .map(session => ({
@@ -1470,7 +1481,7 @@ async function renderUsageDashboard(idPrefix = 'usage', allowedUserIds = null) {
     const totalActions = activityEntries.reduce((sum, item) => sum + (item.count || 0), 0);
     const topActivity = activityEntries[0] ? activityEntries[0] : null;
     const totalSessions = filteredSessions.length;
-    const activeSessionsCount = filteredSessions.filter(session => session.status === 'active').length;
+    const activeSessionsCount = filteredSessions.filter(isSessionActiveNow).length;
     const avgSessionSeconds = totalSessions > 0 ? Math.round(totalActiveSeconds / totalSessions) : 0;
     const topShare = totalActions > 0 && topActivity ? Math.round((topActivity.count / totalActions) * 100) : 0;
 
