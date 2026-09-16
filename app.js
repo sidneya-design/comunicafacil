@@ -997,7 +997,7 @@ async function getUsageAggregate(allowedUserIds = null) {
             let sessionsQuery = supabaseClient
                 .from('usage_sessions')
                 .select('*')
-                .order('start_at', { ascending: false })
+                .order('last_seen_at', { ascending: false })
                 .limit(100);
             let eventsQuery = supabaseClient
                 .from('usage_events')
@@ -1069,6 +1069,20 @@ async function getUsageAggregate(allowedUserIds = null) {
                     u.totalEvents = (u.totalEvents || 0) + 1;
                     if (event.timestamp && (!u.lastSeenAt || new Date(event.timestamp) > new Date(u.lastSeenAt))) {
                         u.lastSeenAt = event.timestamp;
+                    }
+
+                    // O "último acesso" por atividade normalmente vem do blob activities
+                    // da sessão (acima), mas uma sessão longa-porém-ativa pode cair fora
+                    // da janela do limit(100) antes de ser reagregada. usage_events tem
+                    // timestamp exato por acesso e serve de reforço, sem afetar
+                    // count/totalSeconds (que continuam vindo só das sessões).
+                    if (event.type === 'activity' && event.label) {
+                        const normalizedLabel = normalizeUsageActivityLabel(event.label);
+                        if (normalizedLabel && !normalizedLabel.toLowerCase().startsWith('tela:')) {
+                            const lastAccessBump = { count: 0, totalSeconds: 0, lastAccessAt: event.timestamp };
+                            mergeActivityAggregate(u.activities, normalizedLabel, lastAccessBump);
+                            mergeActivityAggregate(activityStatsTotals, normalizedLabel, lastAccessBump);
+                        }
                     }
                 });
 
@@ -1369,10 +1383,9 @@ async function renderUsageDashboard(idPrefix = 'usage', allowedUserIds = null) {
             };
         })
         .sort((a, b) => {
-            if ((b.totalSeconds || 0) !== (a.totalSeconds || 0)) {
-                return (b.totalSeconds || 0) - (a.totalSeconds || 0);
-            }
-            return (b.count || 0) - (a.count || 0);
+            const at = a.lastAccessAt ? new Date(a.lastAccessAt).getTime() : -Infinity;
+            const bt = b.lastAccessAt ? new Date(b.lastAccessAt).getTime() : -Infinity;
+            return bt - at;
         });
 
     const topActivities = activityEntries.slice(0, 5).map(item => ({
@@ -1401,7 +1414,7 @@ async function renderUsageDashboard(idPrefix = 'usage', allowedUserIds = null) {
         label: formatUsageActivityDisplayLabel(meta.label),
         value: normalizeActivityStats((selectedUserId() && selectedUserRecord) ? (selectedUserRecord.activities[meta.label] || 0) : (aggregate.activityStatsTotals[meta.label] || 0))
     }));
-    if (!usageTableSortByPrefix[idPrefix]) usageTableSortByPrefix[idPrefix] = { key: 'totalSeconds', dir: 'desc' };
+    if (!usageTableSortByPrefix[idPrefix]) usageTableSortByPrefix[idPrefix] = { key: 'lastAccessAt', dir: 'desc' };
     const tableSort = usageTableSortByPrefix[idPrefix];
     const activityTableEntries = [...catalogActivityEntries]
         .map(item => ({
