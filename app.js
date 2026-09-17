@@ -13688,18 +13688,27 @@ document.getElementById('btn-close-patient-audio')?.addEventListener('click', ()
 const patientBooksModal = document.getElementById('patient-books-modal');
 let patientBooksModalPatient = null;
 
+function bookFormatBadge(book) {
+    const isPdf = book.mime_type?.includes('pdf');
+    const badge = document.createElement('span');
+    badge.textContent = isPdf ? 'PDF' : 'EPUB';
+    badge.style.cssText = `font-size:11px; font-weight:bold; padding:2px 6px; border-radius:4px; ${isPdf ? 'background:#ffe3e3; color:#c0392b;' : 'background:#e3f2ff; color:#1565c0;'}`;
+    return badge;
+}
+
 async function openPatientBooksModal(patient) {
     patientBooksModalPatient = patient;
     document.getElementById('patient-books-subtitle').textContent = patient.name || patient.email;
     const list = document.getElementById('patient-books-list');
-    const addSelect = document.getElementById('patient-books-add-select');
+    const addList = document.getElementById('patient-books-add-list');
+    const addBtn = document.getElementById('patient-books-add-btn');
     list.innerHTML = 'Carregando...';
-    addSelect.innerHTML = '';
+    addList.innerHTML = '';
     if (patientBooksModal) patientBooksModal.style.display = 'flex';
 
     // Inclui o banco do médico E o conteúdo global do admin.
     const { data: myBooks } = await supabaseClient
-        .from('books').select('id, title, doctor_user_id')
+        .from('books').select('id, title, doctor_user_id, mime_type')
         .or(doctorBankOrFilter())
         .order('title');
     const { data: overrides } = await supabaseClient
@@ -13721,8 +13730,11 @@ async function openPatientBooksModal(patient) {
             const row = document.createElement('div');
             row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:#f5f5f5; border-radius:8px;';
 
+            const leftSide = document.createElement('div');
+            leftSide.style.cssText = 'display:flex; align-items:center; gap:8px;';
             const label = document.createElement('span');
             label.textContent = title;
+            leftSide.append(bookFormatBadge(book), label);
 
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
@@ -13741,45 +13753,52 @@ async function openPatientBooksModal(patient) {
                 }
             });
 
-            row.append(label, removeBtn);
+            row.append(leftSide, removeBtn);
             list.appendChild(row);
         });
     }
 
     if (!availableBooks.length) {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = 'Nenhum livro disponível pra adicionar';
-        addSelect.appendChild(opt);
-        addSelect.disabled = true;
+        addList.innerHTML = '<p class="media-hint">Nenhum livro disponível pra adicionar.</p>';
+        addBtn.disabled = true;
     } else {
-        addSelect.disabled = false;
-        const placeholder = document.createElement('option');
-        placeholder.value = '';
-        placeholder.textContent = 'Selecione um livro...';
-        addSelect.appendChild(placeholder);
+        addBtn.disabled = false;
         availableBooks.forEach(book => {
             const isGlobal = !book.doctor_user_id;
-            const opt = document.createElement('option');
-            opt.value = book.id;
-            opt.textContent = book.title + (isGlobal ? ' (do admin)' : '');
-            addSelect.appendChild(opt);
+            const title = book.title + (isGlobal ? ' (do admin)' : '');
+
+            const label = document.createElement('label');
+            label.style.cssText = 'display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px; cursor:pointer;';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'patient-books-add-checkbox';
+            checkbox.value = book.id;
+            checkbox.dataset.title = title;
+
+            const span = document.createElement('span');
+            span.textContent = title;
+
+            label.append(checkbox, bookFormatBadge(book), span);
+            addList.appendChild(label);
         });
     }
 }
 
 document.getElementById('patient-books-add-btn')?.addEventListener('click', async () => {
-    const addSelect = document.getElementById('patient-books-add-select');
-    const bookId = addSelect?.value;
-    if (!bookId || !patientBooksModalPatient) return;
-    const bookTitle = addSelect.options[addSelect.selectedIndex]?.textContent || bookId;
+    if (!patientBooksModalPatient) return;
+    const checked = Array.from(document.querySelectorAll('.patient-books-add-checkbox:checked'));
+    if (!checked.length) return;
+    const now = new Date().toISOString();
+    const rows = checked.map(cb => ({
+        patient_id: patientBooksModalPatient.id, book_id: cb.value, visible: true, updated_at: now
+    }));
     try {
-        await supabaseClient.from('patient_book_flags')
-            .upsert({ patient_id: patientBooksModalPatient.id, book_id: bookId, visible: true, updated_at: new Date().toISOString() });
-        logAdminAction('release', 'book', bookTitle, `Paciente: ${patientBooksModalPatient.name || patientBooksModalPatient.email}`);
+        await supabaseClient.from('patient_book_flags').upsert(rows);
+        checked.forEach(cb => logAdminAction('release', 'book', cb.dataset.title, `Paciente: ${patientBooksModalPatient.name || patientBooksModalPatient.email}`));
         openPatientBooksModal(patientBooksModalPatient);
     } catch (err) {
-        showDoctorPatientsFeedback('Erro ao liberar livro: ' + err.message, true);
+        showDoctorPatientsFeedback('Erro ao liberar livros: ' + err.message, true);
     }
 });
 
