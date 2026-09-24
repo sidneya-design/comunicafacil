@@ -2203,7 +2203,7 @@ async function migrateLocalMediaAndExercises() {
                 if (ex.gameKind) continue;
                 currentEditingExerciseId = null; // force insert as new
                 currentEditingExerciseForkSource = null;
-                await saveExercisePlaylistToDB(ex.title, ex.items || []);
+                await saveExercisePlaylistToDB(ex.title, ex.items || [], null, null, ex.autoPictograms !== false);
                 db.transaction(['exercises'], 'readwrite').objectStore('exercises').delete(ex.id);
             }
             resolve();
@@ -2631,7 +2631,7 @@ async function getOrCreateExerciseFork(sourceId, title, doctorUserId) {
     return forkId;
 }
 
-async function saveExercisePlaylistToDB(title, itemsArray, doctorUserId = null, companyId = null) {
+async function saveExercisePlaylistToDB(title, itemsArray, doctorUserId = null, companyId = null, autoPictograms = true) {
     // Exercícios só-locais (ex.: os semeados por seedLocalPracticeExercises) têm um id
     // de IndexedDB, não um id do Supabase. Se tentássemos o caminho do Supabase pra eles,
     // o update/delete usaria esse id local contra a tabela real e não bateria com nada —
@@ -2662,7 +2662,9 @@ async function saveExercisePlaylistToDB(title, itemsArray, doctorUserId = null, 
                 // seletor "Enviar para empresa" é dele) — se um médico editasse e
                 // isso fosse incondicional, a cada save apagaria o company_id que o
                 // admin tinha setado (companyId chega null pro médico).
-                const updateFields = isAdmin ? { title, company_id: companyId } : { title };
+                const updateFields = isAdmin
+                    ? { title, auto_pictograms: autoPictograms, company_id: companyId }
+                    : { title, auto_pictograms: autoPictograms };
                 const { error: updateErr } = await supabaseClient.from('exercises').update(updateFields).eq('id', targetExerciseId);
                 if (updateErr) throw updateErr;
                 const { error: deleteErr } = await supabaseClient.from('exercise_items').delete().eq('exercise_id', targetExerciseId);
@@ -2678,8 +2680,8 @@ async function saveExercisePlaylistToDB(title, itemsArray, doctorUserId = null, 
                 // Exercício de médico entra direto no banco dele (ninguém mais vê até
                 // ele liberar por paciente em "Meus Pacientes" — patient_exercise_flags).
                 const newExercisePayload = doctorUserId
-                    ? { title, visible: true, doctor_user_id: doctorUserId, company_id: currentUserCompanyId }
-                    : { title, visible: false, company_id: companyId };
+                    ? { title, auto_pictograms: autoPictograms, visible: true, doctor_user_id: doctorUserId, company_id: currentUserCompanyId }
+                    : { title, auto_pictograms: autoPictograms, visible: false, company_id: companyId };
                 const { data: exData, error: insertErr } = await supabaseClient.from('exercises').insert([newExercisePayload]).select().single();
                 if (insertErr) throw insertErr;
                 const dbItems = uploadedItems.map(item => ({
@@ -2704,12 +2706,12 @@ async function saveExercisePlaylistToDB(title, itemsArray, doctorUserId = null, 
         db.transaction(['exercises'], 'readonly').objectStore('exercises').get(currentEditingExerciseId).onsuccess = (e) => {
             const existing = e.target.result || {};
             db.transaction(['exercises'], 'readwrite').objectStore('exercises')
-                .put({ ...existing, id: currentEditingExerciseId, title, items: itemsArray })
+                .put({ ...existing, id: currentEditingExerciseId, title, items: itemsArray, autoPictograms })
                 .onsuccess = () => loadExerciseCards();
         };
     } else {
         db.transaction(['exercises'], 'readwrite').objectStore('exercises')
-            .add({ title, items: itemsArray, visible: false })
+            .add({ title, items: itemsArray, visible: false, autoPictograms })
             .onsuccess = () => loadExerciseCards();
     }
 }
@@ -3205,7 +3207,7 @@ async function addReadyBankExerciseToDoctorBank(ex) {
     }));
 
     try {
-        await saveExercisePlaylistToDB(ex.title, mappedItems, currentUserId);
+        await saveExercisePlaylistToDB(ex.title, mappedItems, currentUserId, null, ex.autoPictograms !== false);
     } finally {
         currentEditingExerciseId = previousEditingId;
         currentEditingExerciseFromSupabase = previousEditingFromSupabase;
@@ -3421,6 +3423,7 @@ async function loadExerciseCards() {
                         companyId: ex.company_id || null,
                         forkedFrom: ex.forked_from || null,
                         gameKind: ex.game_kind || null,
+                        autoPictograms: ex.auto_pictograms !== false,
                         syllablesSize: ex.syllables_size || null,
                         syllablesColor: ex.syllables_color || null,
                         syllablesFont: ex.syllables_font || null
@@ -4606,6 +4609,8 @@ let currentAudio = null;
 let currentPlaylistItems = [];
 let currentPlaylistIndex = 0;
 let currentPlaylistDeckStyle = null;
+// false quando o exercício desativou os pictogramas automáticos (ARASAAC).
+let currentPlaylistAutoPictograms = true;
 
 function createExerciseBlockHtml(blockId, isEdit = false, hasOldImage = false) {
     return `
@@ -4921,6 +4926,7 @@ function openEditExercise(ex) {
     
     document.getElementById('exercise-title').value = displayTitle;
     document.getElementById('exercise-color').value = colorClass;
+    document.getElementById('exercise-auto-pictograms').checked = ex.autoPictograms !== false;
 
     const companyGroup = document.getElementById('exercise-target-company-group');
     if (companyGroup) {
@@ -5624,7 +5630,8 @@ function setupModals() {
 
         const targetDoctorUserId = isDoctor ? currentUserId : null;
         const targetCompanyId = isAdmin ? (document.getElementById('exercise-target-company')?.value || null) : null;
-        saveExercisePlaylistToDB(finalTitle, itemsArray, targetDoctorUserId, targetCompanyId);
+        const autoPictograms = document.getElementById('exercise-auto-pictograms').checked;
+        saveExercisePlaylistToDB(finalTitle, itemsArray, targetDoctorUserId, targetCompanyId, autoPictograms);
         closeExerciseUpload();
     });
 
@@ -5992,6 +5999,7 @@ function openPresentationPlaylist(ex) {
     currentPlaylistDeckStyle = (ex.gameKind === 'syllables' || ex.gameKind === 'audio-real')
         ? { size: ex.syllablesSize, color: ex.syllablesColor, font: ex.syllablesFont }
         : null;
+    currentPlaylistAutoPictograms = ex.autoPictograms !== false;
 
     document.getElementById('presentation-modal').style.display = 'flex';
     const activityLabel = (ex.title || '').split('|')[0] || ex.title || 'Exercício';
@@ -6106,13 +6114,17 @@ function renderCurrentPlaylistItem() {
                 // ARASAAC acha nada pra essa palavra.
                 imgEl.style.display = 'none';
                 imgEl.src = '';
-                fetchArasaacImage(item.imgQuery || item.word).then(url => {
-                    if (currentPlaylistItems[currentPlaylistIndex] !== item) return;
-                    if (url) {
-                        imgEl.src = url;
-                        imgEl.style.display = '';
-                    }
-                });
+                // Exercício com pictogramas automáticos desativados: fica só
+                // com a palavra (e a legenda de sílabas, se houver).
+                if (currentPlaylistAutoPictograms) {
+                    fetchArasaacImage(item.imgQuery || item.word).then(url => {
+                        if (currentPlaylistItems[currentPlaylistIndex] !== item) return;
+                        if (url) {
+                            imgEl.src = url;
+                            imgEl.style.display = '';
+                        }
+                    });
+                }
             }
 
             // Exercício com Slides: sílabas (se preenchidas) viram legenda
@@ -6168,7 +6180,7 @@ function renderCurrentPlaylistItem() {
             if (neighbor.image_url) {
                 const preloader = new Image();
                 preloader.src = neighbor.image_url;
-            } else if (!(neighbor.imageBlob instanceof Blob)) {
+            } else if (!(neighbor.imageBlob instanceof Blob) && currentPlaylistAutoPictograms) {
                 // Sem imagem própria: o slide busca um pictograma automático no
                 // ARASAAC (serviço externo) na hora de exibir — chamando aqui
                 // adiantado, a busca já cai no arasaacCache, e ainda
