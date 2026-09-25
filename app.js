@@ -1733,6 +1733,25 @@ function prefetchViewAudio(viewId) {
     });
 }
 
+const LAST_ACTIVE_VIEW_KEY = 'comunica_last_active_view_v1';
+
+function getLastActiveView() {
+    try { return localStorage.getItem(LAST_ACTIVE_VIEW_KEY); } catch (e) { return null; }
+}
+
+function setLastActiveView(viewId) {
+    if (!viewId) return;
+    try { localStorage.setItem(LAST_ACTIVE_VIEW_KEY, viewId); } catch (e) { /* localStorage indisponível */ }
+}
+
+function restoreLastActiveView() {
+    const savedView = getLastActiveView();
+    if (!savedView || savedView === 'view-core') return;
+    const btn = document.querySelector(`.nav-btn[data-view="${savedView}"]`);
+    if (!btn || getComputedStyle(btn).display === 'none' || btn.disabled) return;
+    if (!btn.classList.contains('active')) btn.click();
+}
+
 function setupNavigation() {
     const navBtns = document.querySelectorAll('.nav-btn');
     const views = document.querySelectorAll('.view-section');
@@ -1740,12 +1759,14 @@ function setupNavigation() {
 
     navBtns.forEach(btn => {
         btn.addEventListener('click', () => {
+            const targetView = btn.dataset.view;
+            if (!targetView) return;
             navBtns.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-pressed', 'false'); });
             views.forEach(v => v.classList.remove('active'));
             btn.classList.add('active');
             btn.setAttribute('aria-pressed', 'true');
-            
-            const targetView = btn.dataset.view;
+            setLastActiveView(targetView);
+
             const viewElement = document.getElementById(targetView);
             if (viewElement) {
                 viewElement.classList.add('active');
@@ -1802,6 +1823,8 @@ function setupNavigation() {
             }
         });
     });
+
+    setTimeout(restoreLastActiveView, 0);
 }
 
 async function renderGrid(containerId, wordsArray) {
@@ -12185,6 +12208,7 @@ if (supabaseClient) {
                 renderGamesList();
                 const adminNavBtn = document.getElementById('btn-nav-admin');
                 if (adminNavBtn) adminNavBtn.style.display = 'flex';
+                restoreLastActiveView();
                 return;
             }
             // Ninguém pode acessar sem login! Redireciona para a landing page (index.html).
@@ -12273,6 +12297,7 @@ if (supabaseClient) {
             }
 
             applyModuleVisibility(); // Aplica visibilidade de módulos (para ambos admin e usuário)
+            restoreLastActiveView();
         } catch (e) {
             console.error("Erro ao checar permissões:", e);
         }
