@@ -1554,16 +1554,11 @@
                     <input type="text" id="exercise-title" required placeholder="Ex: Categoria Alimentos">
                 </div>
                 <div class="form-group">
-                    <label for="exercise-color">Cor do Card</label>
-                    <select id="exercise-color" style="width: 100%; height: 40px; border: 1px solid #ddd; border-radius: 8px; padding: 0 10px; background: white; cursor: pointer;">
-                        <option value="pink">Rosa</option>
-                        <option value="orange">Laranja</option>
-                        <option value="blue">Azul</option>
-                        <option value="green">Verde</option>
-                        <option value="red">Vermelho</option>
-                        <option value="yellow">Amarelo</option>
-                        <option value="gray">Cinza</option>
-                    </select>
+                    <label for="exercise-color-custom">Cor do Card</label>
+                    <div class="card-color-picker" id="exercise-color-picker">
+                        <span class="card-color-custom-wrap"><input type="color" id="exercise-color-custom" class="card-color-custom" title="Outra cor" value="#FFFFFF"></span><button type="button" class="card-color-save-btn" id="exercise-color-save" title="Salvar esta cor para usar em outros cards" aria-label="Salvar cor customizada"><i class="fas fa-bookmark" aria-hidden="true"></i></button>
+                    </div>
+                    <input type="hidden" id="exercise-color" value="pink">
                 </div>
                 <div class="form-group">
                     <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; cursor: pointer; color: #333;">
@@ -1651,16 +1646,11 @@
                     <input type="text" id="syllables-exercise-title" required placeholder="Ex: Leitura - Sílabas Simples">
                 </div>
                 <div class="form-group">
-                    <label for="syllables-exercise-color">Cor do Card</label>
-                    <select id="syllables-exercise-color" style="width: 100%; height: 40px; border: 1px solid #ddd; border-radius: 8px; padding: 0 10px; background: white; cursor: pointer;">
-                        <option value="pink">Rosa</option>
-                        <option value="orange">Laranja</option>
-                        <option value="blue">Azul</option>
-                        <option value="green">Verde</option>
-                        <option value="red">Vermelho</option>
-                        <option value="yellow">Amarelo</option>
-                        <option value="gray">Cinza</option>
-                    </select>
+                    <label for="syllables-exercise-color-custom">Cor do Card</label>
+                    <div class="card-color-picker" id="syllables-exercise-color-picker">
+                        <span class="card-color-custom-wrap"><input type="color" id="syllables-exercise-color-custom" class="card-color-custom" title="Outra cor" value="#FFFFFF"></span><button type="button" class="card-color-save-btn" id="syllables-exercise-color-save" title="Salvar esta cor para usar em outros cards" aria-label="Salvar cor customizada"><i class="fas fa-bookmark" aria-hidden="true"></i></button>
+                    </div>
+                    <input type="hidden" id="syllables-exercise-color" value="pink">
                 </div>
 
                 <div style="display: flex; gap: 10px; margin-bottom: 15px;">
@@ -1722,16 +1712,11 @@
                     <input type="text" id="reading-text-exercise-title" required placeholder="Ex: A Fazenda">
                 </div>
                 <div class="form-group">
-                    <label for="reading-text-exercise-color">Cor do Card</label>
-                    <select id="reading-text-exercise-color" style="width: 100%; height: 40px; border: 1px solid #ddd; border-radius: 8px; padding: 0 10px; background: white; cursor: pointer;">
-                        <option value="pink">Rosa</option>
-                        <option value="orange">Laranja</option>
-                        <option value="blue">Azul</option>
-                        <option value="green">Verde</option>
-                        <option value="red">Vermelho</option>
-                        <option value="yellow">Amarelo</option>
-                        <option value="gray">Cinza</option>
-                    </select>
+                    <label for="reading-text-exercise-color-custom">Cor do Card</label>
+                    <div class="card-color-picker" id="reading-text-exercise-color-picker">
+                        <span class="card-color-custom-wrap"><input type="color" id="reading-text-exercise-color-custom" class="card-color-custom" title="Outra cor" value="#FFFFFF"></span><button type="button" class="card-color-save-btn" id="reading-text-exercise-color-save" title="Salvar esta cor para usar em outros cards" aria-label="Salvar cor customizada"><i class="fas fa-bookmark" aria-hidden="true"></i></button>
+                    </div>
+                    <input type="hidden" id="reading-text-exercise-color" value="pink">
                 </div>
                 <div class="form-group" id="reading-text-exercise-target-company-group" style="display:none;">
                     <label for="reading-text-exercise-target-company">Enviar para empresa (opcional)</label>
@@ -1820,16 +1805,11 @@
                     <input type="text" id="audio-exercise-title" required placeholder="Ex: Fala - Palavras com R">
                 </div>
                 <div class="form-group">
-                    <label for="audio-exercise-color">Cor do Card</label>
-                    <select id="audio-exercise-color" style="width: 100%; height: 40px; border: 1px solid #ddd; border-radius: 8px; padding: 0 10px; background: white; cursor: pointer;">
-                        <option value="pink">Rosa</option>
-                        <option value="orange">Laranja</option>
-                        <option value="blue">Azul</option>
-                        <option value="green">Verde</option>
-                        <option value="red">Vermelho</option>
-                        <option value="yellow">Amarelo</option>
-                        <option value="gray">Cinza</option>
-                    </select>
+                    <label for="audio-exercise-color-custom">Cor do Card</label>
+                    <div class="card-color-picker" id="audio-exercise-color-picker">
+                        <span class="card-color-custom-wrap"><input type="color" id="audio-exercise-color-custom" class="card-color-custom" title="Outra cor" value="#FFFFFF"></span><button type="button" class="card-color-save-btn" id="audio-exercise-color-save" title="Salvar esta cor para usar em outros cards" aria-label="Salvar cor customizada"><i class="fas fa-bookmark" aria-hidden="true"></i></button>
+                    </div>
+                    <input type="hidden" id="audio-exercise-color" value="pink">
                 </div>
 
                 <div style="display: flex; gap: 10px; margin-bottom: 15px;">

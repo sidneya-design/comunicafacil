@@ -236,6 +236,208 @@ function stripWordHtml(html) {
     return temp.textContent || '';
 }
 
+// Preto ou branco por trás do texto, conforme o brilho da cor de fundo (fórmula
+// YIQ) — necessário porque "Cor do Card" agora aceita qualquer hex custom (ver
+// initCardColorPicker), então não dá mais pra assumir "#111" fixo como nas 7
+// cores pastel de sempre (todas claras).
+function getContrastTextColor(hex) {
+    const clean = (hex || '').replace('#', '');
+    const full = clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean;
+    const r = parseInt(full.substring(0, 2), 16) || 0;
+    const g = parseInt(full.substring(2, 4), 16) || 0;
+    const b = parseInt(full.substring(4, 6), 16) || 0;
+    const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+    return yiq >= 150 ? '#111' : '#fff';
+}
+
+// "Cor do Card": paleta fixa de sempre (vira classe .border-<nome>, igual ao
+// resto do app) + um seletor nativo pra qualquer outra cor (aí salva o hex cru
+// no lugar do nome — ver renderExerciseCards/isCustomCardColor). Usado nos 4
+// tipos de exercício que têm campo "Cor do Card" (Slides, Sílabas, Áudio Real,
+// Leitura de Texto) — não em "Cor da Borda"/"Categoria (cor)" de mídias e
+// clipes de áudio, que são um select diferente, sem pedido pra mudar.
+const CARD_COLOR_PRESETS = [
+    { value: 'pink', hex: '#F8BBD0', label: 'Rosa' },
+    { value: 'orange', hex: '#FFCA28', label: 'Laranja' },
+    { value: 'blue', hex: '#4FC3F7', label: 'Azul' },
+    { value: 'green', hex: '#D4E157', label: 'Verde' },
+    { value: 'red', hex: '#EF9A9A', label: 'Vermelho' },
+    { value: 'yellow', hex: '#FFF59D', label: 'Amarelo' },
+    { value: 'gray', hex: '#E0E0E0', label: 'Cinza' },
+    // Cores vivas pedidas depois, sem classe .border-<nome> própria — o
+    // value já é o hex, então caem direto no caminho de cor custom
+    // (isCustomCardColor) na hora de renderizar o card.
+    { value: '#388E3C', hex: '#388E3C', label: 'Verde Escuro' },
+    { value: '#FB8C00', hex: '#FB8C00', label: 'Laranja Vivo' },
+    { value: '#6A1B9A', hex: '#6A1B9A', label: 'Roxo' },
+    { value: '#1A237E', hex: '#1A237E', label: 'Azul Marinho' }
+];
+
+// Cores customizadas que o usuário salvou (botão "marcador" ao lado do
+// seletor nativo) ficam em localStorage — por navegador/perfil, não
+// sincroniza entre médicos nem dispositivos, mas cobre o pedido de "salvar
+// pros próximos cards" sem precisar de tabela nova no banco.
+const CUSTOM_CARD_COLORS_KEY = 'comunicafacil_custom_card_colors_v1';
+const CUSTOM_CARD_COLORS_MAX = 16;
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+function loadCustomCardColors() {
+    try {
+        const raw = localStorage.getItem(CUSTOM_CARD_COLORS_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr.filter(c => HEX_COLOR_RE.test(c)) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function addCustomCardColor(hex) {
+    if (!HEX_COLOR_RE.test(hex || '')) return;
+    const normalized = hex.toUpperCase();
+    if (CARD_COLOR_PRESETS.some(p => p.hex.toUpperCase() === normalized)) return;
+    const colors = loadCustomCardColors().filter(c => c.toUpperCase() !== normalized);
+    colors.unshift(normalized);
+    if (colors.length > CUSTOM_CARD_COLORS_MAX) colors.length = CUSTOM_CARD_COLORS_MAX;
+    try { localStorage.setItem(CUSTOM_CARD_COLORS_KEY, JSON.stringify(colors)); } catch (e) { }
+    refreshAllCardColorPickers();
+}
+
+function removeCustomCardColor(hex) {
+    const colors = loadCustomCardColors().filter(c => c.toUpperCase() !== (hex || '').toUpperCase());
+    try { localStorage.setItem(CUSTOM_CARD_COLORS_KEY, JSON.stringify(colors)); } catch (e) { }
+    refreshAllCardColorPickers();
+}
+
+// Todo picker montado na página agora (outros modais fechados nem existem no
+// DOM ainda) reflete a lista salva na hora — assim salvar uma cor num
+// exercício já deixa ela disponível se o usuário abrir outro tipo em seguida.
+function refreshAllCardColorPickers() {
+    document.querySelectorAll('.card-color-picker[data-hidden-input]').forEach(renderSavedCardColorSwatches);
+}
+
+function renderSavedCardColorSwatches(picker) {
+    const savedContainer = picker.querySelector('.card-color-saved');
+    const hiddenInput = document.getElementById(picker.dataset.hiddenInput);
+    const customInput = document.getElementById(picker.dataset.customInput);
+    if (!savedContainer || !hiddenInput) return;
+    const currentValue = (hiddenInput.value || '').toUpperCase();
+    savedContainer.innerHTML = '';
+
+    loadCustomCardColors().forEach(hex => {
+        const wrap = document.createElement('span');
+        wrap.className = 'card-color-swatch-wrap';
+
+        const swatch = document.createElement('button');
+        swatch.type = 'button';
+        swatch.className = 'card-color-swatch card-color-swatch-saved';
+        swatch.dataset.value = hex;
+        swatch.style.backgroundColor = hex;
+        swatch.title = hex;
+        swatch.setAttribute('aria-label', `Cor salva ${hex}`);
+        if (hex.toUpperCase() === currentValue) swatch.classList.add('is-selected');
+        swatch.addEventListener('click', () => {
+            hiddenInput.value = hex;
+            picker.querySelectorAll('.card-color-swatch').forEach(s => s.classList.remove('is-selected'));
+            customInput?.classList.remove('is-selected');
+            swatch.classList.add('is-selected');
+        });
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'card-color-swatch-remove';
+        removeBtn.title = 'Remover esta cor salva';
+        removeBtn.setAttribute('aria-label', 'Remover cor salva');
+        removeBtn.innerHTML = '&times;';
+        removeBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            removeCustomCardColor(hex);
+        });
+
+        wrap.appendChild(swatch);
+        wrap.appendChild(removeBtn);
+        savedContainer.appendChild(wrap);
+    });
+}
+
+function initCardColorPicker(pickerId, hiddenInputId, customInputId) {
+    const picker = document.getElementById(pickerId);
+    const hiddenInput = document.getElementById(hiddenInputId);
+    const customInput = document.getElementById(customInputId);
+    if (!picker || !hiddenInput || !customInput || picker.dataset.wired) return;
+    picker.dataset.wired = '1';
+    picker.dataset.hiddenInput = hiddenInputId;
+    picker.dataset.customInput = customInputId;
+
+    const clearSelection = () => {
+        picker.querySelectorAll('.card-color-swatch').forEach(s => s.classList.remove('is-selected'));
+        customInput.classList.remove('is-selected');
+    };
+
+    const customWrap = customInput.closest('.card-color-custom-wrap') || customInput;
+
+    CARD_COLOR_PRESETS.forEach(preset => {
+        const swatch = document.createElement('button');
+        swatch.type = 'button';
+        swatch.className = 'card-color-swatch';
+        swatch.dataset.value = preset.value;
+        swatch.style.backgroundColor = preset.hex;
+        swatch.title = preset.label;
+        swatch.setAttribute('aria-label', preset.label);
+        swatch.addEventListener('click', () => {
+            hiddenInput.value = preset.value;
+            clearSelection();
+            swatch.classList.add('is-selected');
+        });
+        picker.insertBefore(swatch, customWrap);
+    });
+
+    const savedContainer = document.createElement('div');
+    savedContainer.className = 'card-color-saved';
+    picker.insertBefore(savedContainer, customWrap);
+    renderSavedCardColorSwatches(picker);
+
+    customInput.addEventListener('input', () => {
+        hiddenInput.value = customInput.value;
+        clearSelection();
+        customInput.classList.add('is-selected');
+    });
+
+    const saveBtn = document.getElementById(customInputId.replace(/-custom$/, '-save'));
+    saveBtn?.addEventListener('click', () => {
+        addCustomCardColor(customInput.value);
+    });
+}
+
+function setCardColorPickerValue(pickerId, hiddenInputId, customInputId, value) {
+    initCardColorPicker(pickerId, hiddenInputId, customInputId);
+    const picker = document.getElementById(pickerId);
+    const hiddenInput = document.getElementById(hiddenInputId);
+    const customInput = document.getElementById(customInputId);
+    if (!picker || !hiddenInput || !customInput) return;
+
+    const preset = CARD_COLOR_PRESETS.find(p => p.value === value);
+    hiddenInput.value = value || 'pink';
+    // Comparação sem diferenciar maiúsculas: hex digitado no seletor nativo do
+    // navegador sempre sai minúsculo, mas o que fica salvo na paleta de "cores
+    // salvas" é normalizado em maiúsculas (ver addCustomCardColor) — sem isso
+    // o swatch salvo não acendia como selecionado ao reabrir pra editar.
+    const valueUpper = (value || '').toUpperCase();
+    picker.querySelectorAll('.card-color-swatch').forEach(s => s.classList.toggle('is-selected', (s.dataset.value || '').toUpperCase() === valueUpper));
+    // O seletor nativo só reflete a cor quando ELE é a escolha atual — herdar o
+    // hex de um preset aqui faria o círculo dele às vezes mostrar a mesma cor
+    // de um preset ao lado (ex: fica rosa igual ao swatch "Rosa"), parecendo
+    // repetido; sem escolha custom ainda, mantém o branco padrão com o "+".
+    if (preset) {
+        customInput.classList.remove('is-selected');
+    } else if (/^#/.test(value || '')) {
+        customInput.value = value;
+        customInput.classList.add('is-selected');
+    } else {
+        customInput.classList.remove('is-selected');
+    }
+    renderSavedCardColorSwatches(picker);
+}
+
 // Um bloco de palavra pode ter mais de um editor rico (Palavra Escrita e
 // Sílabas, cada um com seu próprio toolbar) — liga cada um pelo seu
 // .form-group, senão wireWordEditorToolbar acharia sempre o primeiro campo
@@ -2976,7 +3178,7 @@ function openEditReadingTextExercise(ex) {
     const colorClass = parts[1] || 'pink';
 
     document.getElementById('reading-text-exercise-title').value = displayTitle;
-    document.getElementById('reading-text-exercise-color').value = colorClass;
+    setCardColorPickerValue('reading-text-exercise-color-picker', 'reading-text-exercise-color', 'reading-text-exercise-color-custom', colorClass);
     document.getElementById('reading-text-content').value = (ex.items && ex.items[0] && ex.items[0].word) || '';
 
     const phrasesContainer = document.getElementById('reading-text-phrases-container');
@@ -3575,9 +3777,14 @@ function renderExerciseCards(exercisesArray) {
         const parts = (ex.title || '').split('|');
         const displayTitle = parts[0];
         const colorClass = parts[1] || 'pink';
+        // "Cor do Card" agora aceita hex livre além dos 7 nomes de sempre (ver
+        // initCardColorPicker) — hex não tem classe .border-<nome> no CSS, então
+        // aplica a cor via inline style em vez de classe.
+        const isCustomCardColor = colorClass.startsWith('#');
 
         const btn = document.createElement('button');
-        btn.className = `word-btn border-${colorClass}` + (isAdmin && ex.visible === false ? ' card-hidden' : '');
+        btn.className = 'word-btn' + (!isCustomCardColor ? ` border-${colorClass}` : '') + (isAdmin && ex.visible === false ? ' card-hidden' : '');
+        if (isCustomCardColor) btn.style.borderColor = colorClass;
 
         const imgContainer = document.createElement('div');
         imgContainer.className = 'word-btn-img-container';
@@ -3634,6 +3841,10 @@ function renderExerciseCards(exercisesArray) {
         const textEl = document.createElement('div');
         textEl.className = 'word-btn-text';
         textEl.textContent = displayTitle;
+        if (isCustomCardColor) {
+            textEl.style.backgroundColor = colorClass;
+            textEl.style.color = getContrastTextColor(colorClass);
+        }
 
         btn.appendChild(imgContainer);
         btn.appendChild(textEl);
@@ -4884,7 +5095,7 @@ function openEditAudioExercise(ex) {
     const colorClass = parts[1] || 'pink';
 
     document.getElementById('audio-exercise-title').value = displayTitle;
-    document.getElementById('audio-exercise-color').value = colorClass;
+    setCardColorPickerValue('audio-exercise-color-picker', 'audio-exercise-color', 'audio-exercise-color-custom', colorClass);
     document.getElementById('audio-text-size').value = ex.syllablesSize || '100';
     document.getElementById('audio-text-color').value = ex.syllablesColor || '#1f1f1f';
     document.getElementById('audio-font').value = ex.syllablesFont || "'Outfit', sans-serif";
@@ -4948,7 +5159,7 @@ function openEditExercise(ex) {
     const colorClass = parts[1] || 'pink';
     
     document.getElementById('exercise-title').value = displayTitle;
-    document.getElementById('exercise-color').value = colorClass;
+    setCardColorPickerValue('exercise-color-picker', 'exercise-color', 'exercise-color-custom', colorClass);
     document.getElementById('exercise-auto-pictograms').checked = ex.autoPictograms !== false;
 
     const companyGroup = document.getElementById('exercise-target-company-group');
@@ -4995,7 +5206,7 @@ function openEditSyllablesExercise(ex) {
     const colorClass = parts[1] || 'pink';
 
     document.getElementById('syllables-exercise-title').value = displayTitle;
-    document.getElementById('syllables-exercise-color').value = colorClass;
+    setCardColorPickerValue('syllables-exercise-color-picker', 'syllables-exercise-color', 'syllables-exercise-color-custom', colorClass);
     document.getElementById('syllables-text-size').value = ex.syllablesSize || '100';
     document.getElementById('syllables-text-color').value = ex.syllablesColor || '#1f1f1f';
     document.getElementById('syllables-font').value = ex.syllablesFont || "'Outfit', sans-serif";
@@ -5473,6 +5684,7 @@ function setupModals() {
         document.getElementById('upload-exercise-modal').style.display = 'flex';
         document.getElementById('upload-exercise-modal').querySelector('h2').textContent = "Novo Exercício (Slides)";
         document.getElementById('upload-exercise-form').reset();
+        setCardColorPickerValue('exercise-color-picker', 'exercise-color', 'exercise-color-custom', 'pink');
 
         const companyGroup = document.getElementById('exercise-target-company-group');
         if (companyGroup) {
@@ -5667,6 +5879,7 @@ function setupModals() {
         document.getElementById('syllables-exercise-modal').style.display = 'flex';
         document.getElementById('syllables-exercise-modal').querySelector('h2').textContent = "Novo Exercício (Sílabas)";
         document.getElementById('syllables-exercise-form').reset();
+        setCardColorPickerValue('syllables-exercise-color-picker', 'syllables-exercise-color', 'syllables-exercise-color-custom', 'pink');
 
         const companyGroup = document.getElementById('syllables-exercise-target-company-group');
         if (companyGroup) {
@@ -5737,6 +5950,7 @@ function setupModals() {
         document.getElementById('audio-exercise-modal').style.display = 'flex';
         document.getElementById('audio-exercise-modal').querySelector('h2').textContent = "Novo Exercício (Áudio Real)";
         document.getElementById('audio-exercise-form').reset();
+        setCardColorPickerValue('audio-exercise-color-picker', 'audio-exercise-color', 'audio-exercise-color-custom', 'pink');
 
         const audioCompanyGroup = document.getElementById('audio-exercise-target-company-group');
         if (audioCompanyGroup) {
@@ -5816,6 +6030,7 @@ function setupModals() {
         document.getElementById('reading-text-exercise-modal').style.display = 'flex';
         document.getElementById('reading-text-exercise-modal').querySelector('h2').textContent = "Novo Exercício (Leitura de Texto)";
         document.getElementById('reading-text-exercise-form').reset();
+        setCardColorPickerValue('reading-text-exercise-color-picker', 'reading-text-exercise-color', 'reading-text-exercise-color-custom', 'pink');
         document.getElementById('reading-text-phrases-container').innerHTML = '';
         readingTextPhraseBlockCounter = 0;
 
