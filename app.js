@@ -4629,7 +4629,7 @@ function createExerciseBlockHtml(blockId, isEdit = false, hasOldImage = false) {
                     <input type="color" class="item-color" value="#333333" style="width: 100%; height: 40px; cursor: pointer; border: 1px solid #ddd; border-radius: 8px;">
                 </div>
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                    <label>Tamanho (px)</label>
+                    <label>Tamanho do Texto (px)</label>
                     <input type="number" class="item-size" value="100" min="20" max="300" style="width: 100%; height: 40px; box-sizing: border-box; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px;">
                 </div>
             </div>
@@ -6133,7 +6133,7 @@ function renderCurrentPlaylistItem() {
                 captionEl.style.display = 'inline-block';
                 // Mesmo tamanho da palavra escrita à esquerda — só encolhe
                 // (fitTextToWidth) se não couber na largura disponível.
-                captionEl.style.fontSize = ((item.textSize || item.size || 100) * 0.7) + 'px';
+                captionEl.style.fontSize = (item.textSize || item.size || 100) + 'px';
                 captionEl.innerHTML = sanitizeWordHtml(displaySyllables);
                 // Reset explícito (ver comentário equivalente no ramo de cima):
                 // captionEl é reaproveitado entre slides.
