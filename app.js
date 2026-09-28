@@ -102,7 +102,7 @@ function evictTtsLocalStorageCache() {
         const keysToRemove = [];
         for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
-            if (key && (key.startsWith('comunica_tts_v1:') || key.startsWith('comunica_tts_v2:') || key.startsWith('comunica_tts_v3:'))) {
+            if (key && key.startsWith('comunica_tts_')) {
                 keysToRemove.push(key);
             }
         }
@@ -2149,6 +2149,25 @@ const azureTtsCache = new Map(); // texto -> Promise<{audio: string base64, word
 // novo pra não reler cache v3 no formato de objeto por engano; evictTtsLocalStorageCache
 // limpa todas as versões antigas.
 const TTS_STORAGE_PREFIX = 'comunica_tts_v4:';
+// Teto de entradas de áudio no localStorage (~16KB cada → ~2,5MB). Sem teto o
+// cache enchia a quota (~5MB) e o token de sessão do Supabase deixava de ser
+// salvo, causando loop de login. Ao passar do teto, remove um lote das mais
+// antigas (ordem de inserção do localStorage) — são fáceis de baixar de novo.
+const TTS_STORAGE_MAX_ENTRIES = 150;
+const TTS_STORAGE_TRIM_BATCH = 30;
+
+function trimTtsLocalStorageCache() {
+    try {
+        const ttsKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('comunica_tts_')) ttsKeys.push(key);
+        }
+        if (ttsKeys.length < TTS_STORAGE_MAX_ENTRIES) return;
+        ttsKeys.slice(0, ttsKeys.length - TTS_STORAGE_MAX_ENTRIES + TTS_STORAGE_TRIM_BATCH)
+            .forEach(k => localStorage.removeItem(k));
+    } catch (e) { /* localStorage indisponível: nada a fazer */ }
+}
 
 // A function 'chat' agora exige sessão válida (fecha proxy aberto pro
 // serviço pago da Azure) — anexa o token do usuário logado em toda chamada
@@ -2201,6 +2220,7 @@ function getTtsAudio(text, rateKey, ttsRate) {
             if (AZURE_AI_ENDPOINT === SUPABASE_CHAT_ENDPOINT) throw primaryError;
             audioBase64 = await fetchTtsAudio(SUPABASE_CHAT_ENDPOINT, text, ttsRate);
         }
+        trimTtsLocalStorageCache();
         try {
             localStorage.setItem(TTS_STORAGE_PREFIX + cacheKey, audioBase64);
         } catch (e) {

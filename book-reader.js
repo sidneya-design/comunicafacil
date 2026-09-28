@@ -1,6 +1,6 @@
 // book-reader.js — ComunicaFácil Netflix-Style Library Module
 
-import { supabase } from './supabase.js?v=3';
+import { supabase } from './supabase.js?v=4';
 
 // ── Config ──────────────────────────────────────────────
 const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB
@@ -128,7 +128,7 @@ function saveCustomGenres(list) {
       const keysToRemove = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && (key.startsWith('comunica_tts_v1:') || key.startsWith('comunica_tts_v2:'))) keysToRemove.push(key);
+        if (key && key.startsWith('comunica_tts_')) keysToRemove.push(key);
       }
       keysToRemove.forEach(k => localStorage.removeItem(k));
       localStorage.setItem(CUSTOM_GENRES_KEY, JSON.stringify(list));
