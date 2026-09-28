@@ -2205,20 +2205,60 @@ async function fetchTtsAudio(endpoint, text, ttsRate) {
 // rateKey identifica o cache ("" = voz normal de sempre, mesma chave já usada
 // em produção); ttsRate é o valor de verdade mandado pro backend (SSML
 // <prosody rate>), só quando rateKey não é o padrão.
-function getTtsAudio(text, rateKey, ttsRate) {
+// Pré-carregamento de áudio com poucas requisições por vez. Antes, abrir uma aba
+// disparava dezenas de chamadas ao TTS juntas, e o primeiro toque num card
+// esperava todas na fila (~6s sem som). Agora o pré-carregamento usa no máximo
+// TTS_PREFETCH_CONCURRENCY conexões, e um toque (isPrefetch=false) fura a fila:
+// se aquele texto ainda estava esperando vez, começa na hora.
+const TTS_PREFETCH_CONCURRENCY = 3;
+let ttsPrefetchActive = 0;
+const ttsPrefetchQueue = []; // cacheKeys na ordem de chegada
+const ttsPrefetchWaiting = new Map(); // cacheKey -> start(usesSlot)
+
+function pumpTtsPrefetchQueue() {
+    while (ttsPrefetchActive < TTS_PREFETCH_CONCURRENCY && ttsPrefetchQueue.length) {
+        const start = ttsPrefetchWaiting.get(ttsPrefetchQueue.shift());
+        if (!start) continue; // já foi promovido por um toque
+        ttsPrefetchActive++;
+        start(true);
+    }
+}
+
+// Resolve com true quando ocupou uma vaga da fila (precisa liberar depois) ou
+// false quando foi promovido por um toque (roda fora do limite).
+function waitTtsPrefetchSlot(cacheKey) {
+    return new Promise(resolve => {
+        ttsPrefetchWaiting.set(cacheKey, usesSlot => { ttsPrefetchWaiting.delete(cacheKey); resolve(usesSlot); });
+        ttsPrefetchQueue.push(cacheKey);
+        pumpTtsPrefetchQueue();
+    });
+}
+
+function releaseTtsPrefetchSlot() {
+    ttsPrefetchActive--;
+    pumpTtsPrefetchQueue();
+}
+
+function getTtsAudio(text, rateKey, ttsRate, isPrefetch = false) {
     const cacheKey = rateKey ? (text + '::rate::' + rateKey) : text;
-    if (azureTtsCache.has(cacheKey)) return azureTtsCache.get(cacheKey);
+    if (azureTtsCache.has(cacheKey)) {
+        if (!isPrefetch) ttsPrefetchWaiting.get(cacheKey)?.(false);
+        return azureTtsCache.get(cacheKey);
+    }
     const promise = (async () => {
         try {
             const stored = localStorage.getItem(TTS_STORAGE_PREFIX + cacheKey);
             if (stored) return stored;
         } catch (e) { /* localStorage indisponível: segue para o backend */ }
+        const usesSlot = isPrefetch ? await waitTtsPrefetchSlot(cacheKey) : false;
         let audioBase64;
         try {
             audioBase64 = await fetchTtsAudio(AZURE_AI_ENDPOINT, text, ttsRate);
         } catch (primaryError) {
             if (AZURE_AI_ENDPOINT === SUPABASE_CHAT_ENDPOINT) throw primaryError;
             audioBase64 = await fetchTtsAudio(SUPABASE_CHAT_ENDPOINT, text, ttsRate);
+        } finally {
+            if (usesSlot) releaseTtsPrefetchSlot();
         }
         trimTtsLocalStorageCache();
         try {
@@ -2235,7 +2275,7 @@ function getTtsAudio(text, rateKey, ttsRate) {
 }
 
 function prefetchTts(text) {
-    if (text) getTtsAudio(text).catch(() => { /* erro tratado no clique */ });
+    if (text) getTtsAudio(text, null, null, true).catch(() => { /* erro tratado no clique */ });
 }
 
 // Velocidades do player de "Leitura de Texto": sintetizadas já na velocidade
@@ -3358,7 +3398,7 @@ let readingTextOpenTexts = [];
 function prefetchReadingTextAudio(texts, rateKey) {
     const ttsRate = rateKey ? (READING_TEXT_RATE_MAP[rateKey] || null) : null;
     texts.forEach(t => {
-        if (t) getTtsAudio(t, ttsRate ? rateKey : null, ttsRate).catch(() => { /* erro tratado no clique */ });
+        if (t) getTtsAudio(t, ttsRate ? rateKey : null, ttsRate, true).catch(() => { /* erro tratado no clique */ });
     });
 }
 
@@ -8611,7 +8651,7 @@ function showJogo2Setup() {
 
     // Renderiza os cards de adversários e aplica o selecionado ao jogador 2
     renderJogo2OpponentCards();
-    const opps = loadJogo2Opponents();
+    const opps = JOGO2_OPPONENTS_FIXED;
     const selIdx = getSelectedOpponentIndex();
     if (opps[selIdx]) {
         jogo2Players[1].name = opps[selIdx].name || `Adversário ${selIdx + 1}`;
