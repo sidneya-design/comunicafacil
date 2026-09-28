@@ -1946,7 +1946,9 @@ function setLastActiveView(viewId) {
     try { localStorage.setItem(LAST_ACTIVE_VIEW_KEY, viewId); } catch (e) { /* localStorage indisponível */ }
 }
 
+// Só o admin volta pra última tela; os demais usuários sempre abrem nos Essenciais.
 function restoreLastActiveView() {
+    if (!canManageUsers) return;
     const savedView = getLastActiveView();
     if (!savedView || savedView === 'view-core') return;
     const btn = document.querySelector(`.nav-btn[data-view="${savedView}"]`);
