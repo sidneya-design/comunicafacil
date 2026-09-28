@@ -4410,7 +4410,8 @@ function renderAudioClipsGrid() {
             + (compareModeOn && index === compareSlotB ? ' compare-slot-b' : '');
         card.textContent = clip.title;
         card.addEventListener('click', () => {
-            if (compareModeOn) assignCompareSlot(index); else selectAudioClip(index, true);
+            // Tocar no card só seleciona: o áudio começa apenas no play.
+            if (compareModeOn) assignCompareSlot(index); else selectAudioClip(index, false);
         });
 
         if (isDoctor && activePatientContext && clip.fromSupabase) {
@@ -4735,7 +4736,7 @@ async function saveRecordingLocally(blob) {
                 const newRawId = e.target.result;
                 loadAudioClips().then(() => {
                     const idx = currentAudioClips.findIndex(c => c.rawId === newRawId && !c.fromSupabase);
-                    if (idx !== -1) selectAudioClip(idx, true);
+                    if (idx !== -1) selectAudioClip(idx, false);
                     resolve();
                 });
             };
@@ -4771,8 +4772,9 @@ function setupAudioModuleControls() {
         }
         if (audioPlayerEl.paused) audioPlayerEl.play(); else audioPlayerEl.pause();
     });
-    document.getElementById('btn-audio-prev').addEventListener('click', () => goToAdjacentAudioClip(-1, true));
-    document.getElementById('btn-audio-next').addEventListener('click', () => goToAdjacentAudioClip(1, true));
+    // Anterior/próximo só continuam tocando se o áudio já estava tocando.
+    document.getElementById('btn-audio-prev').addEventListener('click', () => goToAdjacentAudioClip(-1, !audioPlayerEl.paused));
+    document.getElementById('btn-audio-next').addEventListener('click', () => goToAdjacentAudioClip(1, !audioPlayerEl.paused));
     document.getElementById('btn-audio-shuffle').addEventListener('click', (e) => {
         audioShuffleOn = !audioShuffleOn;
         e.currentTarget.classList.toggle('active', audioShuffleOn);
@@ -4882,7 +4884,9 @@ function setupAudioModuleControls() {
     audioPlayerEl.addEventListener('play', () => setAudioPlayButtonIcon(true));
     audioPlayerEl.addEventListener('pause', () => setAudioPlayButtonIcon(false));
     audioPlayerEl.addEventListener('ended', () => {
-        if (audioRepeatOn && audioClipOrder.length === 1) {
+        // Sem "repetir" ligado, o áudio para ao terminar — nada começa sozinho.
+        if (!audioRepeatOn) return;
+        if (audioClipOrder.length === 1) {
             audioPlayerEl.currentTime = 0;
             audioPlayerEl.play();
         } else {
