@@ -990,6 +990,7 @@ function getSectionLabel(sectionId) {
         'game:memory-alphabet': 'Jogo: Memória do Alfabeto',
         'game:jogo2': 'Jogo: Trilha de Aprendizado de Forças',
         'game:complete-sentence': 'Jogo: Complete a Frase',
+        'game:monte-frase': 'Jogo: Monte a Frase',
         'game:naming': 'Jogo: Reconhecimento de Palavras',
         'game:afasia': 'Jogo: Reconhecimento de Imagem'
     };
@@ -1984,6 +1985,10 @@ function setupNavigation() {
                     window.location.origin
                 );
             }
+            document.getElementById('monte-frase-frame')?.contentWindow?.postMessage(
+                { type: 'monte-frase:pause-audio' },
+                window.location.origin
+            );
 
             // Saiu da aba Áudios com algo tocando (player normal ou os dois
             // slots do modo comparar) — sem isso o clipe seguia tocando por
@@ -3519,7 +3524,8 @@ function getReadyBankCandidates() {
         !isGameContainerSeedKey(ex.seedKey, ALPHABET_MEMORY_SEED_KEY) &&
         !isGameContainerSeedKey(ex.seedKey, NAMING_SEED_KEY) &&
         !isGameContainerSeedKey(ex.seedKey, AFASIA_SEED_KEY) &&
-        !isGameContainerSeedKey(ex.seedKey, COMPLETE_FRASE_SEED_KEY)
+        !isGameContainerSeedKey(ex.seedKey, COMPLETE_FRASE_SEED_KEY) &&
+        !isGameContainerSeedKey(ex.seedKey, MONTE_FRASE_SEED_KEY)
     );
 }
 
@@ -3759,6 +3765,7 @@ function renderExerciseCards(exercisesArray) {
         !isGameContainerSeedKey(ex.seedKey, NAMING_SEED_KEY) &&
         !isGameContainerSeedKey(ex.seedKey, AFASIA_SEED_KEY) &&
         !isGameContainerSeedKey(ex.seedKey, COMPLETE_FRASE_SEED_KEY) &&
+        !isGameContainerSeedKey(ex.seedKey, MONTE_FRASE_SEED_KEY) &&
         !isGameContainerSeedKey(ex.seedKey, JOGO2_CARDS_SEED_KEY)
     );
 
@@ -5339,6 +5346,10 @@ function setupModals() {
         }
     });
 
+    document.getElementById('btn-manage-monte-frase')?.addEventListener('click', () => {
+        document.getElementById('monte-frase-frame')?.contentWindow?.postMessage({ type: 'monte-frase:open-manager' }, window.location.origin);
+    });
+
     document.getElementById('btn-memory-new-game').addEventListener('click', async () => {
         if (editModes.memory) {
             setGameButtonsProcessing('btn-edit-memory', 'btn-memory-new-game', true);
@@ -6519,6 +6530,7 @@ const gamesList = [
 
 const exerciseActivities = [
     { id: 'complete-sentence', title: 'Complete a Frase', icon: 'fa-puzzle-piece', styleClass: 'border-orange' },
+    { id: 'monte-frase', title: 'Monte a Frase', icon: 'fa-chalkboard', styleClass: 'border-blue' },
     { id: 'naming', title: 'Reconhecimento de Palavras', icon: 'fa-images', styleClass: 'border-red' },
     { id: 'afasia', title: 'Reconhecimento de Imagem', icon: 'fa-comment-medical', styleClass: 'border-yellow' }
 ];
@@ -6564,8 +6576,39 @@ function setLocalGameFlag(gameId, visible) {
     localStorage.setItem(GAME_FLAGS_LOCAL_KEY, JSON.stringify(flags));
 }
 
+// Atividades que nascem OCULTAS e só aparecem pra médicos/pacientes depois
+// que o admin publica pelo botão de visibilidade do card (as outras seguem o
+// padrão antigo: visíveis até alguém ocultar). Pra estas, o servidor manda:
+// o cache em localStorage só vale sem sessão (demonstração local) ou se a
+// consulta falhar — senão um aparelho que guardou "oculto" nunca veria o
+// admin publicar depois.
+const OPT_IN_GAME_IDS = new Set(['monte-frase']);
+const OPT_IN_VISIBILITY_TTL_MS = 30000;
+const optInVisibilityCache = new Map();
+
+async function getOptInGameVisibility(gameId) {
+    // Cede a vez antes de ler currentUserId: ele é declarado mais abaixo no
+    // arquivo, e a primeira renderização dos cards pode ser disparada antes.
+    await Promise.resolve();
+    if (supabaseClient && currentUserId) {
+        const cached = optInVisibilityCache.get(gameId);
+        if (cached && Date.now() - cached.at < OPT_IN_VISIBILITY_TTL_MS) return cached.visible;
+        try {
+            const { data, error } = await supabaseClient.from('game_flags').select('visible').eq('game_id', gameId).maybeSingle();
+            if (!error) {
+                const visible = data?.visible === true;
+                optInVisibilityCache.set(gameId, { visible, at: Date.now() });
+                setLocalGameFlag(gameId, visible);
+                return visible;
+            }
+        } catch (e) {}
+    }
+    return getLocalGameFlags()[gameId] === true;
+}
+
 async function getGameVisibility(gameId) {
     if (gameId === 'complete-sentence' && isCompleteSentenceLocalDemo()) return true;
+    if (OPT_IN_GAME_IDS.has(gameId)) return getOptInGameVisibility(gameId);
     const localFlags = getLocalGameFlags();
     if (localFlags[gameId] !== undefined) {
         return localFlags[gameId] !== false;
@@ -6585,6 +6628,7 @@ async function getGameVisibility(gameId) {
 async function toggleGameVisibility(gameId, currentVisible) {
     const newVisible = !currentVisible;
     setLocalGameFlag(gameId, newVisible);
+    optInVisibilityCache.set(gameId, { visible: newVisible, at: Date.now() });
     if (supabaseClient) {
         try {
             await supabaseClient.from('game_flags').upsert({ game_id: gameId, visible: newVisible });
@@ -6794,6 +6838,14 @@ async function renderActivityCards(container, activities, isCurrent = () => true
             if (baseSeedKey && !hasReleasedGameContent(baseSeedKey)) continue;
         }
 
+        // Monte a Frase: quem não é admin nem médico só vê o card se o médico
+        // liberou o container pra ele em "Meus Pacientes" — a RLS só devolve
+        // o container liberado, então basta ele existir na lista. Não exige
+        // frases cadastradas (diferente dos jogos acima): o exercício já vem
+        // com frases prontas.
+        if (game.id === 'monte-frase' && !isAdmin && !isDoctor
+            && !lastMergedExercises.some(ex => isGameContainerSeedKey(ex.seedKey, MONTE_FRASE_SEED_KEY))) continue;
+
         const btn = document.createElement('button');
         btn.className = `word-btn ${game.styleClass}` + (isAdmin && !isVisible ? ' card-hidden' : '');
 
@@ -6940,6 +6992,15 @@ function openGame(gameId) {
         const frame = document.getElementById('complete-sentence-frame');
         container.style.display = 'flex';
         if (!frame.src) refreshCompleteSentenceFrameSrc();
+    } else if (gameId === 'monte-frase') {
+        // Mesmo esquema do Complete a Frase: página própria num iframe. O
+        // acesso e o tempo de uso são contados aqui fora, pelo
+        // startUsageActivity logo abaixo, como em qualquer outro exercício.
+        const frame = document.getElementById('monte-frase-frame');
+        document.getElementById('game-monte-frase-container').style.display = 'flex';
+        // ?sb=staging acompanha o app, como em buildCompleteSentenceFrameUrl.
+        const stagingParam = (typeof useStagingSupabase !== 'undefined' && useStagingSupabase) ? '&sb=staging' : '';
+        if (!frame.src) frame.src = frame.dataset.src + stagingParam;
     }
 
     const activityInfo = getActivityTrackingMeta(gameId);
@@ -7018,6 +7079,9 @@ function closeGame() {
     const elCompleteSentence = document.getElementById('game-complete-sentence-container');
     if (elCompleteSentence) elCompleteSentence.style.display = 'none';
 
+    const elMonteFrase = document.getElementById('game-monte-frase-container');
+    if (elMonteFrase) elMonteFrase.style.display = 'none';
+
     const elStrengths = document.getElementById('game-strengths-board-container');
     if (elStrengths) elStrengths.style.display = 'none';
 
@@ -7025,7 +7089,8 @@ function closeGame() {
     if (elJogo2) elJogo2.style.display = 'none';
 
     document.getElementById('complete-sentence-frame')?.contentWindow?.postMessage({ type: 'complete-sentence:pause-audio' }, window.location.origin);
-    
+    document.getElementById('monte-frase-frame')?.contentWindow?.postMessage({ type: 'monte-frase:pause-audio' }, window.location.origin);
+
     // Resetar jogos ao fechar
     if (typeof showJogo2Setup === 'function') {
         showJogo2Setup();
@@ -11577,6 +11642,11 @@ const COMPLETE_FRASE_SEED_KEY = 'complete-frase-container';
 // existir aqui também porque openPatientExercisesModal (fora do iframe)
 // cria esse container pelo mesmo padrão de getOrCreateGameContainer.
 const COMPLETE_FRASE_TITLE = 'Complete a Frase|orange';
+// Container do Monte a Frase — mesmo esquema do Complete a Frase: as frases
+// são gerenciadas de dentro do iframe (monte-frase.js, que repete estes dois
+// valores), e a linha em `exercises` é o que o médico libera por paciente.
+const MONTE_FRASE_SEED_KEY = 'monte-frase-container';
+const MONTE_FRASE_TITLE = 'Monte a Frase|blue';
 
 function makeNamingSetId() {
     return 'naming-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
@@ -13649,6 +13719,10 @@ async function openPatientExercisesModal(patient) {
     const activityPlaceholders = [
         { baseSeedKey: COMPLETE_FRASE_SEED_KEY, title: COMPLETE_FRASE_TITLE },
     ];
+    // Monte a Frase só entra na lista de liberação depois que o admin
+    // publicou a atividade; antes disso o médico nem a enxerga.
+    const monteFrasePublished = isAdmin || await getGameVisibility('monte-frase');
+    if (monteFrasePublished) activityPlaceholders.push({ baseSeedKey: MONTE_FRASE_SEED_KEY, title: MONTE_FRASE_TITLE });
     // Container já pode existir como global (admin cadastrou direto) OU como
     // banco do próprio médico — nos dois casos já tem uma linha de verdade
     // na lista, não precisa do placeholder virtual (evita duplicar a mesma
@@ -13658,7 +13732,8 @@ async function openPatientExercisesModal(patient) {
         .filter(p => !existingSeedKeys.has(p.baseSeedKey) && !existingSeedKeys.has(doctorScopedSeedKey(p.baseSeedKey, currentUserId)))
         .map(p => ({ id: null, title: p.title, doctor_user_id: currentUserId, baseSeedKey: p.baseSeedKey }));
 
-    const allEntries = [...(myExercises || []), ...virtualEntries];
+    const allEntries = [...(myExercises || []), ...virtualEntries]
+        .filter(ex => monteFrasePublished || !isGameContainerSeedKey(ex.seedKey || ex.seed_key, MONTE_FRASE_SEED_KEY));
 
     list.innerHTML = '';
     if (!allEntries.length) {
@@ -14492,6 +14567,8 @@ function showEditBars() {
     if (completeSentenceManager) completeSentenceManager.style.display = (isAdmin || isDoctor) ? 'flex' : 'none';
     const completeSentenceNotify = document.getElementById('btn-notify-complete-sentence');
     if (completeSentenceNotify) completeSentenceNotify.style.display = isAdmin ? 'inline-flex' : 'none';
+    const monteFraseManager = document.getElementById('btn-manage-monte-frase');
+    if (monteFraseManager) monteFraseManager.style.display = (isAdmin || isDoctor) ? 'flex' : 'none';
 }
 
 // Mostra "Salvando..." e desabilita os botões de ação enquanto as cartas pendentes

@@ -1544,7 +1544,7 @@ button, .action-btn { touch-action: manipulation; }
 .complete-sentence-game-title strong { font-size: 1rem; color: #29243b; }
 .complete-sentence-game-title small { margin-top: 3px; color: #777083; font-size: .76rem; }
 .complete-sentence-game-icon { display: grid; place-items: center; width: 38px; height: 38px; color: #6a4fd0; background: #eee9ff; border-radius: 12px; }
-#complete-sentence-frame { width: 100%; min-height: 0; flex: 1; background: #f8f7fc; border: 0; border-radius: var(--radius); }
+#complete-sentence-frame, #monte-frase-frame { width: 100%; min-height: 0; flex: 1; background: #f8f7fc; border: 0; border-radius: var(--radius); }
 
 @media (max-width: 700px) {
     .complete-sentence-game-title small { display: none; }
