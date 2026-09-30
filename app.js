@@ -7029,6 +7029,9 @@ function openGame(gameId) {
         // ?sb=staging acompanha o app, como em buildCompleteSentenceFrameUrl.
         const stagingParam = (typeof useStagingSupabase !== 'undefined' && useStagingSupabase) ? '&sb=staging' : '';
         if (!frame.src) frame.src = frame.dataset.src + stagingParam;
+        // Já carregado de uma abertura anterior: recomeça com as frases numa
+        // ordem nova, como numa entrada nova.
+        else frame.contentWindow?.postMessage({ type: 'monte-frase:restart' }, window.location.origin);
     }
 
     const activityInfo = getActivityTrackingMeta(gameId);
