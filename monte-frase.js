@@ -214,7 +214,7 @@ const visualClue = document.getElementById("visual-clue");
 const exerciseCard = document.getElementById("exercise-card");
 const summaryCard = document.getElementById("summary-card");
 const speechPanel = document.getElementById("speech-panel");
-const speechSlow = document.getElementById("speech-slow");
+const speedOptions = [...document.querySelectorAll(".speed-option")];
 
 function currentExercise() { return levels[state.level][state.round]; }
 
@@ -260,7 +260,15 @@ function shuffleForDisplay(items, orders) {
 const LOCAL_API = "http://127.0.0.1:5001";
 const ttsCache = new Map();
 let currentAudio = null;
-let slowModel = false;
+// Velocidade escolhida pelo paciente (Devagar/Normal/Rápido); vale para todo
+// áudio do exercício e fica guardada neste aparelho.
+const RATE_KEY = "monte-frase:audio-rate";
+const RATES = [0.75, 1, 1.25];
+let audioRate = 1;
+try {
+    const saved = Number(localStorage.getItem(RATE_KEY));
+    if (RATES.includes(saved)) audioRate = saved;
+} catch (error) { /* sem armazenamento: fica no Normal */ }
 
 async function fetchTtsAudio(endpoint, text) {
     const response = await fetch(endpoint, {
@@ -298,28 +306,28 @@ function stopAudio() {
     if (currentAudio) currentAudio.pause();
 }
 
-function speakNative(text, slow) {
+function speakNative(text) {
     if (!("speechSynthesis" in window)) return;
     const utterance = new SpeechSynthesisUtterance(text);
     const ptVoices = window.speechSynthesis.getVoices().filter(voice => voice.lang.startsWith("pt"));
     utterance.voice = ptVoices.find(voice => voice.name.includes("Google") || voice.name.includes("Luciana")) || ptVoices[0] || null;
     utterance.lang = "pt-BR";
-    utterance.rate = slow ? 0.5 : 0.7;
+    utterance.rate = 0.7 * audioRate;
     window.speechSynthesis.speak(utterance);
 }
 
 // `force` é pra clique explícito em "Ouvir": o botão de som desliga só as
 // falas automáticas (elogio ao acertar), não o que a pessoa pediu pra ouvir.
-async function speak(text, { force = false, slow = false } = {}) {
+async function speak(text, { force = false } = {}) {
     if (!text || (!state.sound && !force)) return;
     stopAudio();
     try {
         const audioBase64 = await getTtsAudio(text);
         currentAudio = new Audio(`data:audio/mp3;base64,${audioBase64}`);
-        currentAudio.playbackRate = slow ? 0.75 : 1;
+        currentAudio.playbackRate = audioRate;
         await currentAudio.play();
     } catch (error) {
-        speakNative(text, slow);
+        speakNative(text);
     }
 }
 
@@ -763,11 +771,18 @@ document.getElementById("board-next").addEventListener("click", () => leaveRound
 
 hintButton.addEventListener("click", giveHint);
 listenButton.addEventListener("click", () => speak(modelText(), { force: true }));
-document.getElementById("speech-model").addEventListener("click", () => speak(modelText(), { force: true, slow: slowModel }));
-speechSlow.addEventListener("click", () => {
-    slowModel = !slowModel;
-    speechSlow.setAttribute("aria-pressed", String(slowModel));
-});
+document.getElementById("speech-model").addEventListener("click", () => speak(modelText(), { force: true }));
+function renderSpeed() {
+    speedOptions.forEach(option => option.setAttribute("aria-pressed", String(Number(option.dataset.rate) === audioRate)));
+}
+speedOptions.forEach(option => option.addEventListener("click", () => {
+    audioRate = Number(option.dataset.rate);
+    try { localStorage.setItem(RATE_KEY, String(audioRate)); } catch (error) { /* só nesta visita */ }
+    renderSpeed();
+    // Áudio tocando muda na hora; a voz do navegador vale a partir da próxima fala.
+    if (currentAudio && !currentAudio.paused) currentAudio.playbackRate = audioRate;
+}));
+renderSpeed();
 document.getElementById("summary-restart").addEventListener("click", () => startLevel());
 document.getElementById("sound-toggle").addEventListener("click", event => {
     state.sound = !state.sound;
