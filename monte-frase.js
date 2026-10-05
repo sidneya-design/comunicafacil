@@ -218,10 +218,16 @@ const speechSlow = document.getElementById("speech-slow");
 
 function currentExercise() { return levels[state.level][state.round]; }
 
-// As peças aparecem em minúsculas e sem pontuação: a maiúscula inicial e o
-// ponto final entregariam a primeira e a última palavra.
+// As peças aparecem sem pontuação (o ponto final entregaria a última palavra),
+// mas com as maiúsculas da frase cadastrada (pedido do usuário). A conferência
+// usa sempre as palavras em minúsculas, então a maiúscula não muda o que é
+// resposta certa.
+function displayWords(text) {
+    return text.replace(/[.?!,;:]/g, "").split(/\s+/).filter(Boolean);
+}
+
 function sentenceWords(text) {
-    return text.replace(/[.?!,;:]/g, "").split(/\s+/).filter(Boolean).map(word => word.toLocaleLowerCase("pt-BR"));
+    return displayWords(text).map(word => word.toLocaleLowerCase("pt-BR"));
 }
 
 function acceptedOrders(item) {
@@ -388,13 +394,13 @@ function tapTile(tile) {
     afterBoardMove();
 }
 
-function createTile(word) {
+function createTile(word, label = word) {
     const tile = document.createElement("button");
     tile.type = "button";
     tile.className = "board-word";
     tile.dataset.word = word;
     tile.draggable = false;
-    tile.textContent = word;
+    tile.textContent = label;
     tile.addEventListener("pointerdown", event => startTileDrag(event, tile));
     // Toque/clique do mouse é tratado no pointerup (endTileDrag); este click
     // só atende o teclado (Enter/Espaço), que chega com detail 0.
@@ -607,7 +613,14 @@ function renderExercise() {
     summaryCard.hidden = true;
     sentenceArea.innerHTML = "";
     selectedTile = null;
-    shuffleForDisplay(sentenceWords(item.text), acceptedOrders(item)).forEach(word => sentenceArea.appendChild(createTile(word)));
+    // Grafia original de cada palavra; palavra repetida usa as grafias na ordem.
+    const labels = new Map();
+    displayWords(item.text).forEach(original => {
+        const key = original.toLocaleLowerCase("pt-BR");
+        labels.set(key, [...(labels.get(key) || []), original]);
+    });
+    shuffleForDisplay(sentenceWords(item.text), acceptedOrders(item))
+        .forEach(word => sentenceArea.appendChild(createTile(word, labels.get(word)?.shift() || word)));
     visualClue.textContent = item.icon || "";
     visualClue.classList.toggle("visible", Boolean(item.icon));
     listenButton.classList.remove("visible");
