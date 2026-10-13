@@ -1917,6 +1917,7 @@ function initApp() {
     setupModals();
     setupCardEditor();
     setupAudioModuleControls();
+    setupMirrorControls();
     renderGamesList();
     if (isCompleteSentenceLocalDemo()) {
         setTimeout(() => {
@@ -2005,6 +2006,16 @@ function setupNavigation() {
                 audioPlayerEl.pause();
                 audioPlayerElA.pause();
                 audioPlayerElB.pause();
+            }
+
+            // Espelho: a câmera só fica ligada enquanto a aba Exercícios está na
+            // tela — sair dela desliga (luz da webcam apaga); voltar com o
+            // Espelho ainda aberto liga de novo. As gravações só são apagadas
+            // ao Sair do exercício (closeGame → stopMirror).
+            if (targetView !== 'view-exercises') {
+                stopMirrorCamera();
+            } else if (document.getElementById('game-mirror-container')?.style.display === 'flex') {
+                openMirrorCamera();
             }
 
             // Pré-carrega áudios de todos os cards da aba que acabou de abrir
@@ -3864,6 +3875,7 @@ function renderExerciseCards(exercisesArray) {
         if (ex.gameKind === 'naming') openNamingDeckManage(ex);
         else if (ex.gameKind === 'afasia') openAfasiaDeckManage(ex);
         else if (ex.gameKind === 'syllables') openEditSyllablesExercise(ex);
+        else if (ex.gameKind === 'mirror') openEditMirrorExercise(ex);
         else if (ex.gameKind === 'audio-real') openEditAudioExercise(ex);
         else if (ex.gameKind === 'reading-text') openEditReadingTextExercise(ex);
         else if (ex.gameKind === 'monte-frase') openMonteFraseDeck(ex, { manage: true });
@@ -3874,6 +3886,7 @@ function renderExerciseCards(exercisesArray) {
         else if (ex.gameKind === 'afasia') playAfasiaDeck(ex);
         else if (ex.gameKind === 'monte-frase') openMonteFraseDeck(ex);
         else if (ex.gameKind === 'reading-text') openReadingTextPlayer(ex);
+        else if (ex.gameKind === 'mirror') openMirrorExercise(ex);
         else openPresentationPlaylist(ex);
     };
 
@@ -3948,6 +3961,9 @@ function renderExerciseCards(exercisesArray) {
             // Monte a Frase: a 1ª frase como capa saía cortada e entregava a
             // resposta — usa o ícone do exercício.
             imgContainer.innerHTML = '<i class="fas fa-chalkboard word-btn-icon" aria-hidden="true"></i>';
+        } else if (ex.gameKind === 'mirror') {
+            // Espelho: frase inteira não cabe legível no card — ícone de câmera.
+            imgContainer.innerHTML = '<i class="fas fa-video word-btn-icon" aria-hidden="true"></i>';
         } else if (firstItem && firstItem.imageBlob instanceof Blob) {
             imgContainer.innerHTML = `<img src="${URL.createObjectURL(firstItem.imageBlob)}" class="word-btn-img" alt="" />`;
         } else if (firstItem && firstItem.image_url) {
@@ -4091,7 +4107,7 @@ function renderExerciseCards(exercisesArray) {
                 btn.appendChild(createNotifyUsersButton(displayTitle, 'Exercício', { id: ex.patientId, name: patientInfo?.name, email: patientInfo?.email }));
             }
         } else if (isDoctor && ex.doctorUserId && ex.doctorUserId !== currentUserId && !ex.patientId && ex.companyId && ex.companyId === currentUserCompanyId
-                   && (!ex.gameKind || ex.gameKind === 'syllables' || ex.gameKind === 'audio-real' || ex.gameKind === 'reading-text' || ex.gameKind === 'monte-frase')) {
+                   && (!ex.gameKind || ex.gameKind === 'syllables' || ex.gameKind === 'audio-real' || ex.gameKind === 'reading-text' || ex.gameKind === 'monte-frase' || ex.gameKind === 'mirror')) {
             // Exercício do banco de um colega da mesma empresa (não do admin, não
             // meu): a RLS já libera escrita compartilhada por empresa faz tempo
             // (migration company_shared_doctor_bank), mas a tela nunca tinha
@@ -4106,7 +4122,7 @@ function renderExerciseCards(exercisesArray) {
             };
             btn.appendChild(editBtn);
         } else if (isDoctor && !ex.doctorUserId && ex.companyId && ex.companyId === currentUserCompanyId
-                   && (!ex.gameKind || ex.gameKind === 'syllables' || ex.gameKind === 'audio-real' || ex.gameKind === 'reading-text')) {
+                   && (!ex.gameKind || ex.gameKind === 'syllables' || ex.gameKind === 'audio-real' || ex.gameKind === 'reading-text' || ex.gameKind === 'mirror')) {
             // Exercício que o admin mandou direto pra empresa do médico: edita em
             // cima do original (a RLS libera essa escrita pra qualquer médico da
             // empresa) — sem fork, os colegas continuam vendo a mesma versão.
@@ -5342,6 +5358,139 @@ function openEditExercise(ex) {
     });
 }
 
+// Exercício Espelho: mesmo molde do de Sílabas (saveSyllablesExerciseToDB),
+// só com o campo de frase. Tamanho/cor/fonte do texto valem pro exercício todo
+// (syllables_size/_color/_font, mesmas colunas do de Sílabas).
+let currentEditingMirrorExerciseId = null;
+let currentEditingMirrorExerciseFromSupabase = false;
+let mirrorBlockCounter = 0;
+
+async function saveMirrorExerciseToDB(title, size, color, font, itemsArray, doctorUserId = null, companyId = null) {
+    const shouldTrySupabase = supabaseClient && (!currentEditingMirrorExerciseId || currentEditingMirrorExerciseFromSupabase);
+    if (shouldTrySupabase) {
+        try {
+            const deckFields = { title, syllables_size: size || null, syllables_color: color || null, syllables_font: font || null };
+            let targetExerciseId = currentEditingMirrorExerciseId;
+
+            if (targetExerciseId) {
+                const updateFields = isAdmin ? { ...deckFields, company_id: companyId } : deckFields;
+                // .select(): com RLS, update bloqueado não dá erro, só não altera nada.
+                const { data: updated, error: updateErr } = await supabaseClient.from('exercises').update(updateFields).eq('id', targetExerciseId).select('id');
+                if (updateErr) throw updateErr;
+                if (!updated || updated.length === 0) throw new Error('sem permissão para editar este exercício');
+                const { error: deleteErr } = await supabaseClient.from('exercise_items').delete().eq('exercise_id', targetExerciseId);
+                if (deleteErr) throw deleteErr;
+            } else {
+                const newExercisePayload = doctorUserId
+                    ? { ...deckFields, visible: true, game_kind: 'mirror', doctor_user_id: doctorUserId, company_id: currentUserCompanyId }
+                    : { ...deckFields, visible: false, game_kind: 'mirror', company_id: companyId };
+                const { data: exData, error: insertErr } = await supabaseClient.from('exercises').insert([newExercisePayload]).select().single();
+                if (insertErr) throw insertErr;
+                targetExerciseId = exData.id;
+            }
+
+            const dbItems = itemsArray.map(item => ({ exercise_id: targetExerciseId, word: item.word, syllables: '', link: '' }));
+            const { error: itemsErr } = await supabaseClient.from('exercise_items').insert(dbItems);
+            if (itemsErr) throw itemsErr;
+
+            logAdminAction(currentEditingMirrorExerciseId ? 'update' : 'create', 'exercise', title);
+            loadExerciseCards();
+            return;
+        } catch (e) {
+            console.warn('Erro ao salvar exercício Espelho no Supabase, caindo para local:', e);
+            alert('Não foi possível salvar o exercício no servidor (ficou salvo só neste dispositivo). Detalhe: ' + (e?.message || e));
+        }
+    }
+
+    const localPayload = { title, items: itemsArray, visible: false, gameKind: 'mirror', syllablesSize: size || null, syllablesColor: color || null, syllablesFont: font || null };
+    if (currentEditingMirrorExerciseId) {
+        db.transaction(['exercises'], 'readonly').objectStore('exercises').get(currentEditingMirrorExerciseId).onsuccess = (e) => {
+            const existing = e.target.result || {};
+            db.transaction(['exercises'], 'readwrite').objectStore('exercises')
+                .put({ ...existing, ...localPayload, id: currentEditingMirrorExerciseId })
+                .onsuccess = () => loadExerciseCards();
+        };
+    } else {
+        db.transaction(['exercises'], 'readwrite').objectStore('exercises')
+            .add(localPayload)
+            .onsuccess = () => loadExerciseCards();
+    }
+}
+
+function createMirrorItemBlockHtml(blockId, isEdit = false) {
+    return `
+        <div class="mirror-item-block syllables-item-block" data-block-id="${blockId}">
+            <div class="block-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="margin:0;" class="block-title">Frase</h4>
+                ${isEdit ? '<button type="button" class="btn-remove-block" style="background:#ff4d4f;color:white;border:none;padding:5px 10px;border-radius:8px;cursor:pointer;"><i class="fas fa-trash" aria-hidden="true"></i> Remover</button>' : ''}
+            </div>
+            <div class="form-group">
+                <label>Frase</label>
+                <div class="word-editor-toolbar">
+                    <button type="button" class="word-editor-btn word-editor-bold" title="Negrito na seleção"><i class="fas fa-bold" aria-hidden="true"></i></button>
+                    <input type="color" class="word-editor-color" title="Cor na seleção" value="#e63946">
+                    <button type="button" class="word-editor-btn word-editor-clear" title="Limpar formatação">Limpar</button>
+                </div>
+                <div class="mirror-item-phrase word-editor-field" contenteditable="true" data-placeholder="Ex: Bom dia, tudo bem?" role="textbox" aria-label="Frase"></div>
+            </div>
+        </div>
+    `;
+}
+
+function addMirrorItemBlock(isEdit = false) {
+    const container = document.getElementById('mirror-items-container');
+    const blockId = mirrorBlockCounter++;
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = createMirrorItemBlockHtml(blockId, isEdit);
+    const blockEl = wrapper.firstElementChild;
+    const removeBtn = blockEl.querySelector('.btn-remove-block');
+    if (removeBtn) {
+        removeBtn.addEventListener('click', () => {
+            container.removeChild(blockEl);
+            updateMirrorBlockTitles();
+        });
+    }
+    wireAllWordEditors(blockEl);
+    container.appendChild(blockEl);
+    updateMirrorBlockTitles();
+    return blockEl;
+}
+
+function updateMirrorBlockTitles() {
+    document.querySelectorAll('#mirror-items-container .mirror-item-block').forEach((b, index) => {
+        b.querySelector('.block-title').textContent = `Frase ${index + 1}`;
+    });
+}
+
+function openEditMirrorExercise(ex) {
+    currentEditingMirrorExerciseId = ex.id;
+    currentEditingMirrorExerciseFromSupabase = !!ex.fromSupabase;
+    mirrorBlockCounter = 0;
+
+    document.getElementById('mirror-exercise-modal').style.display = 'flex';
+    document.getElementById('mirror-exercise-modal').querySelector('h2').textContent = "Editar Exercício (Espelho)";
+
+    const parts = (ex.title || '').split('|');
+    document.getElementById('mirror-exercise-title').value = parts[0];
+    setCardColorPickerValue('mirror-exercise-color-picker', 'mirror-exercise-color', 'mirror-exercise-color-custom', parts[1] || 'pink');
+    document.getElementById('mirror-text-size').value = ex.syllablesSize || MIRROR_DEFAULT_TEXT_SIZE;
+    document.getElementById('mirror-text-color').value = ex.syllablesColor || '#1f1f1f';
+    document.getElementById('mirror-font').value = ex.syllablesFont || "'Outfit', sans-serif";
+
+    const companyGroup = document.getElementById('mirror-exercise-target-company-group');
+    if (companyGroup) {
+        companyGroup.style.display = isAdmin ? '' : 'none';
+        if (isAdmin) populateExerciseCompanySelect('mirror-exercise-target-company', ex.companyId || null);
+    }
+
+    const container = document.getElementById('mirror-items-container');
+    container.innerHTML = '';
+    ex.items.forEach(item => {
+        const blockEl = addMirrorItemBlock(true);
+        blockEl.querySelector('.mirror-item-phrase').innerHTML = sanitizeWordHtml(item.word || '');
+    });
+}
+
 function openEditSyllablesExercise(ex) {
     currentEditingSyllablesExerciseId = ex.id;
     currentEditingSyllablesExerciseFromSupabase = !!ex.fromSupabase;
@@ -6118,6 +6267,65 @@ function setupModals() {
 
     document.getElementById('btn-add-syllables-item').addEventListener('click', () => {
         addSyllablesItemBlock(true);
+    });
+
+    // Exercício Espelho — mesmo fluxo do de Sílabas.
+    const openMirrorExerciseCreator = () => {
+        closeExerciseType();
+        currentEditingMirrorExerciseId = null;
+        currentEditingMirrorExerciseFromSupabase = false;
+        mirrorBlockCounter = 0;
+
+        document.getElementById('mirror-exercise-modal').style.display = 'flex';
+        document.getElementById('mirror-exercise-modal').querySelector('h2').textContent = "Novo Exercício (Espelho)";
+        document.getElementById('mirror-exercise-form').reset();
+        setCardColorPickerValue('mirror-exercise-color-picker', 'mirror-exercise-color', 'mirror-exercise-color-custom', 'pink');
+
+        const companyGroup = document.getElementById('mirror-exercise-target-company-group');
+        if (companyGroup) {
+            companyGroup.style.display = isAdmin ? '' : 'none';
+            if (isAdmin) populateExerciseCompanySelect('mirror-exercise-target-company', null);
+        }
+
+        const container = document.getElementById('mirror-items-container');
+        container.innerHTML = '';
+        addMirrorItemBlock();
+    };
+    document.getElementById('btn-create-mirror-exercise').addEventListener('click', openMirrorExerciseCreator);
+
+    const closeMirrorExerciseUpload = () => { document.getElementById('mirror-exercise-modal').style.display = 'none'; document.getElementById('mirror-exercise-form').reset(); };
+    document.getElementById('btn-close-mirror-exercise').addEventListener('click', closeMirrorExerciseUpload);
+    document.getElementById('btn-cancel-mirror-exercise').addEventListener('click', closeMirrorExerciseUpload);
+    document.getElementById('btn-add-mirror-item').addEventListener('click', () => addMirrorItemBlock(true));
+
+    document.getElementById('mirror-exercise-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (!isAdmin && !isDoctor) {
+            alert('Apenas administradores ou médicos podem salvar exercícios.');
+            return;
+        }
+        const titleVal = document.getElementById('mirror-exercise-title').value.trim();
+        const colorVal = document.getElementById('mirror-exercise-color').value;
+        const finalTitle = `${titleVal}|${colorVal}`;
+        const sizeVal = document.getElementById('mirror-text-size').value;
+        const colorTextVal = document.getElementById('mirror-text-color').value;
+        const fontVal = document.getElementById('mirror-font').value;
+
+        const blocks = document.querySelectorAll('#mirror-items-container .mirror-item-block');
+        if (blocks.length === 0) return alert("Adicione pelo menos uma frase.");
+        const itemsArray = [];
+        let missingPhrase = false;
+        blocks.forEach(block => {
+            const phraseHtml = sanitizeWordHtml(block.querySelector('.mirror-item-phrase').innerHTML);
+            if (!stripWordHtml(phraseHtml).trim()) missingPhrase = true;
+            itemsArray.push({ word: phraseHtml });
+        });
+        if (missingPhrase) return alert("Toda frase deste exercício precisa estar preenchida.");
+
+        const targetDoctorUserId = isDoctor ? currentUserId : null;
+        const targetCompanyId = isAdmin ? (document.getElementById('mirror-exercise-target-company')?.value || null) : null;
+        saveMirrorExerciseToDB(finalTitle, sizeVal, colorTextVal, fontVal, itemsArray, targetDoctorUserId, targetCompanyId);
+        closeMirrorExerciseUpload();
     });
 
     document.getElementById('syllables-exercise-form').addEventListener('submit', (e) => {
@@ -7238,6 +7446,10 @@ function closeGame() {
     const elJogo2 = document.getElementById('game-jogo2-container');
     if (elJogo2) elJogo2.style.display = 'none';
 
+    const elMirror = document.getElementById('game-mirror-container');
+    if (elMirror) elMirror.style.display = 'none';
+    stopMirror();
+
     document.getElementById('complete-sentence-frame')?.contentWindow?.postMessage({ type: 'complete-sentence:pause-audio' }, window.location.origin);
     document.getElementById('monte-frase-frame')?.contentWindow?.postMessage({ type: 'monte-frase:pause-audio' }, window.location.origin);
 
@@ -7247,6 +7459,489 @@ function closeGame() {
     }
     
     restoreGamesBackButton();
+}
+
+// =============================================
+// ESPELHO (tipo de exercício, game_kind 'mirror') — a pessoa lê a frase se
+// vendo na câmera (lado direito, sempre aberta), grava e assiste. Mesmo molde
+// do Exercício de Sílabas: cada exercício é uma linha de `exercises` (nome|cor
+// do card, tamanho/cor/fonte do texto em syllables_*), as frases ficam em
+// exercise_items.word (com negrito/cor por trecho do editor de palavra), e a
+// liberação por paciente é a mesma dos outros exercícios (patient_exercise_flags).
+// Os vídeos ficam só na memória do navegador (Blob em RAM, nunca IndexedDB/
+// cache/Supabase): todas as tentativas ficam disponíveis enquanto o exercício
+// está aberto, e ao Sair tudo é liberado (clearAllMirrorTakes).
+// =============================================
+const MIRROR_MAX_SECONDS = 30;
+const MIRROR_DEFAULT_TEXT_SIZE = 56;
+
+let mirrorPhrases = []; // [{ id, html, text }] do exercício aberto
+let activeMirrorExercise = null;
+let mirrorIndex = 0;
+let mirrorStream = null;
+let mirrorRecorder = null;
+let mirrorChunks = [];
+// Tentativas gravadas, por frase: phrase id -> [{ url, seconds, number }].
+const mirrorTakes = new Map();
+let mirrorSelectedTake = null;
+// ~1 Mbps de vídeo: cada tentativa de ~10s fica em torno de 1 MB na memória
+// (o padrão do navegador dá ~3 MB), sem perder o que importa (a boca).
+const MIRROR_VIDEO_BITRATE = 1_000_000;
+const MIRROR_AUDIO_BITRATE = 64_000;
+let mirrorTimerInterval = null;
+let mirrorCountdownInterval = null;
+let mirrorSpeed = 1;
+let mirrorAudioCtx = null;
+let mirrorMeterFrame = null;
+let mirrorSilenceWarned = false;
+const MIRROR_SILENCE_WARN_MS = 6000;
+let mirrorRecordStartedAt = 0;
+
+// Abre o exercício (card na grade de Exercícios): mesma troca de tela das
+// atividades da aba (esconde a grade, mostra o "Voltar") e o mesmo registro de
+// uso do openPresentationPlaylist.
+function openMirrorExercise(ex) {
+    if (!ex.items || ex.items.length === 0) return;
+    activeMirrorExercise = ex;
+    mirrorPhrases = ex.items.map((item, i) => {
+        const html = sanitizeWordHtml(item.word || '');
+        return { id: `${ex.id}:${i}`, html, text: stripWordHtml(html).trim() };
+    });
+    mirrorIndex = 0;
+
+    document.getElementById('grid-exercises').style.display = 'none';
+    document.getElementById('exercises-header').style.display = 'none';
+    document.getElementById('btn-exercises-back').style.display = 'flex';
+    document.getElementById('game-mirror-container').style.display = 'flex';
+
+    const displayTitle = (ex.title || '').split('|')[0] || 'Espelho';
+    document.getElementById('mirror-deck-title').textContent = displayTitle;
+    // Estilo do exercício (tamanho/cor/fonte), igual ao deck de Sílabas.
+    // min() com vw: num celular, um tamanho pensado pro tablet não estoura a tela.
+    const phraseEl = document.getElementById('mirror-phrase');
+    const size = parseInt(ex.syllablesSize, 10) || MIRROR_DEFAULT_TEXT_SIZE;
+    phraseEl.style.fontSize = `min(${size}px, 11vw)`;
+    phraseEl.style.color = ex.syllablesColor || '';
+    phraseEl.style.fontFamily = ex.syllablesFont || '';
+
+    startUsageActivity(displayTitle, {
+        key: `exercise:${ex.id || displayTitle}`,
+        group: 'Exercícios',
+        view: 'view-exercises',
+        detail: 'Exercício aberto'
+    });
+
+    renderMirrorPhrase();
+    openMirrorCamera();
+}
+
+async function openMirrorCamera() {
+    const msg = document.getElementById('mirror-camera-msg');
+    const recordBtn = document.getElementById('btn-mirror-record');
+    if (mirrorStream) return;
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+        msg.innerHTML = '<i class="fas fa-video-slash" aria-hidden="true"></i><span>Este navegador não permite usar a câmera.</span>';
+        msg.style.display = 'flex';
+        recordBtn.disabled = true;
+        return;
+    }
+    msg.innerHTML = '<i class="fas fa-video" aria-hidden="true"></i><span>Abrindo a câmera…</span>';
+    msg.style.display = 'flex';
+    const videoConstraints = { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } };
+    try {
+        let stream;
+        let micError = null;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: videoConstraints,
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+            });
+        } catch (e) {
+            // Microfone negado/indisponível não pode derrubar a câmera junto:
+            // abre só o vídeo e avisa que a gravação vai sair sem som.
+            micError = e;
+            stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+        }
+        // Fechou o Espelho enquanto o navegador pedia permissão: não deixa a câmera ligada à toa.
+        if (document.getElementById('game-mirror-container').style.display !== 'flex') {
+            stream.getTracks().forEach(t => t.stop());
+            return;
+        }
+        mirrorStream = stream;
+        document.getElementById('mirror-live').srcObject = stream;
+        msg.style.display = 'none';
+        logMirrorAudioDiagnostics('câmera aberta', micError);
+        startMirrorMicMeter(micError);
+        recordBtn.disabled = mirrorPhrases.length === 0;
+    } catch (e) {
+        msg.innerHTML = '<i class="fas fa-video-slash" aria-hidden="true"></i><span>Não consegui abrir a câmera.<br>Libere a permissão no navegador e tente de novo.</span>';
+        recordBtn.disabled = true;
+    }
+}
+
+// Diagnóstico do microfone no console — ajuda a separar "navegador/macOS não
+// liberou o microfone" de problema na gravação/reprodução.
+function logMirrorAudioDiagnostics(stage, micError = null) {
+    const tracks = mirrorStream?.getAudioTracks() || [];
+    if (micError) console.warn(`[Espelho] ${stage}: microfone indisponível —`, micError.name, micError.message);
+    if (!tracks.length) { console.warn(`[Espelho] ${stage}: sem faixa de áudio no stream`); return; }
+    tracks.forEach(t => console.info(`[Espelho] ${stage}: microfone "${t.label}"`,
+        { enabled: t.enabled, muted: t.muted, readyState: t.readyState, settings: t.getSettings?.() }));
+}
+
+function showMirrorMicWarning(text) {
+    const warn = document.getElementById('mirror-mic-warning');
+    if (!warn) return;
+    warn.textContent = text || '';
+    warn.style.display = text ? 'block' : 'none';
+    // Aviso ocupa o mesmo canto do medidor.
+    document.getElementById('mirror-mic-meter').style.display = text ? 'none' : 'flex';
+}
+
+// Medidor de volume do microfone sobre a câmera: a pessoa vê que a voz está
+// sendo captada, e dá pra perceber na hora quando o microfone está mudo.
+function startMirrorMicMeter(micError) {
+    stopMirrorMicMeter();
+    mirrorSilenceWarned = false;
+    const track = mirrorStream?.getAudioTracks()[0];
+    if (!track) {
+        showMirrorMicWarning(micError?.name === 'NotAllowedError'
+            ? 'Microfone bloqueado: a gravação vai sair sem som. Libere o microfone no navegador e reabra o exercício.'
+            : 'Nenhum microfone encontrado: a gravação vai sair sem som.');
+        return;
+    }
+    showMirrorMicWarning('');
+    track.onmute = () => showMirrorMicWarning('O microfone parou de enviar som. Verifique se outro app está usando o microfone.');
+    track.onunmute = () => showMirrorMicWarning('');
+    track.onended = () => showMirrorMicWarning('O microfone foi desconectado: a gravação vai sair sem som.');
+
+    try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        mirrorAudioCtx = new Ctx();
+        // Com a câmera/microfone já liberados o navegador costuma deixar o contexto
+        // rodar sem clique; se não deixar, o clique em Gravar retoma (resume) também.
+        mirrorAudioCtx.resume?.().catch(() => {});
+        const analyser = mirrorAudioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        mirrorAudioCtx.createMediaStreamSource(new MediaStream([track])).connect(analyser);
+        // Float (não Uint8): em 8 bits o ruído de uma sala quieta arredonda pra
+        // zero e pareceria microfone mudo; em float, só o mudo de verdade dá 0.
+        const data = new Float32Array(analyser.fftSize);
+        const levelEl = document.getElementById('mirror-mic-level');
+        let silentSince = performance.now();
+        const tick = () => {
+            analyser.getFloatTimeDomainData(data);
+            let sum = 0;
+            for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+            const rms = Math.sqrt(sum / data.length);
+            levelEl.style.width = `${Math.min(100, rms * 400)}%`;
+            // Silêncio absoluto por vários segundos com o contexto rodando = microfone
+            // liberado no navegador mas mudo no sistema (ex.: macOS bloqueou o
+            // Chrome em Privacidade → Microfone, ou o Chrome pegou um microfone
+            // virtual/desconectado). Mesmo ambiente quieto ainda tem ruído, então
+            // zero de sinal é bem característico. O aviso some quando o som volta.
+            if (rms > 1e-6) {
+                silentSince = performance.now();
+                if (mirrorSilenceWarned) {
+                    mirrorSilenceWarned = false;
+                    showMirrorMicWarning('');
+                }
+            } else if (!mirrorSilenceWarned && mirrorAudioCtx.state === 'running'
+                       && performance.now() - silentSince > MIRROR_SILENCE_WARN_MS) {
+                mirrorSilenceWarned = true;
+                console.warn('[Espelho] microfone sem nenhum sinal (sistema pode estar bloqueando o microfone)');
+                showMirrorMicWarning('Não estamos ouvindo seu microfone. Confira se ele está liberado para o navegador nos Ajustes do computador e qual microfone está selecionado.');
+            }
+            mirrorMeterFrame = requestAnimationFrame(tick);
+        };
+        mirrorMeterFrame = requestAnimationFrame(tick);
+    } catch (e) {
+        console.warn('[Espelho] medidor do microfone indisponível:', e);
+    }
+}
+
+function stopMirrorMicMeter() {
+    if (mirrorMeterFrame) cancelAnimationFrame(mirrorMeterFrame);
+    mirrorMeterFrame = null;
+    if (mirrorAudioCtx) { mirrorAudioCtx.close().catch(() => {}); mirrorAudioCtx = null; }
+    const meter = document.getElementById('mirror-mic-meter');
+    if (meter) meter.style.display = 'none';
+    const warn = document.getElementById('mirror-mic-warning');
+    if (warn) warn.style.display = 'none';
+}
+
+// Sair do exercício: desliga a câmera e apaga todas as gravações da memória.
+function stopMirror() {
+    stopMirrorCamera();
+    clearAllMirrorTakes();
+}
+
+// Só desliga câmera/microfone (ex.: trocou de aba) — as gravações continuam.
+function stopMirrorCamera() {
+    if (mirrorRecorder) mirrorRecorder.onstop = null; // sair no meio descarta a gravação em andamento
+    stopMirrorRecording();
+    clearInterval(mirrorCountdownInterval);
+    const countdown = document.getElementById('mirror-countdown');
+    if (countdown) countdown.style.display = 'none';
+    if (mirrorStream) {
+        mirrorStream.getTracks().forEach(t => t.stop());
+        mirrorStream = null;
+    }
+    const live = document.getElementById('mirror-live');
+    if (live) live.srcObject = null;
+    stopMirrorMicMeter();
+}
+
+function clearAllMirrorTakes() {
+    // Solta o vídeo do player antes de revogar, senão o navegador segura o buffer.
+    const v = document.getElementById('mirror-playback');
+    if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
+    mirrorTakes.forEach(takes => takes.forEach(t => URL.revokeObjectURL(t.url)));
+    mirrorTakes.clear();
+    mirrorSelectedTake = null;
+    mirrorChunks = [];
+    clearMirrorReplay();
+    renderMirrorTakes();
+}
+
+function currentMirrorTakes() {
+    const item = mirrorPhrases[mirrorIndex];
+    return item ? (mirrorTakes.get(item.id) || []) : [];
+}
+
+function renderMirrorPhrase() {
+    const phraseEl = document.getElementById('mirror-phrase');
+    const total = mirrorPhrases.length;
+    if (mirrorIndex >= total) mirrorIndex = Math.max(0, total - 1);
+    const item = mirrorPhrases[mirrorIndex];
+    phraseEl.innerHTML = item ? item.html : '';
+    document.getElementById('mirror-progress').textContent = total ? `${mirrorIndex + 1} / ${total}` : '0 / 0';
+    document.getElementById('btn-mirror-prev').disabled = mirrorIndex === 0;
+    document.getElementById('btn-mirror-next').disabled = mirrorIndex >= total - 1;
+    document.getElementById('btn-mirror-listen').disabled = !item;
+    document.getElementById('btn-mirror-record').disabled = !item || !mirrorStream;
+    const takes = currentMirrorTakes();
+    setMirrorRecordButton(false, takes.length > 0);
+    // Voltou pra uma frase já gravada: mostra a última tentativa (sem tocar sozinha).
+    if (takes.length) selectMirrorTake(takes[takes.length - 1], false);
+    else { mirrorSelectedTake = null; clearMirrorReplay(); renderMirrorTakes(); }
+}
+
+// Só limpa o player (não apaga gravações — isso é clearAllMirrorTakes).
+function clearMirrorReplay() {
+    const replay = document.getElementById('mirror-replay');
+    if (!replay) return;
+    replay.classList.remove('has-video');
+    replay.innerHTML = 'Toque em <b>&nbsp;Gravar&nbsp;</b>, leia a frase olhando pra câmera e veja aqui como ficou.';
+    document.getElementById('btn-mirror-replay').disabled = true;
+}
+
+function setMirrorRecordButton(recording, hasRecorded) {
+    const btn = document.getElementById('btn-mirror-record');
+    btn.classList.toggle('recording', recording);
+    btn.innerHTML = recording
+        ? '<i class="fas fa-stop" aria-hidden="true"></i> <span>Parar</span>'
+        : `<i class="fas fa-circle" aria-hidden="true"></i> <span>${hasRecorded ? 'Gravar de novo' : 'Gravar'}</span>`;
+}
+
+function pickMirrorMimeType() {
+    const types = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
+    return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
+}
+
+function runMirrorCountdown() {
+    const el = document.getElementById('mirror-countdown');
+    return new Promise((resolve) => {
+        let n = 3;
+        el.textContent = n;
+        el.style.display = 'flex';
+        mirrorCountdownInterval = setInterval(() => {
+            n--;
+            if (n > 0) { el.textContent = n; return; }
+            clearInterval(mirrorCountdownInterval);
+            el.style.display = 'none';
+            resolve();
+        }, 800);
+    });
+}
+
+async function startMirrorRecording() {
+    if (!mirrorStream) return;
+    const recordBtn = document.getElementById('btn-mirror-record');
+    // Não deixa a voz do app entrar na gravação.
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    recordBtn.disabled = true;
+    // Durante a gravação o player fica vazio; as tentativas anteriores
+    // continuam guardadas e voltam a aparecer quando a nova terminar.
+    mirrorSelectedTake = null;
+    clearMirrorReplay();
+    renderMirrorTakes();
+    mirrorAudioCtx?.resume?.();
+    const phraseAtStart = mirrorIndex;
+    await runMirrorCountdown();
+    if (!mirrorStream || phraseAtStart !== mirrorIndex) return;
+
+    mirrorChunks = [];
+    const mimeType = pickMirrorMimeType();
+    const recorderOptions = { videoBitsPerSecond: MIRROR_VIDEO_BITRATE, audioBitsPerSecond: MIRROR_AUDIO_BITRATE };
+    if (mimeType) recorderOptions.mimeType = mimeType;
+    mirrorRecorder = new MediaRecorder(mirrorStream, recorderOptions);
+    mirrorRecorder.ondataavailable = (e) => { if (e.data.size > 0) mirrorChunks.push(e.data); };
+    mirrorRecorder.onstop = showMirrorRecording;
+    mirrorRecorder.start();
+    logMirrorAudioDiagnostics(`gravando (${mirrorRecorder.mimeType || 'formato padrão'})`);
+
+    document.getElementById('mirror-camera').classList.add('recording');
+    setMirrorRecordButton(true, false);
+    recordBtn.disabled = false;
+
+    mirrorRecordStartedAt = Date.now();
+    const startedAt = mirrorRecordStartedAt;
+    const timerEl = document.getElementById('mirror-timer');
+    timerEl.textContent = '0:00';
+    mirrorTimerInterval = setInterval(() => {
+        const s = Math.floor((Date.now() - startedAt) / 1000);
+        timerEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+        if (s >= MIRROR_MAX_SECONDS) stopMirrorRecording();
+    }, 250);
+}
+
+function stopMirrorRecording() {
+    clearInterval(mirrorTimerInterval);
+    mirrorTimerInterval = null;
+    if (mirrorRecorder && mirrorRecorder.state !== 'inactive') mirrorRecorder.stop();
+    document.getElementById('mirror-camera')?.classList.remove('recording');
+}
+
+function showMirrorRecording() {
+    const item = mirrorPhrases[mirrorIndex];
+    if (!item) return;
+    const blob = new Blob(mirrorChunks, { type: mirrorRecorder.mimeType || 'video/webm' });
+    mirrorChunks = [];
+    console.info('[Espelho] gravação pronta:', blob.type, `${Math.round(blob.size / 1024)} KB`);
+    const takes = mirrorTakes.get(item.id) || [];
+    const take = {
+        url: URL.createObjectURL(blob),
+        // WebM do MediaRecorder costuma vir sem duração (Infinity) — o tempo
+        // medido na gravação serve de duração pra barra de progresso.
+        seconds: Math.max(1, (Date.now() - mirrorRecordStartedAt) / 1000),
+        number: takes.length + 1
+    };
+    takes.push(take);
+    mirrorTakes.set(item.id, takes);
+    setMirrorRecordButton(false, true);
+    selectMirrorTake(take, true);
+}
+
+// Chips "Tentativa 1, 2, 3…" da frase atual, embaixo do player.
+function renderMirrorTakes() {
+    const container = document.getElementById('mirror-takes');
+    if (!container) return;
+    container.innerHTML = '';
+    const takes = currentMirrorTakes();
+    container.style.display = takes.length > 1 ? 'flex' : 'none';
+    takes.forEach(take => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'mirror-take-chip' + (take === mirrorSelectedTake ? ' active' : '');
+        chip.textContent = `Tentativa ${take.number} · ${formatMirrorTime(take.seconds)}`;
+        chip.onclick = () => selectMirrorTake(take, true);
+        container.appendChild(chip);
+    });
+}
+
+function selectMirrorTake(take, autoplay) {
+    mirrorSelectedTake = take;
+    renderMirrorTakes();
+    const replay = document.getElementById('mirror-replay');
+    replay.classList.add('has-video');
+    // Sem controles nativos de propósito: o vídeo é espelhado (scaleX(-1)) e
+    // os controles do navegador eram espelhados junto (tempo ao contrário,
+    // play do lado errado). Os controles abaixo ficam fora do vídeo invertido.
+    replay.innerHTML = `
+        <video id="mirror-playback" src="${take.url}" playsinline></video>
+        <span class="mirror-replay-label">Tentativa ${take.number}</span>
+        <div class="mirror-speed" role="group" aria-label="Velocidade">
+            <button type="button" data-speed="0.5">Devagar</button>
+            <button type="button" data-speed="1">Normal</button>
+        </div>
+        <button type="button" class="mirror-big-play" id="mirror-big-play" aria-label="Tocar gravação">
+            <i class="fas fa-play" aria-hidden="true"></i>
+        </button>
+        <div class="mirror-progress-row">
+            <div class="mirror-progress-track"><div class="mirror-progress-fill" id="mirror-progress-fill"></div></div>
+            <span class="mirror-progress-time" id="mirror-progress-time">0:00 / ${formatMirrorTime(take.seconds)}</span>
+        </div>`;
+    const v = document.getElementById('mirror-playback');
+    replay.querySelectorAll('.mirror-speed button').forEach(b => {
+        b.onclick = (ev) => { ev.stopPropagation(); mirrorSpeed = Number(b.dataset.speed); playMirrorRecording(); };
+    });
+    // Tocar em qualquer lugar do vídeo pausa/continua; terminado, recomeça.
+    const togglePlayback = () => {
+        if (v.paused) { if (v.ended) v.currentTime = 0; v.play().catch(() => {}); }
+        else v.pause();
+    };
+    v.addEventListener('click', togglePlayback);
+    document.getElementById('mirror-big-play').addEventListener('click', togglePlayback);
+    const syncPlayState = () => replay.classList.toggle('is-playing', !v.paused);
+    v.addEventListener('play', syncPlayState);
+    v.addEventListener('pause', syncPlayState);
+    v.addEventListener('ended', syncPlayState);
+    v.addEventListener('timeupdate', () => {
+        const total = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : take.seconds;
+        const fraction = Math.min(1, v.currentTime / total);
+        document.getElementById('mirror-progress-fill').style.width = `${fraction * 100}%`;
+        document.getElementById('mirror-progress-time').textContent =
+            `${formatMirrorTime(v.currentTime)} / ${formatMirrorTime(total)}`;
+    });
+    document.getElementById('btn-mirror-replay').disabled = false;
+    if (autoplay) playMirrorRecording();
+    else document.querySelectorAll('#mirror-replay .mirror-speed button')
+        .forEach(b => b.classList.toggle('active', Number(b.dataset.speed) === mirrorSpeed));
+}
+
+function formatMirrorTime(seconds) {
+    const s = Math.max(0, Math.floor(seconds || 0));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function playMirrorRecording() {
+    const v = document.getElementById('mirror-playback');
+    if (!v) return;
+    v.muted = false;
+    v.volume = 1;
+    v.playbackRate = mirrorSpeed;
+    document.querySelectorAll('#mirror-replay .mirror-speed button')
+        .forEach(b => b.classList.toggle('active', Number(b.dataset.speed) === mirrorSpeed));
+    v.currentTime = 0;
+    v.play().catch(() => {});
+}
+
+function goToMirrorPhrase(index) {
+    if (index < 0 || index >= mirrorPhrases.length) return;
+    if (mirrorRecorder) mirrorRecorder.onstop = null; // trocar de frase no meio descarta a gravação
+    stopMirrorRecording();
+    clearInterval(mirrorCountdownInterval);
+    document.getElementById('mirror-countdown').style.display = 'none';
+    mirrorIndex = index;
+    renderMirrorPhrase();
+}
+
+// ---- Banco de frases (admin e terapeutas) ----
+
+function setupMirrorControls() {
+    document.getElementById('btn-mirror-record').addEventListener('click', () => {
+        if (mirrorRecorder && mirrorRecorder.state === 'recording') stopMirrorRecording();
+        else startMirrorRecording();
+    });
+    document.getElementById('btn-mirror-replay').addEventListener('click', playMirrorRecording);
+    document.getElementById('btn-mirror-listen').addEventListener('click', () => {
+        const item = mirrorPhrases[mirrorIndex];
+        if (item) speak(item.text);
+    });
+    document.getElementById('btn-mirror-prev').addEventListener('click', () => goToMirrorPhrase(mirrorIndex - 1));
+    document.getElementById('btn-mirror-next').addEventListener('click', () => goToMirrorPhrase(mirrorIndex + 1));
 }
 
 // =============================================
