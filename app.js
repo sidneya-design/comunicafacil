@@ -3803,6 +3803,7 @@ function renderExerciseCards(exercisesArray) {
         if (ex.gameKind === 'naming') openNamingDeckManage(ex);
         else if (ex.gameKind === 'afasia') openAfasiaDeckManage(ex);
         else if (ex.gameKind === 'syllables') openEditSyllablesExercise(ex);
+        else if (ex.gameKind === 'mirror') openEditMirrorExercise(ex);
         else if (ex.gameKind === 'audio-real') openEditAudioExercise(ex);
         else if (ex.gameKind === 'reading-text') openEditReadingTextExercise(ex);
         else openEditExercise(ex);
@@ -3811,6 +3812,7 @@ function renderExerciseCards(exercisesArray) {
         if (ex.gameKind === 'naming') playNamingDeck(ex);
         else if (ex.gameKind === 'afasia') playAfasiaDeck(ex);
         else if (ex.gameKind === 'reading-text') openReadingTextPlayer(ex);
+        else if (ex.gameKind === 'mirror') openMirrorExercise(ex);
         else openPresentationPlaylist(ex);
     };
 
@@ -3878,6 +3880,9 @@ function renderExerciseCards(exercisesArray) {
             // troca por um ícone de parágrafo, igual ao padrão de ícone dos
             // outros tipos sem imagem própria.
             imgContainer.innerHTML = '<i class="fas fa-align-left word-btn-icon" aria-hidden="true"></i>';
+        } else if (ex.gameKind === 'mirror') {
+            // Espelho: frase inteira não cabe legível no card — ícone de câmera.
+            imgContainer.innerHTML = '<i class="fas fa-video word-btn-icon" aria-hidden="true"></i>';
         } else if (firstItem && firstItem.imageBlob instanceof Blob) {
             imgContainer.innerHTML = `<img src="${URL.createObjectURL(firstItem.imageBlob)}" class="word-btn-img" alt="" />`;
         } else if (firstItem && firstItem.image_url) {
@@ -4019,7 +4024,7 @@ function renderExerciseCards(exercisesArray) {
                 btn.appendChild(createNotifyUsersButton(displayTitle, 'Exercício', { id: ex.patientId, name: patientInfo?.name, email: patientInfo?.email }));
             }
         } else if (isDoctor && ex.doctorUserId && ex.doctorUserId !== currentUserId && !ex.patientId && ex.companyId && ex.companyId === currentUserCompanyId
-                   && (!ex.gameKind || ex.gameKind === 'syllables' || ex.gameKind === 'audio-real' || ex.gameKind === 'reading-text')) {
+                   && (!ex.gameKind || ex.gameKind === 'syllables' || ex.gameKind === 'audio-real' || ex.gameKind === 'reading-text' || ex.gameKind === 'mirror')) {
             // Exercício do banco de um colega da mesma empresa (não do admin, não
             // meu): a RLS já libera escrita compartilhada por empresa faz tempo
             // (migration company_shared_doctor_bank), mas a tela nunca tinha
@@ -4034,7 +4039,7 @@ function renderExerciseCards(exercisesArray) {
             };
             btn.appendChild(editBtn);
         } else if (isDoctor && !ex.doctorUserId && ex.companyId && ex.companyId === currentUserCompanyId
-                   && (!ex.gameKind || ex.gameKind === 'syllables' || ex.gameKind === 'audio-real' || ex.gameKind === 'reading-text')) {
+                   && (!ex.gameKind || ex.gameKind === 'syllables' || ex.gameKind === 'audio-real' || ex.gameKind === 'reading-text' || ex.gameKind === 'mirror')) {
             // Exercício que o admin mandou direto pra empresa do médico: edita em
             // cima do original (a RLS libera essa escrita pra qualquer médico da
             // empresa) — sem fork, os colegas continuam vendo a mesma versão.
@@ -5270,6 +5275,139 @@ function openEditExercise(ex) {
     });
 }
 
+// Exercício Espelho: mesmo molde do de Sílabas (saveSyllablesExerciseToDB),
+// só com o campo de frase. Tamanho/cor/fonte do texto valem pro exercício todo
+// (syllables_size/_color/_font, mesmas colunas do de Sílabas).
+let currentEditingMirrorExerciseId = null;
+let currentEditingMirrorExerciseFromSupabase = false;
+let mirrorBlockCounter = 0;
+
+async function saveMirrorExerciseToDB(title, size, color, font, itemsArray, doctorUserId = null, companyId = null) {
+    const shouldTrySupabase = supabaseClient && (!currentEditingMirrorExerciseId || currentEditingMirrorExerciseFromSupabase);
+    if (shouldTrySupabase) {
+        try {
+            const deckFields = { title, syllables_size: size || null, syllables_color: color || null, syllables_font: font || null };
+            let targetExerciseId = currentEditingMirrorExerciseId;
+
+            if (targetExerciseId) {
+                const updateFields = isAdmin ? { ...deckFields, company_id: companyId } : deckFields;
+                // .select(): com RLS, update bloqueado não dá erro, só não altera nada.
+                const { data: updated, error: updateErr } = await supabaseClient.from('exercises').update(updateFields).eq('id', targetExerciseId).select('id');
+                if (updateErr) throw updateErr;
+                if (!updated || updated.length === 0) throw new Error('sem permissão para editar este exercício');
+                const { error: deleteErr } = await supabaseClient.from('exercise_items').delete().eq('exercise_id', targetExerciseId);
+                if (deleteErr) throw deleteErr;
+            } else {
+                const newExercisePayload = doctorUserId
+                    ? { ...deckFields, visible: true, game_kind: 'mirror', doctor_user_id: doctorUserId, company_id: currentUserCompanyId }
+                    : { ...deckFields, visible: false, game_kind: 'mirror', company_id: companyId };
+                const { data: exData, error: insertErr } = await supabaseClient.from('exercises').insert([newExercisePayload]).select().single();
+                if (insertErr) throw insertErr;
+                targetExerciseId = exData.id;
+            }
+
+            const dbItems = itemsArray.map(item => ({ exercise_id: targetExerciseId, word: item.word, syllables: '', link: '' }));
+            const { error: itemsErr } = await supabaseClient.from('exercise_items').insert(dbItems);
+            if (itemsErr) throw itemsErr;
+
+            logAdminAction(currentEditingMirrorExerciseId ? 'update' : 'create', 'exercise', title);
+            loadExerciseCards();
+            return;
+        } catch (e) {
+            console.warn('Erro ao salvar exercício Espelho no Supabase, caindo para local:', e);
+            alert('Não foi possível salvar o exercício no servidor (ficou salvo só neste dispositivo). Detalhe: ' + (e?.message || e));
+        }
+    }
+
+    const localPayload = { title, items: itemsArray, visible: false, gameKind: 'mirror', syllablesSize: size || null, syllablesColor: color || null, syllablesFont: font || null };
+    if (currentEditingMirrorExerciseId) {
+        db.transaction(['exercises'], 'readonly').objectStore('exercises').get(currentEditingMirrorExerciseId).onsuccess = (e) => {
+            const existing = e.target.result || {};
+            db.transaction(['exercises'], 'readwrite').objectStore('exercises')
+                .put({ ...existing, ...localPayload, id: currentEditingMirrorExerciseId })
+                .onsuccess = () => loadExerciseCards();
+        };
+    } else {
+        db.transaction(['exercises'], 'readwrite').objectStore('exercises')
+            .add(localPayload)
+            .onsuccess = () => loadExerciseCards();
+    }
+}
+
+function createMirrorItemBlockHtml(blockId, isEdit = false) {
+    return `
+        <div class="mirror-item-block syllables-item-block" data-block-id="${blockId}">
+            <div class="block-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="margin:0;" class="block-title">Frase</h4>
+                ${isEdit ? '<button type="button" class="btn-remove-block" style="background:#ff4d4f;color:white;border:none;padding:5px 10px;border-radius:8px;cursor:pointer;"><i class="fas fa-trash" aria-hidden="true"></i> Remover</button>' : ''}
+            </div>
+            <div class="form-group">
+                <label>Frase</label>
+                <div class="word-editor-toolbar">
+                    <button type="button" class="word-editor-btn word-editor-bold" title="Negrito na seleção"><i class="fas fa-bold" aria-hidden="true"></i></button>
+                    <input type="color" class="word-editor-color" title="Cor na seleção" value="#e63946">
+                    <button type="button" class="word-editor-btn word-editor-clear" title="Limpar formatação">Limpar</button>
+                </div>
+                <div class="mirror-item-phrase word-editor-field" contenteditable="true" data-placeholder="Ex: Bom dia, tudo bem?" role="textbox" aria-label="Frase"></div>
+            </div>
+        </div>
+    `;
+}
+
+function addMirrorItemBlock(isEdit = false) {
+    const container = document.getElementById('mirror-items-container');
+    const blockId = mirrorBlockCounter++;
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = createMirrorItemBlockHtml(blockId, isEdit);
+    const blockEl = wrapper.firstElementChild;
+    const removeBtn = blockEl.querySelector('.btn-remove-block');
+    if (removeBtn) {
+        removeBtn.addEventListener('click', () => {
+            container.removeChild(blockEl);
+            updateMirrorBlockTitles();
+        });
+    }
+    wireAllWordEditors(blockEl);
+    container.appendChild(blockEl);
+    updateMirrorBlockTitles();
+    return blockEl;
+}
+
+function updateMirrorBlockTitles() {
+    document.querySelectorAll('#mirror-items-container .mirror-item-block').forEach((b, index) => {
+        b.querySelector('.block-title').textContent = `Frase ${index + 1}`;
+    });
+}
+
+function openEditMirrorExercise(ex) {
+    currentEditingMirrorExerciseId = ex.id;
+    currentEditingMirrorExerciseFromSupabase = !!ex.fromSupabase;
+    mirrorBlockCounter = 0;
+
+    document.getElementById('mirror-exercise-modal').style.display = 'flex';
+    document.getElementById('mirror-exercise-modal').querySelector('h2').textContent = "Editar Exercício (Espelho)";
+
+    const parts = (ex.title || '').split('|');
+    document.getElementById('mirror-exercise-title').value = parts[0];
+    setCardColorPickerValue('mirror-exercise-color-picker', 'mirror-exercise-color', 'mirror-exercise-color-custom', parts[1] || 'pink');
+    document.getElementById('mirror-text-size').value = ex.syllablesSize || MIRROR_DEFAULT_TEXT_SIZE;
+    document.getElementById('mirror-text-color').value = ex.syllablesColor || '#1f1f1f';
+    document.getElementById('mirror-font').value = ex.syllablesFont || "'Outfit', sans-serif";
+
+    const companyGroup = document.getElementById('mirror-exercise-target-company-group');
+    if (companyGroup) {
+        companyGroup.style.display = isAdmin ? '' : 'none';
+        if (isAdmin) populateExerciseCompanySelect('mirror-exercise-target-company', ex.companyId || null);
+    }
+
+    const container = document.getElementById('mirror-items-container');
+    container.innerHTML = '';
+    ex.items.forEach(item => {
+        const blockEl = addMirrorItemBlock(true);
+        blockEl.querySelector('.mirror-item-phrase').innerHTML = sanitizeWordHtml(item.word || '');
+    });
+}
+
 function openEditSyllablesExercise(ex) {
     currentEditingSyllablesExerciseId = ex.id;
     currentEditingSyllablesExerciseFromSupabase = !!ex.fromSupabase;
@@ -5978,6 +6116,65 @@ function setupModals() {
         addSyllablesItemBlock(true);
     });
 
+    // Exercício Espelho — mesmo fluxo do de Sílabas.
+    const openMirrorExerciseCreator = () => {
+        closeExerciseType();
+        currentEditingMirrorExerciseId = null;
+        currentEditingMirrorExerciseFromSupabase = false;
+        mirrorBlockCounter = 0;
+
+        document.getElementById('mirror-exercise-modal').style.display = 'flex';
+        document.getElementById('mirror-exercise-modal').querySelector('h2').textContent = "Novo Exercício (Espelho)";
+        document.getElementById('mirror-exercise-form').reset();
+        setCardColorPickerValue('mirror-exercise-color-picker', 'mirror-exercise-color', 'mirror-exercise-color-custom', 'pink');
+
+        const companyGroup = document.getElementById('mirror-exercise-target-company-group');
+        if (companyGroup) {
+            companyGroup.style.display = isAdmin ? '' : 'none';
+            if (isAdmin) populateExerciseCompanySelect('mirror-exercise-target-company', null);
+        }
+
+        const container = document.getElementById('mirror-items-container');
+        container.innerHTML = '';
+        addMirrorItemBlock();
+    };
+    document.getElementById('btn-create-mirror-exercise').addEventListener('click', openMirrorExerciseCreator);
+
+    const closeMirrorExerciseUpload = () => { document.getElementById('mirror-exercise-modal').style.display = 'none'; document.getElementById('mirror-exercise-form').reset(); };
+    document.getElementById('btn-close-mirror-exercise').addEventListener('click', closeMirrorExerciseUpload);
+    document.getElementById('btn-cancel-mirror-exercise').addEventListener('click', closeMirrorExerciseUpload);
+    document.getElementById('btn-add-mirror-item').addEventListener('click', () => addMirrorItemBlock(true));
+
+    document.getElementById('mirror-exercise-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (!isAdmin && !isDoctor) {
+            alert('Apenas administradores ou médicos podem salvar exercícios.');
+            return;
+        }
+        const titleVal = document.getElementById('mirror-exercise-title').value.trim();
+        const colorVal = document.getElementById('mirror-exercise-color').value;
+        const finalTitle = `${titleVal}|${colorVal}`;
+        const sizeVal = document.getElementById('mirror-text-size').value;
+        const colorTextVal = document.getElementById('mirror-text-color').value;
+        const fontVal = document.getElementById('mirror-font').value;
+
+        const blocks = document.querySelectorAll('#mirror-items-container .mirror-item-block');
+        if (blocks.length === 0) return alert("Adicione pelo menos uma frase.");
+        const itemsArray = [];
+        let missingPhrase = false;
+        blocks.forEach(block => {
+            const phraseHtml = sanitizeWordHtml(block.querySelector('.mirror-item-phrase').innerHTML);
+            if (!stripWordHtml(phraseHtml).trim()) missingPhrase = true;
+            itemsArray.push({ word: phraseHtml });
+        });
+        if (missingPhrase) return alert("Toda frase deste exercício precisa estar preenchida.");
+
+        const targetDoctorUserId = isDoctor ? currentUserId : null;
+        const targetCompanyId = isAdmin ? (document.getElementById('mirror-exercise-target-company')?.value || null) : null;
+        saveMirrorExerciseToDB(finalTitle, sizeVal, colorTextVal, fontVal, itemsArray, targetDoctorUserId, targetCompanyId);
+        closeMirrorExerciseUpload();
+    });
+
     document.getElementById('syllables-exercise-form').addEventListener('submit', (e) => {
         e.preventDefault();
         if (!isAdmin && !isDoctor) {
@@ -6531,8 +6728,7 @@ const gamesList = [
 const exerciseActivities = [
     { id: 'complete-sentence', title: 'Complete a Frase', icon: 'fa-puzzle-piece', styleClass: 'border-orange' },
     { id: 'naming', title: 'Reconhecimento de Palavras', icon: 'fa-images', styleClass: 'border-red' },
-    { id: 'afasia', title: 'Reconhecimento de Imagem', icon: 'fa-comment-medical', styleClass: 'border-yellow' },
-    { id: 'mirror', title: 'Espelho', icon: 'fa-video', styleClass: 'border-blue' }
+    { id: 'afasia', title: 'Reconhecimento de Imagem', icon: 'fa-comment-medical', styleClass: 'border-yellow' }
 ];
 
 function seedUsageCatalogActivities() {
@@ -6789,18 +6985,6 @@ function hasReleasedGameContent(baseSeedKey) {
     );
 }
 
-// A RLS (can_view_mirror_phrase) já só devolve ao paciente as frases do
-// terapeuta dele (gerais ou feitas só pra ele) — basta saber se veio alguma.
-async function patientHasReleasedMirrorPhrases() {
-    if (!supabaseClient) return false;
-    try {
-        const { data, error } = await supabaseClient.from('mirror_phrases').select('id').eq('visible', true).limit(1);
-        return !error && !!data && data.length > 0;
-    } catch (e) {
-        return false;
-    }
-}
-
 async function renderActivityCards(container, activities, isCurrent = () => true) {
     if (!container) return;
 
@@ -6816,9 +7000,6 @@ async function renderActivityCards(container, activities, isCurrent = () => true
         if (!isAdmin && !isDoctor && currentPatientId) {
             const baseSeedKey = baseSeedKeyForGameTile(game.id);
             if (baseSeedKey && !hasReleasedGameContent(baseSeedKey)) continue;
-            // Espelho tem banco próprio (mirror_phrases), fora de exercises.
-            if (game.id === 'mirror' && !(await patientHasReleasedMirrorPhrases())) continue;
-            if (!isCurrent()) return;
         }
 
         const btn = document.createElement('button');
@@ -6967,9 +7148,6 @@ function openGame(gameId) {
         const frame = document.getElementById('complete-sentence-frame');
         container.style.display = 'flex';
         if (!frame.src) refreshCompleteSentenceFrameSrc();
-    } else if (gameId === 'mirror') {
-        document.getElementById('game-mirror-container').style.display = 'flex';
-        startMirror();
     }
 
     const activityInfo = getActivityTrackingMeta(gameId);
@@ -7069,33 +7247,26 @@ function closeGame() {
 }
 
 // =============================================
-// ESPELHO (exercício) — a pessoa lê a frase se vendo na câmera (lado direito,
-// sempre aberta), grava e assiste. Os vídeos ficam só na memória do navegador
-// (Blob em RAM, nunca IndexedDB/cache/Supabase): todas as tentativas de todas
-// as frases ficam disponíveis enquanto o exercício está aberto, e ao Sair
-// tudo é liberado (clearAllMirrorTakes) — nada sobra no navegador.
-// As frases vêm de mirror_phrases, criadas por cada terapeuta pros próprios
-// pacientes no "Gerenciar frases" (sem etapa de liberação): fora de um
-// paciente valem pra todos os pacientes dele; "dentro" de um, só pra ele.
+// ESPELHO (tipo de exercício, game_kind 'mirror') — a pessoa lê a frase se
+// vendo na câmera (lado direito, sempre aberta), grava e assiste. Mesmo molde
+// do Exercício de Sílabas: cada exercício é uma linha de `exercises` (nome|cor
+// do card, tamanho/cor/fonte do texto em syllables_*), as frases ficam em
+// exercise_items.word (com negrito/cor por trecho do editor de palavra), e a
+// liberação por paciente é a mesma dos outros exercícios (patient_exercise_flags).
+// Os vídeos ficam só na memória do navegador (Blob em RAM, nunca IndexedDB/
+// cache/Supabase): todas as tentativas ficam disponíveis enquanto o exercício
+// está aberto, e ao Sair tudo é liberado (clearAllMirrorTakes).
 // =============================================
-const MIRROR_FALLBACK_PHRASES = [
-    { id: 'local:1', phrase: 'Bom <strong>di</strong>a, tudo <strong>bem</strong>?', speakText: 'Bom dia, tudo bem?' },
-    { id: 'local:2', phrase: 'Eu <strong>gos</strong>to de tra<strong>ba</strong>lhar', speakText: 'Eu gosto de trabalhar' },
-    { id: 'local:3', phrase: 'A e<strong>qui</strong>pe ga<strong>nhou</strong> o jogo', speakText: 'A equipe ganhou o jogo' }
-];
 const MIRROR_MAX_SECONDS = 30;
-const MIRROR_MIN_SIZE = 16;
-const MIRROR_MAX_SIZE = 200;
-const MIRROR_SIZE_STEP = 8;
+const MIRROR_DEFAULT_TEXT_SIZE = 56;
 
-let mirrorPhrases = [];
+let mirrorPhrases = []; // [{ id, html, text }] do exercício aberto
+let activeMirrorExercise = null;
 let mirrorIndex = 0;
 let mirrorStream = null;
 let mirrorRecorder = null;
 let mirrorChunks = [];
 // Tentativas gravadas, por frase: phrase id -> [{ url, seconds, number }].
-// Chave pelo id (não pelo índice) pra sobreviver a recarregar a lista depois
-// de editar frases no "Gerenciar frases".
 const mirrorTakes = new Map();
 let mirrorSelectedTake = null;
 // ~1 Mbps de vídeo: cada tentativa de ~10s fica em torno de 1 MB na memória
@@ -7105,70 +7276,46 @@ const MIRROR_AUDIO_BITRATE = 64_000;
 let mirrorTimerInterval = null;
 let mirrorCountdownInterval = null;
 let mirrorSpeed = 1;
-let editingMirrorPhrase = null;
 let mirrorAudioCtx = null;
 let mirrorMeterFrame = null;
 let mirrorSilenceWarned = false;
 const MIRROR_SILENCE_WARN_MS = 6000;
 let mirrorRecordStartedAt = 0;
 
-// "*ba*" no formulário vira <strong>ba</strong>; o resto é texto puro.
-function mirrorMarkupToHtml(text) {
-    const escaped = String(text || '')
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    return escaped.replace(/\*([^*]+)\*/g, '<strong>$1</strong>');
-}
-
-function mirrorHtmlToMarkup(html) {
-    const temp = document.createElement('div');
-    temp.innerHTML = sanitizeWordHtml(html);
-    temp.querySelectorAll('strong').forEach(el => el.replaceWith(`*${el.textContent}*`));
-    return temp.textContent;
-}
-
-function mirrorPlainText(html) {
-    const temp = document.createElement('div');
-    temp.innerHTML = sanitizeWordHtml(html);
-    return temp.textContent.trim();
-}
-
-async function loadMirrorPhrases() {
-    if (!supabaseClient) {
-        mirrorPhrases = MIRROR_FALLBACK_PHRASES.slice();
-        return;
-    }
-    try {
-        const { data, error } = await supabaseClient
-            .from('mirror_phrases').select('*')
-            .order('sort_order', { ascending: true })
-            .order('id', { ascending: true });
-        if (error) throw error;
-        let rows = (data || []).filter(r => r.visible !== false).map(r => ({
-            id: r.id, phrase: r.phrase, speakText: r.speak_text || null,
-            doctorUserId: r.doctor_user_id || null, companyId: r.company_id || null,
-            patientId: r.patient_id || null, sortOrder: r.sort_order || 0,
-            fontSize: r.font_size || null,
-            textColor: r.text_color || null, highlightColor: r.highlight_color || null
-        }));
-        // Terapeuta vê exatamente o que o paciente veria: "dentro" de um
-        // paciente, as frases gerais dele + as daquele paciente; fora, só as
-        // gerais (as de cada paciente ficam dentro do respectivo paciente).
-        if (isDoctor) {
-            rows = activePatientContext
-                ? rows.filter(r => !r.patientId || r.patientId === activePatientContext.id)
-                : rows.filter(r => !r.patientId);
-        }
-        mirrorPhrases = rows;
-    } catch (e) {
-        console.warn('Erro ao carregar frases do Espelho, usando as padrão:', e);
-        mirrorPhrases = MIRROR_FALLBACK_PHRASES.slice();
-    }
-}
-
-async function startMirror() {
-    document.getElementById('btn-manage-mirror').style.display = (isAdmin || isDoctor) ? 'flex' : 'none';
+// Abre o exercício (card na grade de Exercícios): mesma troca de tela das
+// atividades da aba (esconde a grade, mostra o "Voltar") e o mesmo registro de
+// uso do openPresentationPlaylist.
+function openMirrorExercise(ex) {
+    if (!ex.items || ex.items.length === 0) return;
+    activeMirrorExercise = ex;
+    mirrorPhrases = ex.items.map((item, i) => {
+        const html = sanitizeWordHtml(item.word || '');
+        return { id: `${ex.id}:${i}`, html, text: stripWordHtml(html).trim() };
+    });
     mirrorIndex = 0;
-    await loadMirrorPhrases();
+
+    document.getElementById('grid-exercises').style.display = 'none';
+    document.getElementById('exercises-header').style.display = 'none';
+    document.getElementById('btn-exercises-back').style.display = 'flex';
+    document.getElementById('game-mirror-container').style.display = 'flex';
+
+    const displayTitle = (ex.title || '').split('|')[0] || 'Espelho';
+    document.getElementById('mirror-deck-title').textContent = displayTitle;
+    // Estilo do exercício (tamanho/cor/fonte), igual ao deck de Sílabas.
+    // min() com vw: num celular, um tamanho pensado pro tablet não estoura a tela.
+    const phraseEl = document.getElementById('mirror-phrase');
+    const size = parseInt(ex.syllablesSize, 10) || MIRROR_DEFAULT_TEXT_SIZE;
+    phraseEl.style.fontSize = `min(${size}px, 11vw)`;
+    phraseEl.style.color = ex.syllablesColor || '';
+    phraseEl.style.fontFamily = ex.syllablesFont || '';
+
+    startUsageActivity(displayTitle, {
+        key: `exercise:${ex.id || displayTitle}`,
+        group: 'Exercícios',
+        view: 'view-exercises',
+        detail: 'Exercício aberto'
+    });
+
     renderMirrorPhrase();
     openMirrorCamera();
 }
@@ -7352,11 +7499,7 @@ function renderMirrorPhrase() {
     const total = mirrorPhrases.length;
     if (mirrorIndex >= total) mirrorIndex = Math.max(0, total - 1);
     const item = mirrorPhrases[mirrorIndex];
-    phraseEl.innerHTML = item ? sanitizeWordHtml(item.phrase) : 'Nenhuma frase cadastrada ainda.';
-    // Tamanho escolhido no cadastro; sem ele, fica o automático do CSS (clamp).
-    // min() com vw: num celular, um tamanho grande pensado pro tablet não estoura a tela.
-    phraseEl.style.fontSize = item?.fontSize ? `min(${item.fontSize}px, 11vw)` : '';
-    applyMirrorPhraseColors(phraseEl, item?.textColor, item?.highlightColor);
+    phraseEl.innerHTML = item ? item.html : '';
     document.getElementById('mirror-progress').textContent = total ? `${mirrorIndex + 1} / ${total}` : '0 / 0';
     document.getElementById('btn-mirror-prev').disabled = mirrorIndex === 0;
     document.getElementById('btn-mirror-next').disabled = mirrorIndex >= total - 1;
@@ -7572,254 +7715,6 @@ function goToMirrorPhrase(index) {
 
 // ---- Banco de frases (admin e terapeutas) ----
 
-// Tamanho em px que o automático (clamp do CSS) dá hoje nesta tela, arredondado
-// pro passo do A−/A+.
-function currentMirrorAutoSize() {
-    const probe = document.createElement('h2');
-    probe.className = 'mirror-phrase';
-    probe.style.cssText = 'position:absolute; visibility:hidden;';
-    document.body.appendChild(probe);
-    const px = parseFloat(getComputedStyle(probe).fontSize) || 56;
-    probe.remove();
-    return Math.round(px / MIRROR_SIZE_STEP) * MIRROR_SIZE_STEP;
-}
-
-// Tamanho digitado no cadastro, já limitado à faixa aceita pelo banco; nulo = automático.
-function readMirrorSizeInput() {
-    const n = parseInt(document.getElementById('mirror-phrase-size').value, 10);
-    if (!n) return null;
-    return Math.min(MIRROR_MAX_SIZE, Math.max(MIRROR_MIN_SIZE, n));
-}
-
-// Prévia no tamanho real em que a frase vai aparecer no Espelho.
-function updateMirrorPhrasePreview() {
-    const preview = document.getElementById('mirror-phrase-preview');
-    preview.innerHTML = mirrorMarkupToHtml(document.getElementById('mirror-phrase-input').value);
-    // No automático, mostra o tamanho que a frase realmente terá na tela agora.
-    const size = readMirrorSizeInput() || currentMirrorAutoSize();
-    preview.style.fontSize = `${size}px`;
-    applyMirrorPhraseColors(
-        preview,
-        getMirrorColorPickerValue('mirror-text-color-picker'),
-        getMirrorColorPickerValue('mirror-highlight-color-picker')
-    );
-}
-
-// Cor do texto + cor do destaque (<strong>, via variável CSS). Nulo volta pro padrão do CSS.
-function applyMirrorPhraseColors(el, textColor, highlightColor) {
-    el.style.color = textColor || '';
-    if (highlightColor) el.style.setProperty('--mirror-highlight', highlightColor);
-    else el.style.removeProperty('--mirror-highlight');
-}
-
-// Seletor de cor do Espelho: mesmo visual do picker de "Cor do Card"
-// (classes .card-color-*), mas com paleta de cores legíveis em fundo branco —
-// os presets dos cards são tons pastel de fundo, que somem como cor de texto.
-// O valor escolhido fica em picker.dataset.value ('' = cor padrão da tela).
-const MIRROR_TEXT_COLOR_PRESETS = [
-    { hex: '#1F1F1F', label: 'Preto' },
-    { hex: '#0078FF', label: 'Azul' },
-    { hex: '#1A237E', label: 'Azul Marinho' },
-    { hex: '#D32F2F', label: 'Vermelho' },
-    { hex: '#388E3C', label: 'Verde Escuro' },
-    { hex: '#FB8C00', label: 'Laranja' },
-    { hex: '#6A1B9A', label: 'Roxo' },
-    { hex: '#C2185B', label: 'Rosa' }
-];
-
-function initMirrorColorPicker(pickerId) {
-    const picker = document.getElementById(pickerId);
-    if (!picker || picker.dataset.wired) return;
-    picker.dataset.wired = '1';
-    picker.dataset.value = '';
-    const customInput = picker.querySelector('input[type="color"]');
-    const customWrap = customInput.closest('.card-color-custom-wrap');
-
-    MIRROR_TEXT_COLOR_PRESETS.forEach(preset => {
-        const swatch = document.createElement('button');
-        swatch.type = 'button';
-        swatch.className = 'card-color-swatch';
-        swatch.dataset.value = preset.hex;
-        swatch.style.backgroundColor = preset.hex;
-        swatch.title = preset.label;
-        swatch.setAttribute('aria-label', preset.label);
-        swatch.addEventListener('click', () => {
-            setMirrorColorPickerValue(pickerId, preset.hex);
-            updateMirrorPhrasePreview();
-        });
-        picker.insertBefore(swatch, customWrap);
-    });
-
-    customInput.addEventListener('input', () => {
-        setMirrorColorPickerValue(pickerId, customInput.value);
-        updateMirrorPhrasePreview();
-    });
-}
-
-function setMirrorColorPickerValue(pickerId, value) {
-    initMirrorColorPicker(pickerId);
-    const picker = document.getElementById(pickerId);
-    const customInput = picker.querySelector('input[type="color"]');
-    const valueUpper = (value || '').toUpperCase();
-    picker.dataset.value = valueUpper;
-    let matchedPreset = false;
-    picker.querySelectorAll('.card-color-swatch').forEach(s => {
-        const selected = s.dataset.value === valueUpper;
-        s.classList.toggle('is-selected', selected);
-        if (selected) matchedPreset = true;
-    });
-    // Mesmo cuidado de setCardColorPickerValue: o seletor nativo só mostra a
-    // cor quando ele é a escolha atual (senão fica o "+").
-    const isCustom = !!valueUpper && !matchedPreset;
-    if (isCustom) customInput.value = value;
-    customInput.classList.toggle('is-selected', isCustom);
-}
-
-function getMirrorColorPickerValue(pickerId) {
-    return document.getElementById(pickerId)?.dataset.value || null;
-}
-
-function canManageMirrorPhrase(p) {
-    if (isAdmin) return true;
-    if (!isDoctor) return false;
-    return p.doctorUserId === currentUserId;
-}
-
-function mirrorPhraseScopeLabel(p) {
-    if (p.patientId) return 'Só deste paciente';
-    if (!p.doctorUserId) return 'Global (sem terapeuta)';
-    return isDoctor ? 'Todos os seus pacientes' : 'Do terapeuta';
-}
-
-function openMirrorPhrasesModal() {
-    resetMirrorPhraseForm();
-    renderMirrorPhrasesList();
-    document.getElementById('mirror-phrases-modal').style.display = 'flex';
-    document.getElementById('mirror-phrase-input').focus();
-}
-
-function closeMirrorPhrasesModal() {
-    document.getElementById('mirror-phrases-modal').style.display = 'none';
-    resetMirrorPhraseForm();
-}
-
-function resetMirrorPhraseForm() {
-    editingMirrorPhrase = null;
-    document.getElementById('mirror-phrase-input').value = '';
-    document.getElementById('mirror-phrase-size').value = '';
-    setMirrorColorPickerValue('mirror-text-color-picker', null);
-    setMirrorColorPickerValue('mirror-highlight-color-picker', null);
-    updateMirrorPhrasePreview();
-    document.getElementById('mirror-phrase-form-label').textContent = 'Nova frase';
-    document.getElementById('btn-save-mirror-phrase').textContent = 'Adicionar frase';
-    document.getElementById('btn-cancel-mirror-phrase-edit').style.display = 'none';
-}
-
-function renderMirrorPhrasesList() {
-    const list = document.getElementById('mirror-phrases-list');
-    list.innerHTML = '';
-    if (!mirrorPhrases.length) {
-        list.innerHTML = '<li class="mirror-phrases-empty">Nenhuma frase cadastrada ainda.</li>';
-        return;
-    }
-    mirrorPhrases.forEach((p) => {
-        const li = document.createElement('li');
-        const text = document.createElement('div');
-        text.className = 'mirror-phrase-text';
-        text.innerHTML = `${sanitizeWordHtml(p.phrase)}<br><span class="mirror-phrase-scope"></span>`;
-        text.querySelector('.mirror-phrase-scope').textContent =
-            mirrorPhraseScopeLabel(p) + (p.fontSize ? ` · ${p.fontSize}px` : '');
-        applyMirrorPhraseColors(text, p.textColor, p.highlightColor);
-        li.appendChild(text);
-        if (canManageMirrorPhrase(p) && supabaseClient) {
-            const editBtn = document.createElement('button');
-            editBtn.type = 'button';
-            editBtn.setAttribute('aria-label', 'Editar frase');
-            editBtn.innerHTML = '<i class="fas fa-pencil-alt" aria-hidden="true"></i>';
-            editBtn.onclick = () => startEditingMirrorPhrase(p);
-            const delBtn = document.createElement('button');
-            delBtn.type = 'button';
-            delBtn.setAttribute('aria-label', 'Excluir frase');
-            delBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>';
-            delBtn.onclick = () => deleteMirrorPhrase(p);
-            li.append(editBtn, delBtn);
-        }
-        list.appendChild(li);
-    });
-}
-
-function startEditingMirrorPhrase(p) {
-    editingMirrorPhrase = p;
-    const input = document.getElementById('mirror-phrase-input');
-    input.value = mirrorHtmlToMarkup(p.phrase);
-    document.getElementById('mirror-phrase-size').value = p.fontSize || '';
-    setMirrorColorPickerValue('mirror-text-color-picker', p.textColor);
-    setMirrorColorPickerValue('mirror-highlight-color-picker', p.highlightColor);
-    updateMirrorPhrasePreview();
-    document.getElementById('mirror-phrase-form-label').textContent = 'Editar frase';
-    document.getElementById('btn-save-mirror-phrase').textContent = 'Salvar alterações';
-    document.getElementById('btn-cancel-mirror-phrase-edit').style.display = 'inline-block';
-    input.focus();
-}
-
-async function saveMirrorPhrase(rawText, fontSize, textColor, highlightColor) {
-    if (!supabaseClient) { alert('Sem conexão com o servidor: não dá pra salvar frases agora.'); return; }
-    const phrase = mirrorMarkupToHtml(rawText.trim());
-    const speakText = mirrorPlainText(phrase);
-    const font_size = fontSize || null;
-    const text_color = textColor || null;
-    const highlight_color = highlightColor || null;
-    let error;
-    if (editingMirrorPhrase) {
-        // .select(): com RLS, um update bloqueado não dá erro — só não altera
-        // nenhuma linha. Sem conferir isso, o app fingia que salvou.
-        let data;
-        ({ data, error } = await supabaseClient.from('mirror_phrases')
-            .update({ phrase, speak_text: speakText, font_size, text_color, highlight_color })
-            .eq('id', editingMirrorPhrase.id).select('id'));
-        if (!error && (!data || data.length === 0)) {
-            error = { message: 'você não tem permissão para editar esta frase (nenhuma alteração foi salva).' };
-        }
-        if (!error) logAdminAction('update', 'mirror_phrase', speakText);
-    } else {
-        // Terapeuta é sempre o dono (a regra de escrita exige doctor_user_id);
-        // "dentro" de um paciente a frase fica só pra ele, fora vale pra todos
-        // os pacientes do terapeuta. Admin/editor criam sem dono.
-        const ownerFields = isAdmin && !isDoctor
-            ? {}
-            : { doctor_user_id: currentUserId, ...(activePatientContext ? { patient_id: activePatientContext.id } : {}) };
-        const nextOrder = mirrorPhrases.reduce((max, p) => Math.max(max, p.sortOrder || 0), 0) + 1;
-        ({ error } = await supabaseClient.from('mirror_phrases')
-            .insert([{ phrase, speak_text: speakText, font_size, text_color, highlight_color, sort_order: nextOrder, ...ownerFields }]));
-        if (!error) logAdminAction('create', 'mirror_phrase', speakText);
-    }
-    if (error) {
-        console.error('Erro ao salvar frase do Espelho:', error);
-        alert('Não foi possível salvar a frase: ' + error.message);
-        return;
-    }
-    resetMirrorPhraseForm();
-    await refreshMirrorAfterEdit();
-}
-
-async function deleteMirrorPhrase(p) {
-    if (!confirm(`Excluir a frase "${mirrorPlainText(p.phrase)}"?`)) return;
-    const { error } = await supabaseClient.from('mirror_phrases').delete().eq('id', p.id);
-    if (error) { alert('Não foi possível excluir a frase: ' + error.message); return; }
-    logAdminAction('delete', 'mirror_phrase', mirrorPlainText(p.phrase));
-    if (editingMirrorPhrase?.id === p.id) resetMirrorPhraseForm();
-    await refreshMirrorAfterEdit();
-}
-
-async function refreshMirrorAfterEdit() {
-    const currentId = mirrorPhrases[mirrorIndex]?.id;
-    await loadMirrorPhrases();
-    const keepIndex = mirrorPhrases.findIndex(p => p.id === currentId);
-    mirrorIndex = keepIndex !== -1 ? keepIndex : Math.min(mirrorIndex, Math.max(0, mirrorPhrases.length - 1));
-    renderMirrorPhrase();
-    renderMirrorPhrasesList();
-}
-
 function setupMirrorControls() {
     document.getElementById('btn-mirror-record').addEventListener('click', () => {
         if (mirrorRecorder && mirrorRecorder.state === 'recording') stopMirrorRecording();
@@ -7828,46 +7723,10 @@ function setupMirrorControls() {
     document.getElementById('btn-mirror-replay').addEventListener('click', playMirrorRecording);
     document.getElementById('btn-mirror-listen').addEventListener('click', () => {
         const item = mirrorPhrases[mirrorIndex];
-        if (item) speak(item.speakText || mirrorPlainText(item.phrase));
+        if (item) speak(item.text);
     });
     document.getElementById('btn-mirror-prev').addEventListener('click', () => goToMirrorPhrase(mirrorIndex - 1));
     document.getElementById('btn-mirror-next').addEventListener('click', () => goToMirrorPhrase(mirrorIndex + 1));
-
-    document.getElementById('btn-manage-mirror').addEventListener('click', openMirrorPhrasesModal);
-    document.getElementById('btn-close-mirror-phrases').addEventListener('click', closeMirrorPhrasesModal);
-    document.getElementById('btn-cancel-mirror-phrase-edit').addEventListener('click', resetMirrorPhraseForm);
-    document.getElementById('mirror-phrase-input').addEventListener('input', updateMirrorPhrasePreview);
-    const sizeInput = document.getElementById('mirror-phrase-size');
-    sizeInput.addEventListener('input', updateMirrorPhrasePreview);
-    const stepSize = (delta) => {
-        // Partindo do automático, começa do tamanho que a frase tem AGORA na
-        // tela (o automático varia com a largura) — antes partia de um valor
-        // fixo menor que o automático e o primeiro A+ diminuía a frase.
-        const current = parseInt(sizeInput.value, 10) || currentMirrorAutoSize();
-        sizeInput.value = Math.min(MIRROR_MAX_SIZE, Math.max(MIRROR_MIN_SIZE, current + delta));
-        updateMirrorPhrasePreview();
-    };
-    document.getElementById('btn-mirror-size-down').addEventListener('click', () => stepSize(-MIRROR_SIZE_STEP));
-    document.getElementById('btn-mirror-size-up').addEventListener('click', () => stepSize(MIRROR_SIZE_STEP));
-    document.getElementById('btn-mirror-size-auto').addEventListener('click', () => {
-        sizeInput.value = '';
-        updateMirrorPhrasePreview();
-    });
-    document.getElementById('mirror-phrase-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const input = document.getElementById('mirror-phrase-input');
-        if (!input.value.trim()) return;
-        const saveBtn = document.getElementById('btn-save-mirror-phrase');
-        saveBtn.disabled = true;
-        try {
-            await saveMirrorPhrase(
-                input.value,
-                readMirrorSizeInput(),
-                getMirrorColorPickerValue('mirror-text-color-picker'),
-                getMirrorColorPickerValue('mirror-highlight-color-picker')
-            );
-        } finally { saveBtn.disabled = false; }
-    });
 }
 
 // =============================================
