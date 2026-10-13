@@ -6789,8 +6789,8 @@ function hasReleasedGameContent(baseSeedKey) {
     );
 }
 
-// A RLS (can_view_mirror_phrase) já só devolve ao paciente as frases
-// liberadas pra ele — basta saber se veio alguma.
+// A RLS (can_view_mirror_phrase) já só devolve ao paciente as frases do
+// terapeuta dele (gerais ou feitas só pra ele) — basta saber se veio alguma.
 async function patientHasReleasedMirrorPhrases() {
     if (!supabaseClient) return false;
     try {
@@ -7074,8 +7074,9 @@ function closeGame() {
 // (Blob em RAM, nunca IndexedDB/cache/Supabase): todas as tentativas de todas
 // as frases ficam disponíveis enquanto o exercício está aberto, e ao Sair
 // tudo é liberado (clearAllMirrorTakes) — nada sobra no navegador.
-// As frases vêm de mirror_phrases (banco próprio, cadastrado por admin e
-// terapeutas pelo botão "Gerenciar frases").
+// As frases vêm de mirror_phrases, criadas por cada terapeuta pros próprios
+// pacientes no "Gerenciar frases" (sem etapa de liberação): fora de um
+// paciente valem pra todos os pacientes dele; "dentro" de um, só pra ele.
 // =============================================
 const MIRROR_FALLBACK_PHRASES = [
     { id: 'local:1', phrase: 'Bom <strong>di</strong>a, tudo <strong>bem</strong>?', speakText: 'Bom dia, tudo bem?' },
@@ -7105,7 +7106,6 @@ let mirrorTimerInterval = null;
 let mirrorCountdownInterval = null;
 let mirrorSpeed = 1;
 let editingMirrorPhrase = null;
-let patientMirrorReleaseMap = new Map(); // phrase id (string) -> visible, só com terapeuta "dentro" de um paciente
 let mirrorAudioCtx = null;
 let mirrorMeterFrame = null;
 let mirrorSilenceWarned = false;
@@ -7150,15 +7150,13 @@ async function loadMirrorPhrases() {
             fontSize: r.font_size || null,
             textColor: r.text_color || null, highlightColor: r.highlight_color || null
         }));
-        // Médico "dentro" de um paciente: só as frases daquele paciente + o banco geral,
-        // com o estado de liberação (patient_mirror_flags) pra mostrar no "Gerenciar frases".
-        if (isDoctor && activePatientContext) {
-            rows = rows.filter(r => !r.patientId || r.patientId === activePatientContext.id);
-            const { data: flags } = await supabaseClient
-                .from('patient_mirror_flags').select('phrase_id, visible').eq('patient_id', activePatientContext.id);
-            patientMirrorReleaseMap = new Map((flags || []).map(f => [String(f.phrase_id), f.visible]));
-        } else {
-            patientMirrorReleaseMap = new Map();
+        // Terapeuta vê exatamente o que o paciente veria: "dentro" de um
+        // paciente, as frases gerais dele + as daquele paciente; fora, só as
+        // gerais (as de cada paciente ficam dentro do respectivo paciente).
+        if (isDoctor) {
+            rows = activePatientContext
+                ? rows.filter(r => !r.patientId || r.patientId === activePatientContext.id)
+                : rows.filter(r => !r.patientId);
         }
         mirrorPhrases = rows;
     } catch (e) {
@@ -7684,15 +7682,13 @@ function getMirrorColorPickerValue(pickerId) {
 function canManageMirrorPhrase(p) {
     if (isAdmin) return true;
     if (!isDoctor) return false;
-    return p.doctorUserId === currentUserId
-        || (!!p.companyId && p.companyId === currentUserCompanyId && !p.patientId)
-        || (!!p.patientId && !!activePatientContext && p.patientId === activePatientContext.id);
+    return p.doctorUserId === currentUserId;
 }
 
 function mirrorPhraseScopeLabel(p) {
     if (p.patientId) return 'Só deste paciente';
-    if (!p.doctorUserId && !p.companyId) return 'Global';
-    return 'Banco do terapeuta';
+    if (!p.doctorUserId) return 'Global (sem terapeuta)';
+    return isDoctor ? 'Todos os seus pacientes' : 'Do terapeuta';
 }
 
 function openMirrorPhrasesModal() {
@@ -7731,14 +7727,8 @@ function renderMirrorPhrasesList() {
         const text = document.createElement('div');
         text.className = 'mirror-phrase-text';
         text.innerHTML = `${sanitizeWordHtml(p.phrase)}<br><span class="mirror-phrase-scope"></span>`;
-        let scopeText = mirrorPhraseScopeLabel(p) + (p.fontSize ? ` · ${p.fontSize}px` : '');
-        if (isDoctor && activePatientContext) {
-            // Frase do próprio paciente já nasce liberada; as do banco dependem do toggle em Meus Pacientes.
-            const released = p.patientId === activePatientContext.id
-                || patientMirrorReleaseMap.get(String(p.id)) === true;
-            scopeText += released ? ' · Liberada' : ' · Não liberada';
-        }
-        text.querySelector('.mirror-phrase-scope').textContent = scopeText;
+        text.querySelector('.mirror-phrase-scope').textContent =
+            mirrorPhraseScopeLabel(p) + (p.fontSize ? ` · ${p.fontSize}px` : '');
         applyMirrorPhraseColors(text, p.textColor, p.highlightColor);
         li.appendChild(text);
         if (canManageMirrorPhrase(p) && supabaseClient) {
@@ -7792,13 +7782,12 @@ async function saveMirrorPhrase(rawText, fontSize, textColor, highlightColor) {
         }
         if (!error) logAdminAction('update', 'mirror_phrase', speakText);
     } else {
-        // Admin cadastra no banco global; terapeuta no próprio banco (compartilhado
-        // na empresa) ou, "dentro" de um paciente, só pra ele — igual saveAudioClip.
+        // Terapeuta é sempre o dono (a regra de escrita exige doctor_user_id);
+        // "dentro" de um paciente a frase fica só pra ele, fora vale pra todos
+        // os pacientes do terapeuta. Admin/editor criam sem dono.
         const ownerFields = isAdmin && !isDoctor
             ? {}
-            : (activePatientContext
-                ? { patient_id: activePatientContext.id }
-                : { doctor_user_id: currentUserId, company_id: currentUserCompanyId });
+            : { doctor_user_id: currentUserId, ...(activePatientContext ? { patient_id: activePatientContext.id } : {}) };
         const nextOrder = mirrorPhrases.reduce((max, p) => Math.max(max, p.sortOrder || 0), 0) + 1;
         ({ error } = await supabaseClient.from('mirror_phrases')
             .insert([{ phrase, speak_text: speakText, font_size, text_color, highlight_color, sort_order: nextOrder, ...ownerFields }]));
@@ -14389,15 +14378,7 @@ async function loadDoctorPatients() {
             btnViewAudios.className = 'admin-edit-password-btn';
             btnViewAudios.addEventListener('click', () => enterPatientContext(p, 'view-audio'));
 
-            // Espelho: mesmo molde — frases do banco/globais liberadas por
-            // paciente (patient_mirror_flags).
-            const btnMirror = document.createElement('button');
-            btnMirror.innerHTML = '<i class="fas fa-video" aria-hidden="true"></i>';
-            btnMirror.title = 'Frases do Espelho liberadas para este paciente';
-            btnMirror.className = 'admin-edit-password-btn';
-            btnMirror.addEventListener('click', () => openPatientMirrorModal(p));
-
-            tdActions.append(btnPassword, btnModules, btnExercises, btnViewExercises, btnTopics, btnVirtues, btnCarometro, btnCarometroGlobal, btnBooks, btnReleaseBooks, btnMedias, btnViewMedias, btnAudios, btnViewAudios, btnMirror, btnToggleActive);
+            tdActions.append(btnPassword, btnModules, btnExercises, btnViewExercises, btnTopics, btnVirtues, btnCarometro, btnCarometroGlobal, btnBooks, btnReleaseBooks, btnMedias, btnViewMedias, btnAudios, btnViewAudios, btnToggleActive);
             tr.append(tdName, tdEmail, tdStatus, tdCreated, tdLastSignIn, tdActions);
             tbody.appendChild(tr);
         });
@@ -14849,76 +14830,6 @@ async function openPatientAudioModal(patient) {
 
 document.getElementById('btn-close-patient-audio')?.addEventListener('click', () => {
     if (patientAudioModal) patientAudioModal.style.display = 'none';
-});
-
-// Frases do Espelho liberadas por paciente — mesmo molde de openPatientAudioModal,
-// com mirror_phrases/patient_mirror_flags.
-const patientMirrorModal = document.getElementById('patient-mirror-modal');
-
-async function openPatientMirrorModal(patient) {
-    document.getElementById('patient-mirror-subtitle').textContent = patient.name || patient.email;
-    const list = document.getElementById('patient-mirror-list');
-    list.innerHTML = 'Carregando...';
-    if (patientMirrorModal) patientMirrorModal.style.display = 'flex';
-
-    // Banco do terapeuta (próprio/empresa) + globais do admin; frases criadas
-    // "dentro" de um paciente (patient_id) não entram — já são só dele.
-    const { data: phrases } = await supabaseClient
-        .from('mirror_phrases').select('id, phrase, doctor_user_id, sort_order')
-        .or(doctorBankOrFilter())
-        .is('patient_id', null)
-        .order('sort_order').order('id');
-    const { data: overrides } = await supabaseClient
-        .from('patient_mirror_flags').select('phrase_id, visible').eq('patient_id', patient.id);
-    const overrideMap = new Map((overrides || []).map(r => [r.phrase_id, r.visible]));
-
-    list.innerHTML = '';
-    if (!phrases || !phrases.length) {
-        list.innerHTML = '<p class="media-hint">Nenhuma frase disponível pra liberar ainda. Cadastre em Exercícios → Espelho → Gerenciar frases.</p>';
-        return;
-    }
-
-    phrases.forEach(item => {
-        const isGlobal = !item.doctor_user_id;
-        const displayTitle = mirrorPlainText(item.phrase) + (isGlobal ? ' (do admin)' : '');
-        const isVisible = overrideMap.has(item.id) ? overrideMap.get(item.id) : false;
-
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 14px; background:#f5f5f5; border-radius:8px;';
-
-        const label = document.createElement('span');
-        label.textContent = displayTitle;
-
-        const toggleWrap = document.createElement('div');
-        toggleWrap.style.cssText = 'position:relative; width:32px; height:18px; flex-shrink:0;';
-
-        const toggleBtn = document.createElement('button');
-        toggleBtn.className = 'visibility-toggle-btn ' + (isVisible ? 'is-visible' : 'is-hidden');
-        toggleBtn.style.cssText = 'position:absolute; top:0; left:0;';
-        toggleBtn.setAttribute('role', 'switch');
-        toggleBtn.setAttribute('aria-checked', String(isVisible));
-        toggleBtn.setAttribute('aria-label', `Liberar ${displayTitle} para ${patient.name || patient.email}`);
-        toggleBtn.addEventListener('click', async () => {
-            const newVisible = !isVisible;
-            try {
-                const { error } = await supabaseClient.from('patient_mirror_flags')
-                    .upsert({ patient_id: patient.id, phrase_id: item.id, visible: newVisible, updated_at: new Date().toISOString() });
-                if (error) throw error;
-                logAdminAction(newVisible ? 'release' : 'unrelease', 'mirror_phrase', displayTitle, `Paciente: ${patient.name || patient.email}`);
-                openPatientMirrorModal(patient);
-            } catch (err) {
-                showDoctorPatientsFeedback('Erro ao liberar frase: ' + err.message, true);
-            }
-        });
-
-        toggleWrap.appendChild(toggleBtn);
-        row.append(label, toggleWrap);
-        list.appendChild(row);
-    });
-}
-
-document.getElementById('btn-close-patient-mirror')?.addEventListener('click', () => {
-    if (patientMirrorModal) patientMirrorModal.style.display = 'none';
 });
 
 // Livros liberados por paciente — diferente dos outros 3 (mídias/tópicos/
