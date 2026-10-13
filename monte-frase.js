@@ -270,11 +270,20 @@ try {
     if (RATES.includes(saved)) audioRate = saved;
 } catch (error) { /* sem armazenamento: fica no Normal */ }
 
+// Voz escolhida no admin ("Voz do app"): o app grava no localStorage
+// (comunica_tts_voice), e esta página, no mesmo domínio, usa a mesma voz.
+function currentTtsVoice() {
+    try { return localStorage.getItem("comunica_tts_voice") || null; } catch (error) { return null; }
+}
+
 async function fetchTtsAudio(endpoint, text) {
+    const body = { ttsText: text };
+    const voice = currentTtsVoice();
+    if (voice) body.ttsVoice = voice;
     const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ttsText: text })
+        body: JSON.stringify(body)
     });
     const data = await response.json();
     if (!response.ok || !data.audio) throw new Error(data.error || `Erro HTTP ${response.status}`);
@@ -283,21 +292,27 @@ async function fetchTtsAudio(endpoint, text) {
 
 async function fetchSupabaseTtsAudio(text) {
     if (!supabase) throw new Error("Supabase indisponível");
-    const { data, error } = await supabase.functions.invoke("chat", { body: { ttsText: text } });
+    const body = { ttsText: text };
+    const voice = currentTtsVoice();
+    if (voice) body.ttsVoice = voice;
+    const { data, error } = await supabase.functions.invoke("chat", { body });
     if (error || !data?.audio) throw error || new Error(data?.error || "Resposta sem áudio");
     return data.audio;
 }
 
 function getTtsAudio(text) {
-    if (ttsCache.has(text)) return ttsCache.get(text);
+    // Voz na chave do cache (só memória): a voz pode mudar entre aberturas.
+    const voice = currentTtsVoice();
+    const cacheKey = voice ? `${voice}::${text}` : text;
+    if (ttsCache.has(cacheKey)) return ttsCache.get(cacheKey);
     const promise = (async () => {
         if (isLocalhost) {
             try { return await fetchTtsAudio(`${LOCAL_API}/chat`, text); } catch (localError) { /* cai pro Supabase */ }
         }
         return fetchSupabaseTtsAudio(text);
     })();
-    promise.catch(() => ttsCache.delete(text));
-    ttsCache.set(text, promise);
+    promise.catch(() => ttsCache.delete(cacheKey));
+    ttsCache.set(cacheKey, promise);
     return promise;
 }
 
