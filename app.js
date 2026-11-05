@@ -16378,13 +16378,38 @@ function reminderCheckboxes(prefix) {
     return [...document.querySelectorAll(`#${prefix}-reminder-patient-list input[type="checkbox"]`)];
 }
 
+// 'reminder' (hora de praticar + recado opcional) ou 'announcement'
+// (comunicado: o texto vai como foi escrito, e é obrigatório).
+function reminderKind(prefix) {
+    return document.querySelector(`input[name="${prefix}-reminder-kind"]:checked`)?.value === 'announcement'
+        ? 'announcement' : 'reminder';
+}
+
 function updateReminderSelection(prefix) {
     const boxes = reminderCheckboxes(prefix);
     const checked = boxes.filter(box => box.checked).length;
+    const isAnnouncement = reminderKind(prefix) === 'announcement';
+    const hasMessage = !!document.getElementById(`${prefix}-reminder-message`)?.value.trim();
     const sendBtn = document.getElementById(`btn-${prefix}-reminder-send`);
-    sendBtn.disabled = checked === 0;
-    sendBtn.textContent = checked > 1 ? `Enviar lembrete (${checked})` : 'Enviar lembrete';
+    sendBtn.disabled = checked === 0 || (isAnnouncement && !hasMessage);
+    const label = isAnnouncement ? 'Enviar comunicado' : 'Enviar lembrete';
+    sendBtn.textContent = checked > 1 ? `${label} (${checked})` : label;
     document.getElementById(`${prefix}-reminder-select-all`).checked = boxes.length > 0 && checked === boxes.length;
+}
+
+// Troca a explicação, o rótulo e o exemplo do campo de texto conforme o tipo.
+function updateReminderKind(prefix) {
+    const kind = reminderKind(prefix);
+    document.querySelectorAll(`#${prefix}-reminder-form .reminder-preview`).forEach(el => {
+        el.style.display = el.dataset.kind === kind ? '' : 'none';
+    });
+    const isAnnouncement = kind === 'announcement';
+    document.getElementById(`${prefix}-reminder-message-label`).textContent = isAnnouncement
+        ? 'Texto do comunicado' : 'Recado (opcional)';
+    document.getElementById(`${prefix}-reminder-message`).placeholder = isAnnouncement
+        ? 'Ex: Novidade no Comunica Fácil! Agora o Ditado tem controle de velocidade do áudio.'
+        : 'Ex: Não esqueça do Monte a Frase desta semana!';
+    updateReminderSelection(prefix);
 }
 
 async function loadRemindersTab(prefix) {
@@ -16427,7 +16452,7 @@ async function renderReminderHistory(prefix) {
     // A RLS já limita: médico vê os dos pacientes dele, admin vê todos.
     const { data: rows, error } = await supabaseClient
         .from('patient_reminders')
-        .select('created_at, patient_id, sender_name, message, read_at')
+        .select('*')
         .order('created_at', { ascending: false })
         .limit(30);
     box.innerHTML = '';
@@ -16442,9 +16467,10 @@ async function renderReminderHistory(prefix) {
     const nameById = new Map(reminderPatientsByPrefix[prefix].map(p => [p.id, p.name]));
     const formatDate = value => new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
     box.appendChild(evolutionTable(
-        ['Enviado em', 'Paciente', 'Enviado por', 'Recado', 'Visto pelo paciente'],
+        ['Enviado em', 'Tipo', 'Paciente', 'Enviado por', 'Recado', 'Visto pelo paciente'],
         rows.map(r => [
             formatDate(r.created_at),
+            r.kind === 'announcement' ? 'Comunicado' : 'Lembrete',
             nameById.get(r.patient_id) || 'Paciente inativo',
             r.sender_name || '-',
             r.message || '-',
@@ -16455,6 +16481,9 @@ async function renderReminderHistory(prefix) {
 
 ['doctor', 'admin'].forEach(prefix => {
     document.getElementById(`${prefix}-reminder-patient-list`)?.addEventListener('change', () => updateReminderSelection(prefix));
+    document.querySelectorAll(`input[name="${prefix}-reminder-kind"]`).forEach(radio =>
+        radio.addEventListener('change', () => updateReminderKind(prefix)));
+    document.getElementById(`${prefix}-reminder-message`)?.addEventListener('input', () => updateReminderSelection(prefix));
     document.getElementById(`${prefix}-reminder-select-all`)?.addEventListener('change', (ev) => {
         reminderCheckboxes(prefix).forEach(box => { box.checked = ev.target.checked; });
         updateReminderSelection(prefix);
@@ -16465,22 +16494,27 @@ async function renderReminderHistory(prefix) {
         if (!selected.length) return;
         const messageInput = document.getElementById(`${prefix}-reminder-message`);
         const message = messageInput.value.trim();
+        const kind = reminderKind(prefix);
+        const isAnnouncement = kind === 'announcement';
+        if (isAnnouncement && !message) return;
+        const what = isAnnouncement ? 'comunicado' : 'lembrete';
+        const What = isAnnouncement ? 'Comunicado' : 'Lembrete';
         const nameOf = id => reminderPatientsByPrefix[prefix].find(p => p.id === id)?.name || 'paciente';
-        setNotifyModal('sending', 'Enviando lembrete…', 'Só um instante.');
+        setNotifyModal('sending', `Enviando ${what}…`, 'Só um instante.');
         const { data, error } = await supabaseClient.functions.invoke('notify-users', {
-            body: { kind: 'reminder', patientIds: selected.map(box => box.value), message }
+            body: { kind: 'reminder', reminderKind: kind, patientIds: selected.map(box => box.value), message }
         });
         if (error) {
-            console.error('Erro ao enviar lembrete:', error);
-            setNotifyModal('error', 'Lembrete não enviado', 'Não foi possível enviar o lembrete. Tente de novo em instantes.');
+            console.error(`Erro ao enviar ${what}:`, error);
+            setNotifyModal('error', `${What} não enviado`, `Não foi possível enviar o ${what}. Tente de novo em instantes.`);
             return;
         }
-        logAdminAction('create', 'reminder', selected.length === 1 ? nameOf(selected[0].value) : `${selected.length} pacientes`, message || null);
+        logAdminAction('create', isAnnouncement ? 'announcement' : 'reminder', selected.length === 1 ? nameOf(selected[0].value) : `${selected.length} pacientes`, message || null);
         const count = data?.recipientCount ?? selected.length;
         const emails = data?.emailCount ?? 0;
-        setNotifyModal('success', 'Lembrete enviado', count === 1
-            ? `${nameOf(selected[0].value)} vai ver o lembrete ao abrir o app${emails ? ' e também recebe por e-mail' : ''}.`
-            : `${count} pacientes vão ver o lembrete ao abrir o app; ${emails} ${emails === 1 ? 'recebe' : 'recebem'} também por e-mail.`);
+        setNotifyModal('success', `${What} enviado`, count === 1
+            ? `${nameOf(selected[0].value)} vai ver o ${what} ao abrir o app${emails ? ' e também recebe por e-mail' : ''}.`
+            : `${count} pacientes vão ver o ${what} ao abrir o app; ${emails} ${emails === 1 ? 'recebe' : 'recebem'} também por e-mail.`);
         // Enviado: limpa o recado e a seleção, e o histórico já mostra o novo.
         messageInput.value = '';
         reminderCheckboxes(prefix).forEach(box => { box.checked = false; });
@@ -16496,20 +16530,32 @@ async function showPatientReminders() {
     if (!supabaseClient || !currentPatientId) return;
     const { data: reminders, error } = await supabaseClient
         .from('patient_reminders')
-        .select('id, created_at, sender_name, message')
+        .select('*')
         .eq('patient_id', currentPatientId)
         .is('read_at', null)
         .order('created_at', { ascending: false })
         .limit(10);
     if (error || !reminders?.length) return;
     patientReminderIds = reminders.map(r => r.id);
-    document.getElementById('patient-reminder-text').textContent =
-        `${reminders[0].sender_name || 'Seu médico'} lembrou você de praticar seus exercícios no Comunica Fácil.`;
+    // Comunicado ('announcement') aparece só com o texto escrito; lembrete
+    // ("hora de praticar") mantém a frase padrão. Se tiver os dois, o título
+    // é o do lembrete e os comunicados vêm embaixo.
+    const practice = reminders.filter(r => r.kind !== 'announcement');
+    const news = reminders.filter(r => r.kind === 'announcement' && r.message);
+    const onlyNews = practice.length === 0;
+    document.getElementById('patient-reminder-title').textContent = onlyNews ? 'Novidade!' : 'Hora de praticar!';
+    const icon = document.getElementById('patient-reminder-icon');
+    icon.classList.toggle('is-reminder', !onlyNews);
+    icon.classList.toggle('is-announcement', onlyNews);
+    icon.innerHTML = `<i class="fas ${onlyNews ? 'fa-bullhorn' : 'fa-bell'}"></i>`;
+    const text = document.getElementById('patient-reminder-text');
+    text.textContent = onlyNews ? '' : `${practice[0].sender_name || 'Seu médico'} lembrou você de praticar seus exercícios no Comunica Fácil.`;
+    text.style.display = onlyNews ? 'none' : '';
     const messages = document.getElementById('patient-reminder-messages');
     messages.innerHTML = '';
-    reminders.filter(r => r.message).forEach(r => {
+    [...practice.filter(r => r.message), ...news].forEach(r => {
         const note = document.createElement('blockquote');
-        note.className = 'patient-reminder-message';
+        note.className = 'patient-reminder-message' + (r.kind === 'announcement' ? ' is-announcement' : '');
         note.textContent = r.message;
         messages.appendChild(note);
     });

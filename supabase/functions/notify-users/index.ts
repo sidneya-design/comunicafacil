@@ -40,7 +40,8 @@ function gmailTransporter() {
 }
 
 // Lembrete do médico ("hora de praticar") para um ou vários pacientes, com
-// recado opcional. Cada paciente lembrado ganha uma linha em
+// recado opcional — ou um comunicado (reminderKind 'announcement'): o texto
+// vai exatamente como foi escrito, sem o texto padrão de lembrete. Cada paciente lembrado ganha uma linha em
 // patient_reminders (o app mostra ao paciente até ele clicar em "Entendi") e
 // quem tem e-mail recebe a mensagem — num envio só, em cópia oculta.
 // Pode enviar: o médico do paciente, um colega da mesma empresa (mesma regra
@@ -56,6 +57,8 @@ async function sendReminders(
   if (!patientIds.length) return json({ error: "Escolha pelo menos um paciente." }, 400);
   if (patientIds.length > 300) return json({ error: "Envie para no máximo 300 pacientes por vez." }, 400);
   const message = String(body.message ?? "").trim().slice(0, 500) || null;
+  const isAnnouncement = body.reminderKind === "announcement";
+  if (isAnnouncement && !message) return json({ error: "Escreva o texto do comunicado." }, 400);
 
   const { data: patients, error: patientsError } = await admin
     .from("patients")
@@ -80,7 +83,7 @@ async function sendReminders(
 
   const senderName = String(caller.user_metadata?.full_name ?? "").trim() || null;
   const { error: insertError } = await admin.from("patient_reminders").insert(
-    activePatients.map((p: { id: string }) => ({ patient_id: p.id, sender_user_id: caller.id, sender_name: senderName, message })),
+    activePatients.map((p: { id: string }) => ({ patient_id: p.id, sender_user_id: caller.id, sender_name: senderName, message, kind: isAnnouncement ? "announcement" : "reminder" })),
   );
   if (insertError) throw insertError;
 
@@ -91,7 +94,19 @@ async function sendReminders(
     if (user?.user?.email && !user.user.banned_until) emails.push(user.user.email);
   }
 
-  if (emails.length) {
+  if (emails.length && isAnnouncement) {
+    const linkHtml = APP_PUBLIC_URL
+      ? `<p style="margin:20px 0 0"><a href="${escapeHtml(APP_PUBLIC_URL)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:700;font-size:16px;line-height:1">Abrir Comunica Fácil</a></p>`
+      : "";
+    await gmailTransporter().sendMail({
+      from: `Comunica Fácil <${GMAIL_SMTP_USER}>`,
+      to: GMAIL_SMTP_USER,
+      bcc: emails,
+      subject: "Novidade no Comunica Fácil",
+      text: `${message}${APP_PUBLIC_URL ? `\n\nAbra o Comunica Fácil: ${APP_PUBLIC_URL}` : ""}`,
+      html: `<div style="margin:0;background:#ffffff;font-family:Arial,sans-serif;color:#1f2937"><div style="max-width:560px;padding:28px 24px 32px"><p style="margin:0;font-size:18px;line-height:1.6;color:#1f2937">${escapeHtml(message!).replaceAll("\n", "<br>")}</p>${linkHtml}<p style="margin:18px 0 0;font-size:14px;line-height:1.5;color:#6b7280">Este é um comunicado enviado pelo Comunica Fácil.</p></div></div>`,
+    });
+  } else if (emails.length) {
     const who = senderName ? escapeHtml(senderName) : "Seu médico";
     const messageHtml = message
       ? `<div style="margin:18px 0 0;padding:14px 16px;background:#f3f4f6;border-radius:10px;font-size:17px;line-height:1.6;color:#1f2937"><strong>Recado:</strong><br>${escapeHtml(message).replaceAll("\n", "<br>")}</div>`

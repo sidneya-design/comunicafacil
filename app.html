@@ -1180,12 +1180,20 @@
                                 </div>
                             </div>
                             <form class="admin-analytics-card reminder-form" id="admin-reminder-form">
-                                <div class="reminder-preview">
+                                <div class="reminder-kind" role="radiogroup" aria-label="Tipo de envio">
+                                    <label class="reminder-kind-option"><input type="radio" name="admin-reminder-kind" value="reminder" checked> <i class="fas fa-bell" aria-hidden="true"></i> Lembrete de prática</label>
+                                    <label class="reminder-kind-option"><input type="radio" name="admin-reminder-kind" value="announcement"> <i class="fas fa-bullhorn" aria-hidden="true"></i> Comunicado / novidade</label>
+                                </div>
+                                <div class="reminder-preview" data-kind="reminder">
                                     <i class="fas fa-bell" aria-hidden="true"></i>
                                     <span>O paciente recebe por e-mail e vê ao abrir o app: <strong>“Hora de praticar! (seu nome) lembrou você de praticar seus exercícios no Comunica Fácil.”</strong> E o recado, se você escrever um.</span>
                                 </div>
+                                <div class="reminder-preview is-announcement" data-kind="announcement" style="display:none;">
+                                    <i class="fas fa-bullhorn" aria-hidden="true"></i>
+                                    <span>O paciente recebe por e-mail (assunto <strong>“Novidade no Comunica Fácil”</strong>) e vê ao abrir o app <strong>exatamente o texto que você escrever</strong>, sem a mensagem de lembrete.</span>
+                                </div>
                                 <div class="form-group">
-                                    <label for="admin-reminder-message">Recado (opcional)</label>
+                                    <label for="admin-reminder-message" id="admin-reminder-message-label">Recado (opcional)</label>
                                     <textarea id="admin-reminder-message" rows="3" maxlength="500" placeholder="Ex: Não esqueça do Monte a Frase desta semana!"></textarea>
                                 </div>
                                 <div class="form-group">
@@ -1466,12 +1474,20 @@
                                 </div>
                             </div>
                             <form class="admin-analytics-card reminder-form" id="doctor-reminder-form">
-                                <div class="reminder-preview">
+                                <div class="reminder-kind" role="radiogroup" aria-label="Tipo de envio">
+                                    <label class="reminder-kind-option"><input type="radio" name="doctor-reminder-kind" value="reminder" checked> <i class="fas fa-bell" aria-hidden="true"></i> Lembrete de prática</label>
+                                    <label class="reminder-kind-option"><input type="radio" name="doctor-reminder-kind" value="announcement"> <i class="fas fa-bullhorn" aria-hidden="true"></i> Comunicado / novidade</label>
+                                </div>
+                                <div class="reminder-preview" data-kind="reminder">
                                     <i class="fas fa-bell" aria-hidden="true"></i>
                                     <span>O paciente recebe por e-mail e vê ao abrir o app: <strong>“Hora de praticar! (seu nome) lembrou você de praticar seus exercícios no Comunica Fácil.”</strong> E o recado, se você escrever um.</span>
                                 </div>
+                                <div class="reminder-preview is-announcement" data-kind="announcement" style="display:none;">
+                                    <i class="fas fa-bullhorn" aria-hidden="true"></i>
+                                    <span>O paciente recebe por e-mail (assunto <strong>“Novidade no Comunica Fácil”</strong>) e vê ao abrir o app <strong>exatamente o texto que você escrever</strong>, sem a mensagem de lembrete.</span>
+                                </div>
                                 <div class="form-group">
-                                    <label for="doctor-reminder-message">Recado (opcional)</label>
+                                    <label for="doctor-reminder-message" id="doctor-reminder-message-label">Recado (opcional)</label>
                                     <textarea id="doctor-reminder-message" rows="3" maxlength="500" placeholder="Ex: Não esqueça do Monte a Frase desta semana!"></textarea>
                                 </div>
                                 <div class="form-group">
@@ -2709,7 +2725,7 @@
     <!-- Modal: Lembrete recebido (paciente, ao abrir o app) -->
     <div class="modal-overlay" id="patient-reminder-modal" role="dialog" aria-modal="true" aria-labelledby="patient-reminder-title" aria-describedby="patient-reminder-text">
         <div class="modal-content notify-modal-content">
-            <div class="notify-modal-icon is-reminder" aria-hidden="true"><i class="fas fa-bell"></i></div>
+            <div class="notify-modal-icon is-reminder" id="patient-reminder-icon" aria-hidden="true"><i class="fas fa-bell"></i></div>
             <h2 id="patient-reminder-title">Hora de praticar!</h2>
             <p id="patient-reminder-text"></p>
             <div id="patient-reminder-messages"></div>
@@ -2899,12 +2915,12 @@
         }
     </style>
 
-    <link rel="stylesheet" href="style.css?v=68">
+    <link rel="stylesheet" href="style.css?v=69">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script defer src="app.js?v=140"></script>
+    <script defer src="app.js?v=141"></script>
 </body>
 
 
