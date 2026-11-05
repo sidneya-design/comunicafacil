@@ -201,17 +201,6 @@ body {
     padding: 10px; overflow: hidden;
     position: relative;
 }
-/* Tipo do exercício no card (só médico/admin) — canto de baixo à esquerda;
-   o de baixo à direita é do selo de vídeo. */
-.exercise-kind-badge {
-    position: absolute; bottom: 6px; left: 6px;
-    max-width: calc(100% - 42px);
-    padding: 2px 8px; border-radius: 999px;
-    background: #e3f2fd; color: #0d47a1;
-    font-size: 10px; font-weight: 700; line-height: 1.5;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    pointer-events: none;
-}
 .video-badge {
     position: absolute; bottom: 6px; right: 6px;
     width: 24px; height: 24px; border-radius: 50%;

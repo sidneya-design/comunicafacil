@@ -4166,16 +4166,6 @@ function renderExerciseCards(exercisesArray) {
             textEl.style.color = getContrastTextColor(colorClass);
         }
 
-        // Etiqueta do tipo ("Ditado · cópia") só pra quem monta exercício
-        // (médico/admin): o nome livre do card não diz que exercício é.
-        const kindLabel = (isAdmin || isDoctor) ? exerciseKindLabel(ex) : '';
-        if (kindLabel) {
-            const kindTag = document.createElement('span');
-            kindTag.className = 'exercise-kind-badge';
-            kindTag.textContent = kindLabel;
-            imgContainer.appendChild(kindTag);
-        }
-
         btn.appendChild(imgContainer);
         btn.appendChild(textEl);
 
