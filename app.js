@@ -2423,6 +2423,11 @@ function prefetchTts(text) {
 // mantida entre -25% e +5% pra evitar o efeito de fala "morta"/sem prosódia
 // que aparece em velocidades muito baixas (ex.: -30% soava mal).
 const READING_TEXT_RATE_MAP = { '0.75': '-25%', '1': '-20%', '1.25': '-10%', '1.5': '+5%' };
+// Velocidades do Ditado: as mesmas do Monte a Frase (TTS_RATE_MAP em
+// monte-frase.js). "Normal" fica fora (sem rateKey = padrão -15% do app). As
+// chaves têm prefixo próprio porque entram na chave do cache de áudio e não
+// podem bater com as da Leitura de Texto ("0.75" lá é -25%, aqui -35%).
+const DICTATION_RATE_MAP = { 'ditado-0.5': '-50%', 'ditado-0.75': '-35%', 'ditado-1.25': '+5%' };
 
 // Função principal de áudio — usada em todo o app (cards, jogos, compositor).
 // Usa a voz neural FranciscaNeural via edge-tts com fallback para o navegador.
@@ -2437,7 +2442,7 @@ async function speakWithAzure(text, rateKey) {
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     try {
-        const ttsRate = rateKey ? (READING_TEXT_RATE_MAP[rateKey] || null) : null;
+        const ttsRate = rateKey ? (READING_TEXT_RATE_MAP[rateKey] || DICTATION_RATE_MAP[rateKey] || null) : null;
         const audioBase64 = await getTtsAudio(text, ttsRate ? rateKey : null, ttsRate);
         if (myRequestId !== ttsRequestId) return;
         currentAudio = new Audio('data:audio/mp3;base64,' + audioBase64);
@@ -4159,6 +4164,16 @@ function renderExerciseCards(exercisesArray) {
         if (isCustomCardColor) {
             textEl.style.backgroundColor = colorClass;
             textEl.style.color = getContrastTextColor(colorClass);
+        }
+
+        // Etiqueta do tipo ("Ditado · cópia") só pra quem monta exercício
+        // (médico/admin): o nome livre do card não diz que exercício é.
+        const kindLabel = (isAdmin || isDoctor) ? exerciseKindLabel(ex) : '';
+        if (kindLabel) {
+            const kindTag = document.createElement('span');
+            kindTag.className = 'exercise-kind-badge';
+            kindTag.textContent = kindLabel;
+            imgContainer.appendChild(kindTag);
         }
 
         btn.appendChild(imgContainer);
@@ -8508,6 +8523,27 @@ let dictationFirstKeyAt = 0; // primeira tecla da frase atual (0 = ainda não es
 let dictationCorrections = 0; // quantas vezes apagou na frase atual
 let dictationAnswered = false;
 
+// Nome do tipo como aparece em "Novo Exercício". No Ditado vai junto o modo
+// (cópia = a frase fica na tela; ditado = a frase some e fica só o áudio).
+const EXERCISE_KIND_LABELS = {
+    syllables: 'Sílabas',
+    mirror: 'Espelho',
+    dictation: 'Ditado',
+    choice: 'Escolha a Resposta',
+    'audio-real': 'Áudio Real',
+    'reading-text': 'Leitura de Texto',
+    naming: 'Reconhecimento de Palavras',
+    afasia: 'Reconhecimento de Imagem',
+    'monte-frase': 'Monte a Frase'
+};
+function exerciseKindLabel(ex) {
+    if (!ex) return '';
+    const label = ex.gameKind ? EXERCISE_KIND_LABELS[ex.gameKind] : 'Slides';
+    if (!label) return '';
+    if (ex.gameKind === 'dictation') return `${label} · ${ex.dictationMode === 'dictation' ? 'ditado' : 'cópia'}`;
+    return label;
+}
+
 function openDictationExercise(ex) {
     if (!ex.items || ex.items.length === 0) return;
     activeDictationExercise = ex;
@@ -8522,7 +8558,14 @@ function openDictationExercise(ex) {
     document.getElementById('game-dictation-container').style.display = 'flex';
 
     const displayTitle = (ex.title || '').split('|')[0] || 'Ditado';
-    document.getElementById('dictation-deck-title').textContent = displayTitle;
+    const titleEl = document.getElementById('dictation-deck-title');
+    titleEl.textContent = displayTitle;
+    if (isAdmin || isDoctor) {
+        const kindTag = document.createElement('span');
+        kindTag.className = 'release-kind-tag exercise-kind-tag';
+        kindTag.textContent = exerciseKindLabel(ex);
+        titleEl.prepend(kindTag);
+    }
     const phraseEl = document.getElementById('dictation-phrase');
     const size = parseInt(ex.syllablesSize, 10) || MIRROR_DEFAULT_TEXT_SIZE;
     phraseEl.style.fontSize = `min(${size}px, 11vw)`;
@@ -8546,6 +8589,7 @@ function startDictationRound() {
     dictationIndex = 0;
     dictationOutcomes = [];
     document.getElementById('dictation-play').style.display = '';
+    document.querySelector('.dictation-speed').style.display = '';
     document.getElementById('dictation-summary').style.display = 'none';
     renderDictationPhrase();
 }
@@ -8588,16 +8632,43 @@ function renderDictationPhrase(retry = false) {
     dictationFirstKeyAt = 0;
     dictationCorrections = 0;
     const nextItem = dictationPhrases[dictationIndex + 1];
-    if (nextItem && !retry) prefetchTts(nextItem.text);
+    if (nextItem && !retry) prefetchDictationTts(nextItem.text);
     playDictationAudio();
     if (retry) answer.focus();
+}
+
+// Velocidade do áudio escolhida pelo paciente. Usa a mesma chave do Monte a
+// Frase ("Ordene as frases"): quem escolheu "Devagar" lá já abre o Ditado assim.
+const DICTATION_RATE_STORAGE_KEY = 'monte-frase:audio-rate';
+const DICTATION_RATES = [0.5, 0.75, 1, 1.25];
+let dictationRate = 1;
+try {
+    const savedRate = Number(localStorage.getItem(DICTATION_RATE_STORAGE_KEY));
+    if (DICTATION_RATES.includes(savedRate)) dictationRate = savedRate;
+} catch (e) { /* sem armazenamento: fica no Normal */ }
+
+function dictationRateKey() {
+    const key = `ditado-${dictationRate}`;
+    return DICTATION_RATE_MAP[key] ? key : null;
+}
+
+function prefetchDictationTts(text) {
+    const rateKey = dictationRateKey();
+    if (!rateKey) return prefetchTts(text);
+    getTtsAudio(text, rateKey, DICTATION_RATE_MAP[rateKey], true).catch(() => { /* erro tratado no clique */ });
+}
+
+function renderDictationSpeed() {
+    document.querySelectorAll('.dictation-speed-option').forEach(option => {
+        option.setAttribute('aria-pressed', String(Number(option.dataset.rate) === dictationRate));
+    });
 }
 
 function playDictationAudio() {
     const item = dictationPhrases[dictationIndex];
     if (!item) return;
     dictationListens += 1;
-    speak(item.text);
+    speakWithAzure(item.text, dictationRateKey());
 }
 
 // Palavras da frase pra comparar: separa por espaço e, em cada uma, ignora
@@ -8744,6 +8815,7 @@ function logDictationResult(item, answer, result, timing) {
 
 function showDictationSummary() {
     document.getElementById('dictation-play').style.display = 'none';
+    document.querySelector('.dictation-speed').style.display = 'none';
     document.getElementById('dictation-summary').style.display = '';
     const outcomes = dictationOutcomes.filter(Boolean);
     const total = outcomes.length;
@@ -8778,6 +8850,16 @@ function setupDictationControls() {
     });
     document.getElementById('btn-dictation-check').addEventListener('click', checkDictationAnswer);
     document.getElementById('btn-dictation-listen').addEventListener('click', playDictationAudio);
+    // Como no Monte a Frase: vale a partir do próximo play (não toca sozinho,
+    // senão contaria uma escuta a mais na Evolução).
+    document.querySelectorAll('.dictation-speed-option').forEach(option => option.addEventListener('click', () => {
+        dictationRate = Number(option.dataset.rate);
+        try { localStorage.setItem(DICTATION_RATE_STORAGE_KEY, String(dictationRate)); } catch (e) { /* só nesta visita */ }
+        renderDictationSpeed();
+        const nextItem = dictationPhrases[dictationIndex + 1];
+        if (nextItem) prefetchDictationTts(nextItem.text);
+    }));
+    renderDictationSpeed();
     document.getElementById('btn-dictation-next').addEventListener('click', () => {
         if (dictationIndex >= dictationPhrases.length - 1) return showDictationSummary();
         dictationIndex += 1;

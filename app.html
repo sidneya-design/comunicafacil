@@ -488,7 +488,16 @@
                         <div id="game-dictation-container" class="dictation-game" style="display:none;">
                             <div class="memory-header dictation-header">
                                 <strong class="dictation-deck-title" id="dictation-deck-title">Ditado</strong>
-                                <span class="mirror-progress" id="dictation-progress">0 / 0</span>
+                                <div class="dictation-header-right">
+                                    <div class="dictation-speed" role="group" aria-label="Velocidade do áudio">
+                                        <i class="fas fa-gauge-simple" aria-hidden="true"></i>
+                                        <button class="dictation-speed-option" type="button" data-rate="0.5" aria-pressed="false">Bem devagar</button>
+                                        <button class="dictation-speed-option" type="button" data-rate="0.75" aria-pressed="false">Devagar</button>
+                                        <button class="dictation-speed-option" type="button" data-rate="1" aria-pressed="true">Normal</button>
+                                        <button class="dictation-speed-option" type="button" data-rate="1.25" aria-pressed="false">Rápido</button>
+                                    </div>
+                                    <span class="mirror-progress" id="dictation-progress">0 / 0</span>
+                                </div>
                             </div>
                             <div class="dictation-body" id="dictation-play">
                                 <div class="dictation-phrase-row">
@@ -2890,12 +2899,12 @@
         }
     </style>
 
-    <link rel="stylesheet" href="style.css?v=64">
+    <link rel="stylesheet" href="style.css?v=67">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script defer src="app.js?v=136"></script>
+    <script defer src="app.js?v=139"></script>
 </body>
 
 
